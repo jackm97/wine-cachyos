@@ -1,416 +1,416 @@
-@ varargs u_formatMessage(str ptr long ptr long ptr) icu.u_formatMessage
-@ varargs u_formatMessageWithError(str ptr long ptr long ptr ptr) icu.u_formatMessageWithError
-@ varargs u_parseMessage(str ptr long ptr long ptr) icu.u_parseMessage
-@ varargs u_parseMessageWithError(str ptr long ptr long ptr ptr) icu.u_parseMessageWithError
-@ cdecl u_vformatMessage(str ptr long ptr long long ptr) icu.u_vformatMessage
-@ cdecl u_vformatMessageWithError(str ptr long ptr long ptr long ptr) icu.u_vformatMessageWithError
-@ cdecl u_vparseMessage(str ptr long ptr long long ptr) icu.u_vparseMessage
-@ cdecl u_vparseMessageWithError(str ptr long ptr long long ptr ptr) icu.u_vparseMessageWithError
-@ cdecl ucal_add(ptr long long ptr) icu.ucal_add
-@ cdecl ucal_clear(ptr) icu.ucal_clear
-@ cdecl ucal_clearField(ptr long) icu.ucal_clearField
-@ cdecl ucal_clone(ptr ptr) icu.ucal_clone
-@ cdecl ucal_close(ptr) icu.ucal_close
-@ cdecl ucal_countAvailable() icu.ucal_countAvailable
-@ cdecl ucal_equivalentTo(ptr ptr) icu.ucal_equivalentTo
-@ cdecl ucal_get(ptr long ptr) icu.ucal_get
-@ cdecl ucal_getAttribute(ptr long) icu.ucal_getAttribute
-@ cdecl ucal_getAvailable(long) icu.ucal_getAvailable
-@ cdecl ucal_getCanonicalTimeZoneID(ptr long ptr long ptr ptr) icu.ucal_getCanonicalTimeZoneID
-@ cdecl ucal_getDSTSavings(ptr ptr) icu.ucal_getDSTSavings
-@ cdecl ucal_getDayOfWeekType(ptr long ptr) icu.ucal_getDayOfWeekType
-@ cdecl ucal_getDefaultTimeZone(ptr long ptr) icu.ucal_getDefaultTimeZone
-@ cdecl ucal_getFieldDifference(ptr long long ptr) icu.ucal_getFieldDifference
-@ cdecl ucal_getGregorianChange(ptr ptr) icu.ucal_getGregorianChange
-@ cdecl ucal_getKeywordValuesForLocale(str str long ptr) icu.ucal_getKeywordValuesForLocale
-@ cdecl ucal_getLimit(ptr long long ptr) icu.ucal_getLimit
-@ cdecl ucal_getLocaleByType(ptr long ptr) icu.ucal_getLocaleByType
-@ cdecl ucal_getMillis(ptr ptr) icu.ucal_getMillis
-@ cdecl ucal_getNow() icu.ucal_getNow
-@ cdecl ucal_getTZDataVersion(ptr) icu.ucal_getTZDataVersion
-@ cdecl ucal_getTimeZoneDisplayName(ptr long str ptr long ptr) icu.ucal_getTimeZoneDisplayName
-@ cdecl ucal_getTimeZoneID(ptr ptr long ptr) icu.ucal_getTimeZoneID
-@ cdecl ucal_getTimeZoneIDForWindowsID(ptr long str ptr long ptr) icu.ucal_getTimeZoneIDForWindowsID
-@ cdecl ucal_getTimeZoneTransitionDate(ptr long ptr ptr) icu.ucal_getTimeZoneTransitionDate
-@ cdecl ucal_getType(ptr ptr) icu.ucal_getType
-@ cdecl ucal_getWeekendTransition(ptr long ptr) icu.ucal_getWeekendTransition
-@ cdecl ucal_getWindowsTimeZoneID(ptr long ptr long ptr) icu.ucal_getWindowsTimeZoneID
-@ cdecl ucal_inDaylightTime(ptr ptr) icu.ucal_inDaylightTime
-@ cdecl ucal_isSet(ptr long) icu.ucal_isSet
-@ cdecl ucal_isWeekend(ptr long ptr) icu.ucal_isWeekend
-@ cdecl ucal_open(ptr long str long ptr) icu.ucal_open
-@ cdecl ucal_openCountryTimeZones(str ptr) icu.ucal_openCountryTimeZones
-@ cdecl ucal_openTimeZoneIDEnumeration(long str ptr ptr) icu.ucal_openTimeZoneIDEnumeration
-@ cdecl ucal_openTimeZones(ptr) icu.ucal_openTimeZones
-@ cdecl ucal_roll(ptr long long ptr) icu.ucal_roll
-@ cdecl ucal_set(ptr long long) icu.ucal_set
-@ cdecl ucal_setAttribute(ptr long long) icu.ucal_setAttribute
-@ cdecl ucal_setDate(ptr long long long ptr) icu.ucal_setDate
-@ cdecl ucal_setDateTime(ptr long long long long long long ptr) icu.ucal_setDateTime
-@ cdecl ucal_setDefaultTimeZone(ptr ptr) icu.ucal_setDefaultTimeZone
-@ cdecl ucal_setGregorianChange(ptr long ptr) icu.ucal_setGregorianChange
-@ cdecl ucal_setMillis(ptr long ptr) icu.ucal_setMillis
-@ cdecl ucal_setTimeZone(ptr ptr long ptr) icu.ucal_setTimeZone
-@ cdecl ucol_cloneBinary(ptr ptr long ptr) icu.ucol_cloneBinary
-@ cdecl ucol_close(ptr) icu.ucol_close
-@ cdecl ucol_closeElements(ptr) icu.ucol_closeElements
-@ cdecl ucol_countAvailable() icu.ucol_countAvailable
-@ cdecl ucol_equal(ptr ptr long ptr long) icu.ucol_equal
-@ cdecl ucol_getAttribute(ptr long ptr) icu.ucol_getAttribute
-@ cdecl ucol_getAvailable(long) icu.ucol_getAvailable
-@ cdecl ucol_getBound(ptr long long long ptr long ptr) icu.ucol_getBound
-@ cdecl ucol_getContractionsAndExpansions(ptr ptr ptr long ptr) icu.ucol_getContractionsAndExpansions
-@ cdecl ucol_getDisplayName(str str ptr long ptr) icu.ucol_getDisplayName
-@ cdecl ucol_getEquivalentReorderCodes(long ptr long ptr) icu.ucol_getEquivalentReorderCodes
-@ cdecl ucol_getFunctionalEquivalent(str long str str ptr ptr) icu.ucol_getFunctionalEquivalent
-@ cdecl ucol_getKeywordValues(str ptr) icu.ucol_getKeywordValues
-@ cdecl ucol_getKeywordValuesForLocale(str str long ptr) icu.ucol_getKeywordValuesForLocale
-@ cdecl ucol_getKeywords(ptr) icu.ucol_getKeywords
-@ cdecl ucol_getLocaleByType(ptr long ptr) icu.ucol_getLocaleByType
-@ cdecl ucol_getMaxExpansion(ptr long) icu.ucol_getMaxExpansion
-@ cdecl ucol_getMaxVariable(ptr) icu.ucol_getMaxVariable
-@ cdecl ucol_getOffset(ptr) icu.ucol_getOffset
-@ cdecl ucol_getReorderCodes(ptr ptr long ptr) icu.ucol_getReorderCodes
-@ cdecl ucol_getRules(ptr ptr) icu.ucol_getRules
-@ cdecl ucol_getRulesEx(ptr long ptr long) icu.ucol_getRulesEx
-@ cdecl ucol_getSortKey(ptr ptr long ptr long) icu.ucol_getSortKey
-@ cdecl ucol_getStrength(ptr) icu.ucol_getStrength
-@ cdecl ucol_getTailoredSet(ptr ptr) icu.ucol_getTailoredSet
-@ cdecl ucol_getUCAVersion(ptr long) icu.ucol_getUCAVersion
-@ cdecl ucol_getVariableTop(ptr ptr) icu.ucol_getVariableTop
-@ cdecl ucol_getVersion(ptr long) icu.ucol_getVersion
-@ cdecl ucol_greater(ptr ptr long ptr long) icu.ucol_greater
-@ cdecl ucol_greaterOrEqual(ptr ptr long ptr long) icu.ucol_greaterOrEqual
-@ cdecl ucol_keyHashCode(ptr long) icu.ucol_keyHashCode
-@ cdecl ucol_mergeSortkeys(ptr long ptr long ptr long) icu.ucol_mergeSortkeys
-@ cdecl ucol_next(ptr ptr) icu.ucol_next
-@ cdecl ucol_nextSortKeyPart(ptr ptr long ptr long ptr) icu.ucol_nextSortKeyPart
-@ cdecl ucol_open(str ptr) icu.ucol_open
-@ cdecl ucol_openAvailableLocales(ptr) icu.ucol_openAvailableLocales
-@ cdecl ucol_openBinary(ptr long ptr ptr) icu.ucol_openBinary
-@ cdecl ucol_openElements(ptr ptr long ptr) icu.ucol_openElements
-@ cdecl ucol_openRules(ptr long long long ptr ptr) icu.ucol_openRules
-@ cdecl ucol_previous(ptr ptr) icu.ucol_previous
-@ cdecl ucol_primaryOrder(long) icu.ucol_primaryOrder
-@ cdecl ucol_reset(ptr) icu.ucol_reset
-@ cdecl ucol_safeClone(ptr ptr ptr ptr) icu.ucol_safeClone
-@ cdecl ucol_secondaryOrder(long) icu.ucol_secondaryOrder
-@ cdecl ucol_setAttribute(ptr long long ptr) icu.ucol_setAttribute
-@ cdecl ucol_setMaxVariable(ptr long ptr) icu.ucol_setMaxVariable
-@ cdecl ucol_setOffset(ptr long ptr) icu.ucol_setOffset
-@ cdecl ucol_setReorderCodes(ptr ptr long ptr) icu.ucol_setReorderCodes
-@ cdecl ucol_setStrength(ptr long) icu.ucol_setStrength
-@ cdecl ucol_setText(ptr ptr long ptr) icu.ucol_setText
-@ cdecl ucol_strcoll(ptr ptr long ptr long) icu.ucol_strcoll
-@ cdecl ucol_strcollIter(ptr ptr ptr ptr) icu.ucol_strcollIter
-@ cdecl ucol_strcollUTF8(ptr str long str long ptr) icu.ucol_strcollUTF8
-@ cdecl ucol_tertiaryOrder(long) icu.ucol_tertiaryOrder
-@ cdecl ucsdet_close(ptr) icu.ucsdet_close
-@ cdecl ucsdet_detect(ptr ptr) icu.ucsdet_detect
-@ cdecl ucsdet_detectAll(ptr ptr ptr) icu.ucsdet_detectAll
-@ cdecl ucsdet_enableInputFilter(ptr long) icu.ucsdet_enableInputFilter
-@ cdecl ucsdet_getAllDetectableCharsets(ptr ptr) icu.ucsdet_getAllDetectableCharsets
-@ cdecl ucsdet_getConfidence(ptr ptr) icu.ucsdet_getConfidence
-@ cdecl ucsdet_getLanguage(ptr ptr) icu.ucsdet_getLanguage
-@ cdecl ucsdet_getName(ptr ptr) icu.ucsdet_getName
-@ cdecl ucsdet_getUChars(ptr ptr long ptr) icu.ucsdet_getUChars
-@ cdecl ucsdet_isInputFilterEnabled(ptr) icu.ucsdet_isInputFilterEnabled
-@ cdecl ucsdet_open(ptr) icu.ucsdet_open
-@ cdecl ucsdet_setDeclaredEncoding(ptr str long ptr) icu.ucsdet_setDeclaredEncoding
-@ cdecl ucsdet_setText(ptr str long ptr) icu.ucsdet_setText
-@ cdecl udat_adoptNumberFormat(ptr ptr) icu.udat_adoptNumberFormat
-@ cdecl udat_adoptNumberFormatForFields(ptr ptr ptr ptr) icu.udat_adoptNumberFormatForFields
-@ cdecl udat_applyPattern(ptr long ptr long) icu.udat_applyPattern
-@ cdecl udat_clone(ptr ptr) icu.udat_clone
-@ cdecl udat_close(ptr) icu.udat_close
-@ cdecl udat_countAvailable() icu.udat_countAvailable
-@ cdecl udat_countSymbols(ptr long) icu.udat_countSymbols
-@ cdecl udat_format(ptr long ptr long ptr ptr) icu.udat_format
-@ cdecl udat_formatCalendar(ptr ptr ptr long ptr ptr) icu.udat_formatCalendar
-@ cdecl udat_formatCalendarForFields(ptr ptr ptr long ptr ptr) icu.udat_formatCalendarForFields
-@ cdecl udat_formatForFields(ptr long ptr long ptr ptr) icu.udat_formatForFields
-@ cdecl udat_get2DigitYearStart(ptr ptr) icu.udat_get2DigitYearStart
-@ cdecl udat_getAvailable(long) icu.udat_getAvailable
-@ cdecl udat_getBooleanAttribute(ptr long ptr) icu.udat_getBooleanAttribute
-@ cdecl udat_getCalendar(ptr) icu.udat_getCalendar
-@ cdecl udat_getContext(ptr long ptr) icu.udat_getContext
-@ cdecl udat_getLocaleByType(ptr long ptr) icu.udat_getLocaleByType
-@ cdecl udat_getNumberFormat(ptr) icu.udat_getNumberFormat
-@ cdecl udat_getNumberFormatForField(ptr long) icu.udat_getNumberFormatForField
-@ cdecl udat_getSymbols(ptr long long ptr long ptr) icu.udat_getSymbols
-@ cdecl udat_isLenient(ptr) icu.udat_isLenient
-@ cdecl udat_open(long long str ptr long ptr long ptr) icu.udat_open
-@ cdecl udat_parse(ptr ptr long ptr ptr) icu.udat_parse
-@ cdecl udat_parseCalendar(ptr ptr ptr long ptr ptr) icu.udat_parseCalendar
-@ cdecl udat_set2DigitYearStart(ptr long ptr) icu.udat_set2DigitYearStart
-@ cdecl udat_setBooleanAttribute(ptr long long ptr) icu.udat_setBooleanAttribute
-@ cdecl udat_setCalendar(ptr ptr) icu.udat_setCalendar
-@ cdecl udat_setContext(ptr long ptr) icu.udat_setContext
-@ cdecl udat_setLenient(ptr long) icu.udat_setLenient
-@ cdecl udat_setNumberFormat(ptr ptr) icu.udat_setNumberFormat
-@ cdecl udat_setSymbols(ptr long long ptr long ptr) icu.udat_setSymbols
-@ cdecl udat_toCalendarDateField(long) icu.udat_toCalendarDateField
-@ cdecl udat_toPattern(ptr long ptr long ptr) icu.udat_toPattern
-@ cdecl udatpg_addPattern(ptr ptr long long ptr long ptr ptr) icu.udatpg_addPattern
-@ cdecl udatpg_clone(ptr ptr) icu.udatpg_clone
-@ cdecl udatpg_close(ptr) icu.udatpg_close
-@ cdecl udatpg_getAppendItemFormat(ptr long ptr) icu.udatpg_getAppendItemFormat
-@ cdecl udatpg_getAppendItemName(ptr long ptr) icu.udatpg_getAppendItemName
-@ cdecl udatpg_getBaseSkeleton(ptr ptr long ptr long ptr) icu.udatpg_getBaseSkeleton
-@ cdecl udatpg_getBestPattern(ptr ptr long ptr long ptr) icu.udatpg_getBestPattern
-@ cdecl udatpg_getBestPatternWithOptions(ptr ptr long long ptr long ptr) icu.udatpg_getBestPatternWithOptions
-@ cdecl udatpg_getDateTimeFormat(ptr ptr) icu.udatpg_getDateTimeFormat
-@ cdecl udatpg_getDecimal(ptr ptr) icu.udatpg_getDecimal
-@ cdecl udatpg_getPatternForSkeleton(ptr ptr long ptr) icu.udatpg_getPatternForSkeleton
-@ cdecl udatpg_getSkeleton(ptr ptr long ptr long ptr) icu.udatpg_getSkeleton
-@ cdecl udatpg_open(str ptr) icu.udatpg_open
-@ cdecl udatpg_openBaseSkeletons(ptr ptr) icu.udatpg_openBaseSkeletons
-@ cdecl udatpg_openEmpty(ptr) icu.udatpg_openEmpty
-@ cdecl udatpg_openSkeletons(ptr ptr) icu.udatpg_openSkeletons
-@ cdecl udatpg_replaceFieldTypes(ptr ptr long ptr long ptr long ptr) icu.udatpg_replaceFieldTypes
-@ cdecl udatpg_replaceFieldTypesWithOptions(ptr ptr long ptr long long ptr long ptr) icu.udatpg_replaceFieldTypesWithOptions
-@ cdecl udatpg_setAppendItemFormat(ptr long ptr long) icu.udatpg_setAppendItemFormat
-@ cdecl udatpg_setAppendItemName(ptr long ptr long) icu.udatpg_setAppendItemName
-@ cdecl udatpg_setDateTimeFormat(ptr ptr long) icu.udatpg_setDateTimeFormat
-@ cdecl udatpg_setDecimal(ptr ptr long) icu.udatpg_setDecimal
-@ cdecl udtitvfmt_close(ptr) icu.udtitvfmt_close
-@ cdecl udtitvfmt_format(ptr long long ptr long ptr ptr) icu.udtitvfmt_format
-@ cdecl udtitvfmt_open(str ptr long ptr long ptr) icu.udtitvfmt_open
-@ cdecl ufieldpositer_close(ptr) icu.ufieldpositer_close
-@ cdecl ufieldpositer_next(ptr ptr ptr) icu.ufieldpositer_next
-@ cdecl ufieldpositer_open(ptr) icu.ufieldpositer_open
-@ cdecl ufmt_close(ptr) icu.ufmt_close
-@ cdecl ufmt_getArrayItemByIndex(ptr long ptr) icu.ufmt_getArrayItemByIndex
-@ cdecl ufmt_getArrayLength(ptr ptr) icu.ufmt_getArrayLength
-@ cdecl ufmt_getDate(ptr ptr) icu.ufmt_getDate
-@ cdecl ufmt_getDecNumChars(ptr ptr ptr) icu.ufmt_getDecNumChars
-@ cdecl ufmt_getDouble(ptr ptr) icu.ufmt_getDouble
-@ cdecl ufmt_getInt64(ptr ptr) icu.ufmt_getInt64
-@ cdecl ufmt_getLong(ptr ptr) icu.ufmt_getLong
-@ cdecl ufmt_getObject(ptr ptr) icu.ufmt_getObject
-@ cdecl ufmt_getType(ptr ptr) icu.ufmt_getType
-@ cdecl ufmt_getUChars(ptr ptr ptr) icu.ufmt_getUChars
-@ cdecl ufmt_isNumeric(ptr) icu.ufmt_isNumeric
-@ cdecl ufmt_open(ptr) icu.ufmt_open
-@ cdecl ugender_getInstance(str ptr) icu.ugender_getInstance
-@ cdecl ugender_getListGender(ptr ptr long ptr) icu.ugender_getListGender
-@ cdecl ulocdata_close(ptr) icu.ulocdata_close
-@ cdecl ulocdata_getCLDRVersion(long ptr) icu.ulocdata_getCLDRVersion
-@ cdecl ulocdata_getDelimiter(ptr long ptr long ptr) icu.ulocdata_getDelimiter
-@ cdecl ulocdata_getExemplarSet(ptr ptr long long ptr) icu.ulocdata_getExemplarSet
-@ cdecl ulocdata_getLocaleDisplayPattern(ptr ptr long ptr) icu.ulocdata_getLocaleDisplayPattern
-@ cdecl ulocdata_getLocaleSeparator(ptr ptr long ptr) icu.ulocdata_getLocaleSeparator
-@ cdecl ulocdata_getMeasurementSystem(str ptr) icu.ulocdata_getMeasurementSystem
-@ cdecl ulocdata_getNoSubstitute(ptr) icu.ulocdata_getNoSubstitute
-@ cdecl ulocdata_getPaperSize(str ptr ptr ptr) icu.ulocdata_getPaperSize
-@ cdecl ulocdata_open(str ptr) icu.ulocdata_open
-@ cdecl ulocdata_setNoSubstitute(ptr long) icu.ulocdata_setNoSubstitute
-@ cdecl umsg_applyPattern(ptr ptr long ptr ptr) icu.umsg_applyPattern
-@ cdecl umsg_autoQuoteApostrophe(ptr long ptr long ptr) icu.umsg_autoQuoteApostrophe
-@ cdecl umsg_clone(ptr ptr) icu.umsg_clone
-@ cdecl umsg_close(ptr) icu.umsg_close
-@ varargs umsg_format(ptr ptr long ptr) icu.umsg_format
-@ cdecl umsg_getLocale(ptr) icu.umsg_getLocale
-@ cdecl umsg_open(ptr long str ptr ptr) icu.umsg_open
-@ varargs umsg_parse(ptr ptr long ptr ptr) icu.umsg_parse
-@ cdecl umsg_setLocale(ptr str) icu.umsg_setLocale
-@ cdecl umsg_toPattern(ptr ptr long ptr) icu.umsg_toPattern
-@ cdecl umsg_vformat(ptr ptr long long ptr) icu.umsg_vformat
-@ cdecl umsg_vparse(ptr ptr long ptr long ptr) icu.umsg_vparse
-@ cdecl unum_applyPattern(ptr long ptr long ptr ptr) icu.unum_applyPattern
-@ cdecl unum_clone(ptr ptr) icu.unum_clone
-@ cdecl unum_close(ptr) icu.unum_close
-@ cdecl unum_countAvailable() icu.unum_countAvailable
-@ cdecl unum_format(ptr long ptr long ptr ptr) icu.unum_format
-@ cdecl unum_formatDecimal(ptr str long ptr long ptr ptr) icu.unum_formatDecimal
-@ cdecl unum_formatDouble(ptr double ptr long ptr ptr) icu.unum_formatDouble
-@ cdecl unum_formatDoubleCurrency(ptr double ptr ptr long ptr ptr) icu.unum_formatDoubleCurrency
-@ cdecl unum_formatDoubleForFields(ptr double ptr long ptr ptr) icu.unum_formatDoubleForFields
-@ cdecl unum_formatInt64(ptr long ptr long ptr ptr) icu.unum_formatInt64
-@ cdecl unum_formatUFormattable(ptr ptr ptr long ptr ptr) icu.unum_formatUFormattable
-@ cdecl unum_getAttribute(ptr long) icu.unum_getAttribute
-@ cdecl unum_getAvailable(long) icu.unum_getAvailable
-@ cdecl unum_getContext(ptr long ptr) icu.unum_getContext
-@ cdecl unum_getDoubleAttribute(ptr long) icu.unum_getDoubleAttribute
-@ cdecl unum_getLocaleByType(ptr long ptr) icu.unum_getLocaleByType
-@ cdecl unum_getSymbol(ptr long ptr long ptr) icu.unum_getSymbol
-@ cdecl unum_getTextAttribute(ptr long ptr long ptr) icu.unum_getTextAttribute
-@ cdecl unum_open(long ptr long str ptr ptr) icu.unum_open
-@ cdecl unum_parse(ptr ptr long ptr ptr) icu.unum_parse
-@ cdecl unum_parseDecimal(ptr ptr long ptr str long ptr) icu.unum_parseDecimal
-@ cdecl unum_parseDouble(ptr ptr long ptr ptr) icu.unum_parseDouble
-@ cdecl unum_parseDoubleCurrency(ptr ptr long ptr ptr ptr) icu.unum_parseDoubleCurrency
-@ cdecl unum_parseInt64(ptr ptr long ptr ptr) icu.unum_parseInt64
-@ cdecl unum_parseToUFormattable(ptr ptr ptr long ptr ptr) icu.unum_parseToUFormattable
-@ cdecl unum_setAttribute(ptr long long) icu.unum_setAttribute
-@ cdecl unum_setContext(ptr long ptr) icu.unum_setContext
-@ cdecl unum_setDoubleAttribute(ptr long double) icu.unum_setDoubleAttribute
-@ cdecl unum_setSymbol(ptr long ptr long ptr) icu.unum_setSymbol
-@ cdecl unum_setTextAttribute(ptr long ptr long ptr) icu.unum_setTextAttribute
-@ cdecl unum_toPattern(ptr long ptr long ptr) icu.unum_toPattern
-@ cdecl unumsys_close(ptr) icu.unumsys_close
-@ cdecl unumsys_getDescription(ptr ptr long ptr) icu.unumsys_getDescription
-@ cdecl unumsys_getName(ptr) icu.unumsys_getName
-@ cdecl unumsys_getRadix(ptr) icu.unumsys_getRadix
-@ cdecl unumsys_isAlgorithmic(ptr) icu.unumsys_isAlgorithmic
-@ cdecl unumsys_open(str ptr) icu.unumsys_open
-@ cdecl unumsys_openAvailableNames(ptr) icu.unumsys_openAvailableNames
-@ cdecl unumsys_openByName(str ptr) icu.unumsys_openByName
-@ cdecl uplrules_close(ptr) icu.uplrules_close
-@ cdecl uplrules_getKeywords(ptr ptr) icu.uplrules_getKeywords
-@ cdecl uplrules_open(str ptr) icu.uplrules_open
-@ cdecl uplrules_openForType(str long ptr) icu.uplrules_openForType
-@ cdecl uplrules_select(ptr double ptr long ptr) icu.uplrules_select
-@ cdecl uregex_appendReplacement(ptr ptr long ptr ptr ptr) icu.uregex_appendReplacement
-@ cdecl uregex_appendReplacementUText(ptr ptr ptr ptr) icu.uregex_appendReplacementUText
-@ cdecl uregex_appendTail(ptr ptr ptr ptr) icu.uregex_appendTail
-@ cdecl uregex_appendTailUText(ptr ptr ptr) icu.uregex_appendTailUText
-@ cdecl uregex_clone(ptr ptr) icu.uregex_clone
-@ cdecl uregex_close(ptr) icu.uregex_close
-@ cdecl uregex_end(ptr long ptr) icu.uregex_end
-@ cdecl uregex_end64(ptr long ptr) icu.uregex_end64
-@ cdecl uregex_find(ptr long ptr) icu.uregex_find
-@ cdecl uregex_find64(ptr long ptr) icu.uregex_find64
-@ cdecl uregex_findNext(ptr ptr) icu.uregex_findNext
-@ cdecl uregex_flags(ptr ptr) icu.uregex_flags
-@ cdecl uregex_getFindProgressCallback(ptr ptr ptr ptr) icu.uregex_getFindProgressCallback
-@ cdecl uregex_getMatchCallback(ptr ptr ptr ptr) icu.uregex_getMatchCallback
-@ cdecl uregex_getStackLimit(ptr ptr) icu.uregex_getStackLimit
-@ cdecl uregex_getText(ptr ptr ptr) icu.uregex_getText
-@ cdecl uregex_getTimeLimit(ptr ptr) icu.uregex_getTimeLimit
-@ cdecl uregex_getUText(ptr ptr ptr) icu.uregex_getUText
-@ cdecl uregex_group(ptr long ptr long ptr) icu.uregex_group
-@ cdecl uregex_groupCount(ptr ptr) icu.uregex_groupCount
-@ cdecl uregex_groupNumberFromCName(ptr str long ptr) icu.uregex_groupNumberFromCName
-@ cdecl uregex_groupNumberFromName(ptr ptr long ptr) icu.uregex_groupNumberFromName
-@ cdecl uregex_groupUText(ptr long ptr ptr ptr) icu.uregex_groupUText
-@ cdecl uregex_hasAnchoringBounds(ptr ptr) icu.uregex_hasAnchoringBounds
-@ cdecl uregex_hasTransparentBounds(ptr ptr) icu.uregex_hasTransparentBounds
-@ cdecl uregex_hitEnd(ptr ptr) icu.uregex_hitEnd
-@ cdecl uregex_lookingAt(ptr long ptr) icu.uregex_lookingAt
-@ cdecl uregex_lookingAt64(ptr long ptr) icu.uregex_lookingAt64
-@ cdecl uregex_matches(ptr long ptr) icu.uregex_matches
-@ cdecl uregex_matches64(ptr long ptr) icu.uregex_matches64
-@ cdecl uregex_open(ptr long long ptr ptr) icu.uregex_open
-@ cdecl uregex_openC(str long ptr ptr) icu.uregex_openC
-@ cdecl uregex_openUText(ptr long ptr ptr) icu.uregex_openUText
-@ cdecl uregex_pattern(ptr ptr ptr) icu.uregex_pattern
-@ cdecl uregex_patternUText(ptr ptr) icu.uregex_patternUText
-@ cdecl uregex_refreshUText(ptr ptr ptr) icu.uregex_refreshUText
-@ cdecl uregex_regionEnd(ptr ptr) icu.uregex_regionEnd
-@ cdecl uregex_regionEnd64(ptr ptr) icu.uregex_regionEnd64
-@ cdecl uregex_regionStart(ptr ptr) icu.uregex_regionStart
-@ cdecl uregex_regionStart64(ptr ptr) icu.uregex_regionStart64
-@ cdecl uregex_replaceAll(ptr ptr long ptr long ptr) icu.uregex_replaceAll
-@ cdecl uregex_replaceAllUText(ptr ptr ptr ptr) icu.uregex_replaceAllUText
-@ cdecl uregex_replaceFirst(ptr ptr long ptr long ptr) icu.uregex_replaceFirst
-@ cdecl uregex_replaceFirstUText(ptr ptr ptr ptr) icu.uregex_replaceFirstUText
-@ cdecl uregex_requireEnd(ptr ptr) icu.uregex_requireEnd
-@ cdecl uregex_reset(ptr long ptr) icu.uregex_reset
-@ cdecl uregex_reset64(ptr long ptr) icu.uregex_reset64
-@ cdecl uregex_setFindProgressCallback(ptr ptr ptr ptr) icu.uregex_setFindProgressCallback
-@ cdecl uregex_setMatchCallback(ptr ptr ptr ptr) icu.uregex_setMatchCallback
-@ cdecl uregex_setRegion(ptr long long ptr) icu.uregex_setRegion
-@ cdecl uregex_setRegion64(ptr long long ptr) icu.uregex_setRegion64
-@ cdecl uregex_setRegionAndStart(ptr long long long ptr) icu.uregex_setRegionAndStart
-@ cdecl uregex_setStackLimit(ptr long ptr) icu.uregex_setStackLimit
-@ cdecl uregex_setText(ptr ptr long ptr) icu.uregex_setText
-@ cdecl uregex_setTimeLimit(ptr long ptr) icu.uregex_setTimeLimit
-@ cdecl uregex_setUText(ptr ptr ptr) icu.uregex_setUText
-@ cdecl uregex_split(ptr ptr long ptr ptr long ptr) icu.uregex_split
-@ cdecl uregex_splitUText(ptr ptr long ptr) icu.uregex_splitUText
-@ cdecl uregex_start(ptr long ptr) icu.uregex_start
-@ cdecl uregex_start64(ptr long ptr) icu.uregex_start64
-@ cdecl uregex_useAnchoringBounds(ptr long ptr) icu.uregex_useAnchoringBounds
-@ cdecl uregex_useTransparentBounds(ptr long ptr) icu.uregex_useTransparentBounds
-@ cdecl uregion_areEqual(ptr ptr) icu.uregion_areEqual
-@ cdecl uregion_contains(ptr ptr) icu.uregion_contains
-@ cdecl uregion_getAvailable(long ptr) icu.uregion_getAvailable
-@ cdecl uregion_getContainedRegions(ptr ptr) icu.uregion_getContainedRegions
-@ cdecl uregion_getContainedRegionsOfType(ptr long ptr) icu.uregion_getContainedRegionsOfType
-@ cdecl uregion_getContainingRegion(ptr) icu.uregion_getContainingRegion
-@ cdecl uregion_getContainingRegionOfType(ptr long) icu.uregion_getContainingRegionOfType
-@ cdecl uregion_getNumericCode(ptr) icu.uregion_getNumericCode
-@ cdecl uregion_getPreferredValues(ptr ptr) icu.uregion_getPreferredValues
-@ cdecl uregion_getRegionCode(ptr) icu.uregion_getRegionCode
-@ cdecl uregion_getRegionFromCode(str ptr) icu.uregion_getRegionFromCode
-@ cdecl uregion_getRegionFromNumericCode(long ptr) icu.uregion_getRegionFromNumericCode
-@ cdecl uregion_getType(ptr) icu.uregion_getType
-@ cdecl ureldatefmt_close(ptr) icu.ureldatefmt_close
-@ cdecl ureldatefmt_combineDateAndTime(ptr ptr long ptr long ptr long ptr) icu.ureldatefmt_combineDateAndTime
-@ cdecl ureldatefmt_format(ptr double long ptr long ptr) icu.ureldatefmt_format
-@ cdecl ureldatefmt_formatNumeric(ptr double long ptr long ptr) icu.ureldatefmt_formatNumeric
-@ cdecl ureldatefmt_open(str ptr long long ptr) icu.ureldatefmt_open
-@ cdecl usearch_close(ptr) icu.usearch_close
-@ cdecl usearch_first(ptr ptr) icu.usearch_first
-@ cdecl usearch_following(ptr long ptr) icu.usearch_following
-@ cdecl usearch_getAttribute(ptr long) icu.usearch_getAttribute
-@ cdecl usearch_getBreakIterator(ptr) icu.usearch_getBreakIterator
-@ cdecl usearch_getCollator(ptr) icu.usearch_getCollator
-@ cdecl usearch_getMatchedLength(ptr) icu.usearch_getMatchedLength
-@ cdecl usearch_getMatchedStart(ptr) icu.usearch_getMatchedStart
-@ cdecl usearch_getMatchedText(ptr ptr long ptr) icu.usearch_getMatchedText
-@ cdecl usearch_getOffset(ptr) icu.usearch_getOffset
-@ cdecl usearch_getPattern(ptr ptr) icu.usearch_getPattern
-@ cdecl usearch_getText(ptr ptr) icu.usearch_getText
-@ cdecl usearch_last(ptr ptr) icu.usearch_last
-@ cdecl usearch_next(ptr ptr) icu.usearch_next
-@ cdecl usearch_open(ptr long ptr long str ptr ptr) icu.usearch_open
-@ cdecl usearch_openFromCollator(ptr long ptr long ptr ptr ptr) icu.usearch_openFromCollator
-@ cdecl usearch_preceding(ptr long ptr) icu.usearch_preceding
-@ cdecl usearch_previous(ptr ptr) icu.usearch_previous
-@ cdecl usearch_reset(ptr) icu.usearch_reset
-@ cdecl usearch_setAttribute(ptr long long ptr) icu.usearch_setAttribute
-@ cdecl usearch_setBreakIterator(ptr ptr ptr) icu.usearch_setBreakIterator
-@ cdecl usearch_setCollator(ptr ptr ptr) icu.usearch_setCollator
-@ cdecl usearch_setOffset(ptr long ptr) icu.usearch_setOffset
-@ cdecl usearch_setPattern(ptr ptr long ptr) icu.usearch_setPattern
-@ cdecl usearch_setText(ptr ptr long ptr) icu.usearch_setText
-@ cdecl uspoof_areConfusable(ptr ptr long ptr long ptr) icu.uspoof_areConfusable
-@ cdecl uspoof_areConfusableUTF8(ptr str long str long ptr) icu.uspoof_areConfusableUTF8
-@ cdecl uspoof_check(ptr ptr long ptr ptr) icu.uspoof_check
-@ cdecl uspoof_check2(ptr ptr long ptr ptr) icu.uspoof_check2
-@ cdecl uspoof_check2UTF8(ptr str long ptr ptr) icu.uspoof_check2UTF8
-@ cdecl uspoof_checkUTF8(ptr str long ptr ptr) icu.uspoof_checkUTF8
-@ cdecl uspoof_clone(ptr ptr) icu.uspoof_clone
-@ cdecl uspoof_close(ptr) icu.uspoof_close
-@ cdecl uspoof_closeCheckResult(ptr) icu.uspoof_closeCheckResult
-@ cdecl uspoof_getAllowedChars(ptr ptr) icu.uspoof_getAllowedChars
-@ cdecl uspoof_getAllowedLocales(ptr ptr) icu.uspoof_getAllowedLocales
-@ cdecl uspoof_getCheckResultChecks(ptr ptr) icu.uspoof_getCheckResultChecks
-@ cdecl uspoof_getCheckResultNumerics(ptr ptr) icu.uspoof_getCheckResultNumerics
-@ cdecl uspoof_getCheckResultRestrictionLevel(ptr ptr) icu.uspoof_getCheckResultRestrictionLevel
-@ cdecl uspoof_getChecks(ptr ptr) icu.uspoof_getChecks
-@ cdecl uspoof_getInclusionSet(ptr) icu.uspoof_getInclusionSet
-@ cdecl uspoof_getRecommendedSet(ptr) icu.uspoof_getRecommendedSet
-@ cdecl uspoof_getRestrictionLevel(ptr) icu.uspoof_getRestrictionLevel
-@ cdecl uspoof_getSkeleton(ptr long ptr long ptr long ptr) icu.uspoof_getSkeleton
-@ cdecl uspoof_getSkeletonUTF8(ptr long str long str long ptr) icu.uspoof_getSkeletonUTF8
-@ cdecl uspoof_open(ptr) icu.uspoof_open
-@ cdecl uspoof_openCheckResult(ptr) icu.uspoof_openCheckResult
-@ cdecl uspoof_openFromSerialized(ptr long ptr ptr) icu.uspoof_openFromSerialized
-@ cdecl uspoof_openFromSource(str long str long ptr ptr ptr) icu.uspoof_openFromSource
-@ cdecl uspoof_serialize(ptr ptr long ptr) icu.uspoof_serialize
-@ cdecl uspoof_setAllowedChars(ptr ptr ptr) icu.uspoof_setAllowedChars
-@ cdecl uspoof_setAllowedLocales(ptr str ptr) icu.uspoof_setAllowedLocales
-@ cdecl uspoof_setChecks(ptr long ptr) icu.uspoof_setChecks
-@ cdecl uspoof_setRestrictionLevel(ptr long) icu.uspoof_setRestrictionLevel
-@ cdecl utmscale_fromInt64(long long ptr) icu.utmscale_fromInt64
-@ cdecl utmscale_getTimeScaleValue(long long ptr) icu.utmscale_getTimeScaleValue
-@ cdecl utmscale_toInt64(long long ptr) icu.utmscale_toInt64
-@ cdecl utrans_clone(ptr ptr) icu.utrans_clone
-@ cdecl utrans_close(ptr) icu.utrans_close
-@ cdecl utrans_countAvailableIDs() icu.utrans_countAvailableIDs
-@ cdecl utrans_getSourceSet(ptr long ptr ptr) icu.utrans_getSourceSet
-@ cdecl utrans_getUnicodeID(ptr ptr) icu.utrans_getUnicodeID
-@ cdecl utrans_openIDs(ptr) icu.utrans_openIDs
-@ cdecl utrans_openInverse(ptr ptr) icu.utrans_openInverse
-@ cdecl utrans_openU(ptr long long ptr long ptr ptr) icu.utrans_openU
-@ cdecl utrans_register(ptr ptr) icu.utrans_register
-@ cdecl utrans_setFilter(ptr ptr long ptr) icu.utrans_setFilter
-@ cdecl utrans_toRules(ptr long ptr long ptr) icu.utrans_toRules
-@ cdecl utrans_trans(ptr ptr ptr long ptr ptr) icu.utrans_trans
-@ cdecl utrans_transIncremental(ptr ptr ptr ptr ptr) icu.utrans_transIncremental
-@ cdecl utrans_transIncrementalUChars(ptr ptr ptr long ptr ptr) icu.utrans_transIncrementalUChars
-@ cdecl utrans_transUChars(ptr ptr ptr long long ptr ptr) icu.utrans_transUChars
-@ cdecl utrans_unregisterID(ptr long) icu.utrans_unregisterID
+@ cdecl -norelay u_formatMessage() icu.u_formatMessage
+@ cdecl -norelay u_formatMessageWithError() icu.u_formatMessageWithError
+@ cdecl -norelay u_parseMessage() icu.u_parseMessage
+@ cdecl -norelay u_parseMessageWithError() icu.u_parseMessageWithError
+@ cdecl -norelay u_vformatMessage() icu.u_vformatMessage
+@ cdecl -norelay u_vformatMessageWithError() icu.u_vformatMessageWithError
+@ cdecl -norelay u_vparseMessage() icu.u_vparseMessage
+@ cdecl -norelay u_vparseMessageWithError() icu.u_vparseMessageWithError
+@ cdecl -norelay ucal_add() icu.ucal_add
+@ cdecl -norelay ucal_clear() icu.ucal_clear
+@ cdecl -norelay ucal_clearField() icu.ucal_clearField
+@ cdecl -norelay ucal_clone() icu.ucal_clone
+@ cdecl -norelay ucal_close() icu.ucal_close
+@ cdecl -norelay ucal_countAvailable() icu.ucal_countAvailable
+@ cdecl -norelay ucal_equivalentTo() icu.ucal_equivalentTo
+@ cdecl -norelay ucal_get() icu.ucal_get
+@ cdecl -norelay ucal_getAttribute() icu.ucal_getAttribute
+@ cdecl -norelay ucal_getAvailable() icu.ucal_getAvailable
+@ cdecl -norelay ucal_getCanonicalTimeZoneID() icu.ucal_getCanonicalTimeZoneID
+@ cdecl -norelay ucal_getDSTSavings() icu.ucal_getDSTSavings
+@ cdecl -norelay ucal_getDayOfWeekType() icu.ucal_getDayOfWeekType
+@ cdecl -norelay ucal_getDefaultTimeZone() icu.ucal_getDefaultTimeZone
+@ cdecl -norelay ucal_getFieldDifference() icu.ucal_getFieldDifference
+@ cdecl -norelay ucal_getGregorianChange() icu.ucal_getGregorianChange
+@ cdecl -norelay ucal_getKeywordValuesForLocale() icu.ucal_getKeywordValuesForLocale
+@ cdecl -norelay ucal_getLimit() icu.ucal_getLimit
+@ cdecl -norelay ucal_getLocaleByType() icu.ucal_getLocaleByType
+@ cdecl -norelay ucal_getMillis() icu.ucal_getMillis
+@ cdecl -norelay ucal_getNow() icu.ucal_getNow
+@ cdecl -norelay ucal_getTZDataVersion() icu.ucal_getTZDataVersion
+@ cdecl -norelay ucal_getTimeZoneDisplayName() icu.ucal_getTimeZoneDisplayName
+@ cdecl -norelay ucal_getTimeZoneID() icu.ucal_getTimeZoneID
+@ cdecl -norelay ucal_getTimeZoneIDForWindowsID() icu.ucal_getTimeZoneIDForWindowsID
+@ cdecl -norelay ucal_getTimeZoneTransitionDate() icu.ucal_getTimeZoneTransitionDate
+@ cdecl -norelay ucal_getType() icu.ucal_getType
+@ cdecl -norelay ucal_getWeekendTransition() icu.ucal_getWeekendTransition
+@ cdecl -norelay ucal_getWindowsTimeZoneID() icu.ucal_getWindowsTimeZoneID
+@ cdecl -norelay ucal_inDaylightTime() icu.ucal_inDaylightTime
+@ cdecl -norelay ucal_isSet() icu.ucal_isSet
+@ cdecl -norelay ucal_isWeekend() icu.ucal_isWeekend
+@ cdecl -norelay ucal_open() icu.ucal_open
+@ cdecl -norelay ucal_openCountryTimeZones() icu.ucal_openCountryTimeZones
+@ cdecl -norelay ucal_openTimeZoneIDEnumeration() icu.ucal_openTimeZoneIDEnumeration
+@ cdecl -norelay ucal_openTimeZones() icu.ucal_openTimeZones
+@ cdecl -norelay ucal_roll() icu.ucal_roll
+@ cdecl -norelay ucal_set() icu.ucal_set
+@ cdecl -norelay ucal_setAttribute() icu.ucal_setAttribute
+@ cdecl -norelay ucal_setDate() icu.ucal_setDate
+@ cdecl -norelay ucal_setDateTime() icu.ucal_setDateTime
+@ cdecl -norelay ucal_setDefaultTimeZone() icu.ucal_setDefaultTimeZone
+@ cdecl -norelay ucal_setGregorianChange() icu.ucal_setGregorianChange
+@ cdecl -norelay ucal_setMillis() icu.ucal_setMillis
+@ cdecl -norelay ucal_setTimeZone() icu.ucal_setTimeZone
+@ cdecl -norelay ucol_cloneBinary() icu.ucol_cloneBinary
+@ cdecl -norelay ucol_close() icu.ucol_close
+@ cdecl -norelay ucol_closeElements() icu.ucol_closeElements
+@ cdecl -norelay ucol_countAvailable() icu.ucol_countAvailable
+@ cdecl -norelay ucol_equal() icu.ucol_equal
+@ cdecl -norelay ucol_getAttribute() icu.ucol_getAttribute
+@ cdecl -norelay ucol_getAvailable() icu.ucol_getAvailable
+@ cdecl -norelay ucol_getBound() icu.ucol_getBound
+@ cdecl -norelay ucol_getContractionsAndExpansions() icu.ucol_getContractionsAndExpansions
+@ cdecl -norelay ucol_getDisplayName() icu.ucol_getDisplayName
+@ cdecl -norelay ucol_getEquivalentReorderCodes() icu.ucol_getEquivalentReorderCodes
+@ cdecl -norelay ucol_getFunctionalEquivalent() icu.ucol_getFunctionalEquivalent
+@ cdecl -norelay ucol_getKeywordValues() icu.ucol_getKeywordValues
+@ cdecl -norelay ucol_getKeywordValuesForLocale() icu.ucol_getKeywordValuesForLocale
+@ cdecl -norelay ucol_getKeywords() icu.ucol_getKeywords
+@ cdecl -norelay ucol_getLocaleByType() icu.ucol_getLocaleByType
+@ cdecl -norelay ucol_getMaxExpansion() icu.ucol_getMaxExpansion
+@ cdecl -norelay ucol_getMaxVariable() icu.ucol_getMaxVariable
+@ cdecl -norelay ucol_getOffset() icu.ucol_getOffset
+@ cdecl -norelay ucol_getReorderCodes() icu.ucol_getReorderCodes
+@ cdecl -norelay ucol_getRules() icu.ucol_getRules
+@ cdecl -norelay ucol_getRulesEx() icu.ucol_getRulesEx
+@ cdecl -norelay ucol_getSortKey() icu.ucol_getSortKey
+@ cdecl -norelay ucol_getStrength() icu.ucol_getStrength
+@ cdecl -norelay ucol_getTailoredSet() icu.ucol_getTailoredSet
+@ cdecl -norelay ucol_getUCAVersion() icu.ucol_getUCAVersion
+@ cdecl -norelay ucol_getVariableTop() icu.ucol_getVariableTop
+@ cdecl -norelay ucol_getVersion() icu.ucol_getVersion
+@ cdecl -norelay ucol_greater() icu.ucol_greater
+@ cdecl -norelay ucol_greaterOrEqual() icu.ucol_greaterOrEqual
+@ cdecl -norelay ucol_keyHashCode() icu.ucol_keyHashCode
+@ cdecl -norelay ucol_mergeSortkeys() icu.ucol_mergeSortkeys
+@ cdecl -norelay ucol_next() icu.ucol_next
+@ cdecl -norelay ucol_nextSortKeyPart() icu.ucol_nextSortKeyPart
+@ cdecl -norelay ucol_open() icu.ucol_open
+@ cdecl -norelay ucol_openAvailableLocales() icu.ucol_openAvailableLocales
+@ cdecl -norelay ucol_openBinary() icu.ucol_openBinary
+@ cdecl -norelay ucol_openElements() icu.ucol_openElements
+@ cdecl -norelay ucol_openRules() icu.ucol_openRules
+@ cdecl -norelay ucol_previous() icu.ucol_previous
+@ cdecl -norelay ucol_primaryOrder() icu.ucol_primaryOrder
+@ cdecl -norelay ucol_reset() icu.ucol_reset
+@ cdecl -norelay ucol_safeClone() icu.ucol_safeClone
+@ cdecl -norelay ucol_secondaryOrder() icu.ucol_secondaryOrder
+@ cdecl -norelay ucol_setAttribute() icu.ucol_setAttribute
+@ cdecl -norelay ucol_setMaxVariable() icu.ucol_setMaxVariable
+@ cdecl -norelay ucol_setOffset() icu.ucol_setOffset
+@ cdecl -norelay ucol_setReorderCodes() icu.ucol_setReorderCodes
+@ cdecl -norelay ucol_setStrength() icu.ucol_setStrength
+@ cdecl -norelay ucol_setText() icu.ucol_setText
+@ cdecl -norelay ucol_strcoll() icu.ucol_strcoll
+@ cdecl -norelay ucol_strcollIter() icu.ucol_strcollIter
+@ cdecl -norelay ucol_strcollUTF8() icu.ucol_strcollUTF8
+@ cdecl -norelay ucol_tertiaryOrder() icu.ucol_tertiaryOrder
+@ cdecl -norelay ucsdet_close() icu.ucsdet_close
+@ cdecl -norelay ucsdet_detect() icu.ucsdet_detect
+@ cdecl -norelay ucsdet_detectAll() icu.ucsdet_detectAll
+@ cdecl -norelay ucsdet_enableInputFilter() icu.ucsdet_enableInputFilter
+@ cdecl -norelay ucsdet_getAllDetectableCharsets() icu.ucsdet_getAllDetectableCharsets
+@ cdecl -norelay ucsdet_getConfidence() icu.ucsdet_getConfidence
+@ cdecl -norelay ucsdet_getLanguage() icu.ucsdet_getLanguage
+@ cdecl -norelay ucsdet_getName() icu.ucsdet_getName
+@ cdecl -norelay ucsdet_getUChars() icu.ucsdet_getUChars
+@ cdecl -norelay ucsdet_isInputFilterEnabled() icu.ucsdet_isInputFilterEnabled
+@ cdecl -norelay ucsdet_open() icu.ucsdet_open
+@ cdecl -norelay ucsdet_setDeclaredEncoding() icu.ucsdet_setDeclaredEncoding
+@ cdecl -norelay ucsdet_setText() icu.ucsdet_setText
+@ cdecl -norelay udat_adoptNumberFormat() icu.udat_adoptNumberFormat
+@ cdecl -norelay udat_adoptNumberFormatForFields() icu.udat_adoptNumberFormatForFields
+@ cdecl -norelay udat_applyPattern() icu.udat_applyPattern
+@ cdecl -norelay udat_clone() icu.udat_clone
+@ cdecl -norelay udat_close() icu.udat_close
+@ cdecl -norelay udat_countAvailable() icu.udat_countAvailable
+@ cdecl -norelay udat_countSymbols() icu.udat_countSymbols
+@ cdecl -norelay udat_format() icu.udat_format
+@ cdecl -norelay udat_formatCalendar() icu.udat_formatCalendar
+@ cdecl -norelay udat_formatCalendarForFields() icu.udat_formatCalendarForFields
+@ cdecl -norelay udat_formatForFields() icu.udat_formatForFields
+@ cdecl -norelay udat_get2DigitYearStart() icu.udat_get2DigitYearStart
+@ cdecl -norelay udat_getAvailable() icu.udat_getAvailable
+@ cdecl -norelay udat_getBooleanAttribute() icu.udat_getBooleanAttribute
+@ cdecl -norelay udat_getCalendar() icu.udat_getCalendar
+@ cdecl -norelay udat_getContext() icu.udat_getContext
+@ cdecl -norelay udat_getLocaleByType() icu.udat_getLocaleByType
+@ cdecl -norelay udat_getNumberFormat() icu.udat_getNumberFormat
+@ cdecl -norelay udat_getNumberFormatForField() icu.udat_getNumberFormatForField
+@ cdecl -norelay udat_getSymbols() icu.udat_getSymbols
+@ cdecl -norelay udat_isLenient() icu.udat_isLenient
+@ cdecl -norelay udat_open() icu.udat_open
+@ cdecl -norelay udat_parse() icu.udat_parse
+@ cdecl -norelay udat_parseCalendar() icu.udat_parseCalendar
+@ cdecl -norelay udat_set2DigitYearStart() icu.udat_set2DigitYearStart
+@ cdecl -norelay udat_setBooleanAttribute() icu.udat_setBooleanAttribute
+@ cdecl -norelay udat_setCalendar() icu.udat_setCalendar
+@ cdecl -norelay udat_setContext() icu.udat_setContext
+@ cdecl -norelay udat_setLenient() icu.udat_setLenient
+@ cdecl -norelay udat_setNumberFormat() icu.udat_setNumberFormat
+@ cdecl -norelay udat_setSymbols() icu.udat_setSymbols
+@ cdecl -norelay udat_toCalendarDateField() icu.udat_toCalendarDateField
+@ cdecl -norelay udat_toPattern() icu.udat_toPattern
+@ cdecl -norelay udatpg_addPattern() icu.udatpg_addPattern
+@ cdecl -norelay udatpg_clone() icu.udatpg_clone
+@ cdecl -norelay udatpg_close() icu.udatpg_close
+@ cdecl -norelay udatpg_getAppendItemFormat() icu.udatpg_getAppendItemFormat
+@ cdecl -norelay udatpg_getAppendItemName() icu.udatpg_getAppendItemName
+@ cdecl -norelay udatpg_getBaseSkeleton() icu.udatpg_getBaseSkeleton
+@ cdecl -norelay udatpg_getBestPattern() icu.udatpg_getBestPattern
+@ cdecl -norelay udatpg_getBestPatternWithOptions() icu.udatpg_getBestPatternWithOptions
+@ cdecl -norelay udatpg_getDateTimeFormat() icu.udatpg_getDateTimeFormat
+@ cdecl -norelay udatpg_getDecimal() icu.udatpg_getDecimal
+@ cdecl -norelay udatpg_getPatternForSkeleton() icu.udatpg_getPatternForSkeleton
+@ cdecl -norelay udatpg_getSkeleton() icu.udatpg_getSkeleton
+@ cdecl -norelay udatpg_open() icu.udatpg_open
+@ cdecl -norelay udatpg_openBaseSkeletons() icu.udatpg_openBaseSkeletons
+@ cdecl -norelay udatpg_openEmpty() icu.udatpg_openEmpty
+@ cdecl -norelay udatpg_openSkeletons() icu.udatpg_openSkeletons
+@ cdecl -norelay udatpg_replaceFieldTypes() icu.udatpg_replaceFieldTypes
+@ cdecl -norelay udatpg_replaceFieldTypesWithOptions() icu.udatpg_replaceFieldTypesWithOptions
+@ cdecl -norelay udatpg_setAppendItemFormat() icu.udatpg_setAppendItemFormat
+@ cdecl -norelay udatpg_setAppendItemName() icu.udatpg_setAppendItemName
+@ cdecl -norelay udatpg_setDateTimeFormat() icu.udatpg_setDateTimeFormat
+@ cdecl -norelay udatpg_setDecimal() icu.udatpg_setDecimal
+@ cdecl -norelay udtitvfmt_close() icu.udtitvfmt_close
+@ cdecl -norelay udtitvfmt_format() icu.udtitvfmt_format
+@ cdecl -norelay udtitvfmt_open() icu.udtitvfmt_open
+@ cdecl -norelay ufieldpositer_close() icu.ufieldpositer_close
+@ cdecl -norelay ufieldpositer_next() icu.ufieldpositer_next
+@ cdecl -norelay ufieldpositer_open() icu.ufieldpositer_open
+@ cdecl -norelay ufmt_close() icu.ufmt_close
+@ cdecl -norelay ufmt_getArrayItemByIndex() icu.ufmt_getArrayItemByIndex
+@ cdecl -norelay ufmt_getArrayLength() icu.ufmt_getArrayLength
+@ cdecl -norelay ufmt_getDate() icu.ufmt_getDate
+@ cdecl -norelay ufmt_getDecNumChars() icu.ufmt_getDecNumChars
+@ cdecl -norelay ufmt_getDouble() icu.ufmt_getDouble
+@ cdecl -norelay ufmt_getInt64() icu.ufmt_getInt64
+@ cdecl -norelay ufmt_getLong() icu.ufmt_getLong
+@ cdecl -norelay ufmt_getObject() icu.ufmt_getObject
+@ cdecl -norelay ufmt_getType() icu.ufmt_getType
+@ cdecl -norelay ufmt_getUChars() icu.ufmt_getUChars
+@ cdecl -norelay ufmt_isNumeric() icu.ufmt_isNumeric
+@ cdecl -norelay ufmt_open() icu.ufmt_open
+@ cdecl -norelay ugender_getInstance() icu.ugender_getInstance
+@ cdecl -norelay ugender_getListGender() icu.ugender_getListGender
+@ cdecl -norelay ulocdata_close() icu.ulocdata_close
+@ cdecl -norelay ulocdata_getCLDRVersion() icu.ulocdata_getCLDRVersion
+@ cdecl -norelay ulocdata_getDelimiter() icu.ulocdata_getDelimiter
+@ cdecl -norelay ulocdata_getExemplarSet() icu.ulocdata_getExemplarSet
+@ cdecl -norelay ulocdata_getLocaleDisplayPattern() icu.ulocdata_getLocaleDisplayPattern
+@ cdecl -norelay ulocdata_getLocaleSeparator() icu.ulocdata_getLocaleSeparator
+@ cdecl -norelay ulocdata_getMeasurementSystem() icu.ulocdata_getMeasurementSystem
+@ cdecl -norelay ulocdata_getNoSubstitute() icu.ulocdata_getNoSubstitute
+@ cdecl -norelay ulocdata_getPaperSize() icu.ulocdata_getPaperSize
+@ cdecl -norelay ulocdata_open() icu.ulocdata_open
+@ cdecl -norelay ulocdata_setNoSubstitute() icu.ulocdata_setNoSubstitute
+@ cdecl -norelay umsg_applyPattern() icu.umsg_applyPattern
+@ cdecl -norelay umsg_autoQuoteApostrophe() icu.umsg_autoQuoteApostrophe
+@ cdecl -norelay umsg_clone() icu.umsg_clone
+@ cdecl -norelay umsg_close() icu.umsg_close
+@ cdecl -norelay umsg_format() icu.umsg_format
+@ cdecl -norelay umsg_getLocale() icu.umsg_getLocale
+@ cdecl -norelay umsg_open() icu.umsg_open
+@ cdecl -norelay umsg_parse() icu.umsg_parse
+@ cdecl -norelay umsg_setLocale() icu.umsg_setLocale
+@ cdecl -norelay umsg_toPattern() icu.umsg_toPattern
+@ cdecl -norelay umsg_vformat() icu.umsg_vformat
+@ cdecl -norelay umsg_vparse() icu.umsg_vparse
+@ cdecl -norelay unum_applyPattern() icu.unum_applyPattern
+@ cdecl -norelay unum_clone() icu.unum_clone
+@ cdecl -norelay unum_close() icu.unum_close
+@ cdecl -norelay unum_countAvailable() icu.unum_countAvailable
+@ cdecl -norelay unum_format() icu.unum_format
+@ cdecl -norelay unum_formatDecimal() icu.unum_formatDecimal
+@ cdecl -norelay unum_formatDouble() icu.unum_formatDouble
+@ cdecl -norelay unum_formatDoubleCurrency() icu.unum_formatDoubleCurrency
+@ cdecl -norelay unum_formatDoubleForFields() icu.unum_formatDoubleForFields
+@ cdecl -norelay unum_formatInt64() icu.unum_formatInt64
+@ cdecl -norelay unum_formatUFormattable() icu.unum_formatUFormattable
+@ cdecl -norelay unum_getAttribute() icu.unum_getAttribute
+@ cdecl -norelay unum_getAvailable() icu.unum_getAvailable
+@ cdecl -norelay unum_getContext() icu.unum_getContext
+@ cdecl -norelay unum_getDoubleAttribute() icu.unum_getDoubleAttribute
+@ cdecl -norelay unum_getLocaleByType() icu.unum_getLocaleByType
+@ cdecl -norelay unum_getSymbol() icu.unum_getSymbol
+@ cdecl -norelay unum_getTextAttribute() icu.unum_getTextAttribute
+@ cdecl -norelay unum_open() icu.unum_open
+@ cdecl -norelay unum_parse() icu.unum_parse
+@ cdecl -norelay unum_parseDecimal() icu.unum_parseDecimal
+@ cdecl -norelay unum_parseDouble() icu.unum_parseDouble
+@ cdecl -norelay unum_parseDoubleCurrency() icu.unum_parseDoubleCurrency
+@ cdecl -norelay unum_parseInt64() icu.unum_parseInt64
+@ cdecl -norelay unum_parseToUFormattable() icu.unum_parseToUFormattable
+@ cdecl -norelay unum_setAttribute() icu.unum_setAttribute
+@ cdecl -norelay unum_setContext() icu.unum_setContext
+@ cdecl -norelay unum_setDoubleAttribute() icu.unum_setDoubleAttribute
+@ cdecl -norelay unum_setSymbol() icu.unum_setSymbol
+@ cdecl -norelay unum_setTextAttribute() icu.unum_setTextAttribute
+@ cdecl -norelay unum_toPattern() icu.unum_toPattern
+@ cdecl -norelay unumsys_close() icu.unumsys_close
+@ cdecl -norelay unumsys_getDescription() icu.unumsys_getDescription
+@ cdecl -norelay unumsys_getName() icu.unumsys_getName
+@ cdecl -norelay unumsys_getRadix() icu.unumsys_getRadix
+@ cdecl -norelay unumsys_isAlgorithmic() icu.unumsys_isAlgorithmic
+@ cdecl -norelay unumsys_open() icu.unumsys_open
+@ cdecl -norelay unumsys_openAvailableNames() icu.unumsys_openAvailableNames
+@ cdecl -norelay unumsys_openByName() icu.unumsys_openByName
+@ cdecl -norelay uplrules_close() icu.uplrules_close
+@ cdecl -norelay uplrules_getKeywords() icu.uplrules_getKeywords
+@ cdecl -norelay uplrules_open() icu.uplrules_open
+@ cdecl -norelay uplrules_openForType() icu.uplrules_openForType
+@ cdecl -norelay uplrules_select() icu.uplrules_select
+@ cdecl -norelay uregex_appendReplacement() icu.uregex_appendReplacement
+@ cdecl -norelay uregex_appendReplacementUText() icu.uregex_appendReplacementUText
+@ cdecl -norelay uregex_appendTail() icu.uregex_appendTail
+@ cdecl -norelay uregex_appendTailUText() icu.uregex_appendTailUText
+@ cdecl -norelay uregex_clone() icu.uregex_clone
+@ cdecl -norelay uregex_close() icu.uregex_close
+@ cdecl -norelay uregex_end() icu.uregex_end
+@ cdecl -norelay uregex_end64() icu.uregex_end64
+@ cdecl -norelay uregex_find() icu.uregex_find
+@ cdecl -norelay uregex_find64() icu.uregex_find64
+@ cdecl -norelay uregex_findNext() icu.uregex_findNext
+@ cdecl -norelay uregex_flags() icu.uregex_flags
+@ cdecl -norelay uregex_getFindProgressCallback() icu.uregex_getFindProgressCallback
+@ cdecl -norelay uregex_getMatchCallback() icu.uregex_getMatchCallback
+@ cdecl -norelay uregex_getStackLimit() icu.uregex_getStackLimit
+@ cdecl -norelay uregex_getText() icu.uregex_getText
+@ cdecl -norelay uregex_getTimeLimit() icu.uregex_getTimeLimit
+@ cdecl -norelay uregex_getUText() icu.uregex_getUText
+@ cdecl -norelay uregex_group() icu.uregex_group
+@ cdecl -norelay uregex_groupCount() icu.uregex_groupCount
+@ cdecl -norelay uregex_groupNumberFromCName() icu.uregex_groupNumberFromCName
+@ cdecl -norelay uregex_groupNumberFromName() icu.uregex_groupNumberFromName
+@ cdecl -norelay uregex_groupUText() icu.uregex_groupUText
+@ cdecl -norelay uregex_hasAnchoringBounds() icu.uregex_hasAnchoringBounds
+@ cdecl -norelay uregex_hasTransparentBounds() icu.uregex_hasTransparentBounds
+@ cdecl -norelay uregex_hitEnd() icu.uregex_hitEnd
+@ cdecl -norelay uregex_lookingAt() icu.uregex_lookingAt
+@ cdecl -norelay uregex_lookingAt64() icu.uregex_lookingAt64
+@ cdecl -norelay uregex_matches() icu.uregex_matches
+@ cdecl -norelay uregex_matches64() icu.uregex_matches64
+@ cdecl -norelay uregex_open() icu.uregex_open
+@ cdecl -norelay uregex_openC() icu.uregex_openC
+@ cdecl -norelay uregex_openUText() icu.uregex_openUText
+@ cdecl -norelay uregex_pattern() icu.uregex_pattern
+@ cdecl -norelay uregex_patternUText() icu.uregex_patternUText
+@ cdecl -norelay uregex_refreshUText() icu.uregex_refreshUText
+@ cdecl -norelay uregex_regionEnd() icu.uregex_regionEnd
+@ cdecl -norelay uregex_regionEnd64() icu.uregex_regionEnd64
+@ cdecl -norelay uregex_regionStart() icu.uregex_regionStart
+@ cdecl -norelay uregex_regionStart64() icu.uregex_regionStart64
+@ cdecl -norelay uregex_replaceAll() icu.uregex_replaceAll
+@ cdecl -norelay uregex_replaceAllUText() icu.uregex_replaceAllUText
+@ cdecl -norelay uregex_replaceFirst() icu.uregex_replaceFirst
+@ cdecl -norelay uregex_replaceFirstUText() icu.uregex_replaceFirstUText
+@ cdecl -norelay uregex_requireEnd() icu.uregex_requireEnd
+@ cdecl -norelay uregex_reset() icu.uregex_reset
+@ cdecl -norelay uregex_reset64() icu.uregex_reset64
+@ cdecl -norelay uregex_setFindProgressCallback() icu.uregex_setFindProgressCallback
+@ cdecl -norelay uregex_setMatchCallback() icu.uregex_setMatchCallback
+@ cdecl -norelay uregex_setRegion() icu.uregex_setRegion
+@ cdecl -norelay uregex_setRegion64() icu.uregex_setRegion64
+@ cdecl -norelay uregex_setRegionAndStart() icu.uregex_setRegionAndStart
+@ cdecl -norelay uregex_setStackLimit() icu.uregex_setStackLimit
+@ cdecl -norelay uregex_setText() icu.uregex_setText
+@ cdecl -norelay uregex_setTimeLimit() icu.uregex_setTimeLimit
+@ cdecl -norelay uregex_setUText() icu.uregex_setUText
+@ cdecl -norelay uregex_split() icu.uregex_split
+@ cdecl -norelay uregex_splitUText() icu.uregex_splitUText
+@ cdecl -norelay uregex_start() icu.uregex_start
+@ cdecl -norelay uregex_start64() icu.uregex_start64
+@ cdecl -norelay uregex_useAnchoringBounds() icu.uregex_useAnchoringBounds
+@ cdecl -norelay uregex_useTransparentBounds() icu.uregex_useTransparentBounds
+@ cdecl -norelay uregion_areEqual() icu.uregion_areEqual
+@ cdecl -norelay uregion_contains() icu.uregion_contains
+@ cdecl -norelay uregion_getAvailable() icu.uregion_getAvailable
+@ cdecl -norelay uregion_getContainedRegions() icu.uregion_getContainedRegions
+@ cdecl -norelay uregion_getContainedRegionsOfType() icu.uregion_getContainedRegionsOfType
+@ cdecl -norelay uregion_getContainingRegion() icu.uregion_getContainingRegion
+@ cdecl -norelay uregion_getContainingRegionOfType() icu.uregion_getContainingRegionOfType
+@ cdecl -norelay uregion_getNumericCode() icu.uregion_getNumericCode
+@ cdecl -norelay uregion_getPreferredValues() icu.uregion_getPreferredValues
+@ cdecl -norelay uregion_getRegionCode() icu.uregion_getRegionCode
+@ cdecl -norelay uregion_getRegionFromCode() icu.uregion_getRegionFromCode
+@ cdecl -norelay uregion_getRegionFromNumericCode() icu.uregion_getRegionFromNumericCode
+@ cdecl -norelay uregion_getType() icu.uregion_getType
+@ cdecl -norelay ureldatefmt_close() icu.ureldatefmt_close
+@ cdecl -norelay ureldatefmt_combineDateAndTime() icu.ureldatefmt_combineDateAndTime
+@ cdecl -norelay ureldatefmt_format() icu.ureldatefmt_format
+@ cdecl -norelay ureldatefmt_formatNumeric() icu.ureldatefmt_formatNumeric
+@ cdecl -norelay ureldatefmt_open() icu.ureldatefmt_open
+@ cdecl -norelay usearch_close() icu.usearch_close
+@ cdecl -norelay usearch_first() icu.usearch_first
+@ cdecl -norelay usearch_following() icu.usearch_following
+@ cdecl -norelay usearch_getAttribute() icu.usearch_getAttribute
+@ cdecl -norelay usearch_getBreakIterator() icu.usearch_getBreakIterator
+@ cdecl -norelay usearch_getCollator() icu.usearch_getCollator
+@ cdecl -norelay usearch_getMatchedLength() icu.usearch_getMatchedLength
+@ cdecl -norelay usearch_getMatchedStart() icu.usearch_getMatchedStart
+@ cdecl -norelay usearch_getMatchedText() icu.usearch_getMatchedText
+@ cdecl -norelay usearch_getOffset() icu.usearch_getOffset
+@ cdecl -norelay usearch_getPattern() icu.usearch_getPattern
+@ cdecl -norelay usearch_getText() icu.usearch_getText
+@ cdecl -norelay usearch_last() icu.usearch_last
+@ cdecl -norelay usearch_next() icu.usearch_next
+@ cdecl -norelay usearch_open() icu.usearch_open
+@ cdecl -norelay usearch_openFromCollator() icu.usearch_openFromCollator
+@ cdecl -norelay usearch_preceding() icu.usearch_preceding
+@ cdecl -norelay usearch_previous() icu.usearch_previous
+@ cdecl -norelay usearch_reset() icu.usearch_reset
+@ cdecl -norelay usearch_setAttribute() icu.usearch_setAttribute
+@ cdecl -norelay usearch_setBreakIterator() icu.usearch_setBreakIterator
+@ cdecl -norelay usearch_setCollator() icu.usearch_setCollator
+@ cdecl -norelay usearch_setOffset() icu.usearch_setOffset
+@ cdecl -norelay usearch_setPattern() icu.usearch_setPattern
+@ cdecl -norelay usearch_setText() icu.usearch_setText
+@ cdecl -norelay uspoof_areConfusable() icu.uspoof_areConfusable
+@ cdecl -norelay uspoof_areConfusableUTF8() icu.uspoof_areConfusableUTF8
+@ cdecl -norelay uspoof_check() icu.uspoof_check
+@ cdecl -norelay uspoof_check2() icu.uspoof_check2
+@ cdecl -norelay uspoof_check2UTF8() icu.uspoof_check2UTF8
+@ cdecl -norelay uspoof_checkUTF8() icu.uspoof_checkUTF8
+@ cdecl -norelay uspoof_clone() icu.uspoof_clone
+@ cdecl -norelay uspoof_close() icu.uspoof_close
+@ cdecl -norelay uspoof_closeCheckResult() icu.uspoof_closeCheckResult
+@ cdecl -norelay uspoof_getAllowedChars() icu.uspoof_getAllowedChars
+@ cdecl -norelay uspoof_getAllowedLocales() icu.uspoof_getAllowedLocales
+@ cdecl -norelay uspoof_getCheckResultChecks() icu.uspoof_getCheckResultChecks
+@ cdecl -norelay uspoof_getCheckResultNumerics() icu.uspoof_getCheckResultNumerics
+@ cdecl -norelay uspoof_getCheckResultRestrictionLevel() icu.uspoof_getCheckResultRestrictionLevel
+@ cdecl -norelay uspoof_getChecks() icu.uspoof_getChecks
+@ cdecl -norelay uspoof_getInclusionSet() icu.uspoof_getInclusionSet
+@ cdecl -norelay uspoof_getRecommendedSet() icu.uspoof_getRecommendedSet
+@ cdecl -norelay uspoof_getRestrictionLevel() icu.uspoof_getRestrictionLevel
+@ cdecl -norelay uspoof_getSkeleton() icu.uspoof_getSkeleton
+@ cdecl -norelay uspoof_getSkeletonUTF8() icu.uspoof_getSkeletonUTF8
+@ cdecl -norelay uspoof_open() icu.uspoof_open
+@ cdecl -norelay uspoof_openCheckResult() icu.uspoof_openCheckResult
+@ cdecl -norelay uspoof_openFromSerialized() icu.uspoof_openFromSerialized
+@ cdecl -norelay uspoof_openFromSource() icu.uspoof_openFromSource
+@ cdecl -norelay uspoof_serialize() icu.uspoof_serialize
+@ cdecl -norelay uspoof_setAllowedChars() icu.uspoof_setAllowedChars
+@ cdecl -norelay uspoof_setAllowedLocales() icu.uspoof_setAllowedLocales
+@ cdecl -norelay uspoof_setChecks() icu.uspoof_setChecks
+@ cdecl -norelay uspoof_setRestrictionLevel() icu.uspoof_setRestrictionLevel
+@ cdecl -norelay utmscale_fromInt64() icu.utmscale_fromInt64
+@ cdecl -norelay utmscale_getTimeScaleValue() icu.utmscale_getTimeScaleValue
+@ cdecl -norelay utmscale_toInt64() icu.utmscale_toInt64
+@ cdecl -norelay utrans_clone() icu.utrans_clone
+@ cdecl -norelay utrans_close() icu.utrans_close
+@ cdecl -norelay utrans_countAvailableIDs() icu.utrans_countAvailableIDs
+@ cdecl -norelay utrans_getSourceSet() icu.utrans_getSourceSet
+@ cdecl -norelay utrans_getUnicodeID() icu.utrans_getUnicodeID
+@ cdecl -norelay utrans_openIDs() icu.utrans_openIDs
+@ cdecl -norelay utrans_openInverse() icu.utrans_openInverse
+@ cdecl -norelay utrans_openU() icu.utrans_openU
+@ cdecl -norelay utrans_register() icu.utrans_register
+@ cdecl -norelay utrans_setFilter() icu.utrans_setFilter
+@ cdecl -norelay utrans_toRules() icu.utrans_toRules
+@ cdecl -norelay utrans_trans() icu.utrans_trans
+@ cdecl -norelay utrans_transIncremental() icu.utrans_transIncremental
+@ cdecl -norelay utrans_transIncrementalUChars() icu.utrans_transIncrementalUChars
+@ cdecl -norelay utrans_transUChars() icu.utrans_transUChars
+@ cdecl -norelay utrans_unregisterID() icu.utrans_unregisterID
