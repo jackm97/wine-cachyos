@@ -139,7 +139,7 @@ struct context_data
         struct { unsigned __int64 rax, rbx, rcx, rdx, rbp, rsi, rdi,
                                   r8, r9, r10, r11, r12, r13, r14, r15; } x86_64_regs;
         struct { unsigned int r[13]; } arm_regs;
-        struct { unsigned __int64 x0[18], x19[12]; } arm64_regs;
+        struct { unsigned __int64 x[31]; } arm64_regs;
     } integer;
     union
     {
@@ -173,21 +173,16 @@ struct context_data
     {
         struct { struct { unsigned __int64 low, high; } ymm_high[16]; } regs;
     } ymm;
-    union
-    {
-        unsigned __int64 arm64_x18;
-    } tls;
 };
 
-#define SERVER_CTX_CONTROL            0x0001
-#define SERVER_CTX_INTEGER            0x0002
-#define SERVER_CTX_SEGMENTS           0x0004
-#define SERVER_CTX_FLOATING_POINT     0x0008
-#define SERVER_CTX_DEBUG_REGISTERS    0x0010
-#define SERVER_CTX_EXTENDED_REGISTERS 0x0020
-#define SERVER_CTX_YMM_REGISTERS      0x0040
-#define SERVER_CTX_EXEC_SPACE         0x0080
-#define SERVER_CTX_TLS                0x0100
+#define SERVER_CTX_CONTROL            0x01
+#define SERVER_CTX_INTEGER            0x02
+#define SERVER_CTX_SEGMENTS           0x04
+#define SERVER_CTX_FLOATING_POINT     0x08
+#define SERVER_CTX_DEBUG_REGISTERS    0x10
+#define SERVER_CTX_EXTENDED_REGISTERS 0x20
+#define SERVER_CTX_YMM_REGISTERS      0x40
+#define SERVER_CTX_EXEC_SPACE         0x80
 
 
 struct send_fd
@@ -1411,27 +1406,25 @@ struct set_thread_info_request
     int          priority;
     int          base_priority;
     affinity_t   affinity;
-    affinity_t   system_affinity;
     client_ptr_t entry_point;
     obj_handle_t token;
     int          disable_boost;
     unsigned int mask;
     /* VARARG(desc,unicode_str); */
-    char __pad_60[4];
+    char __pad_52[4];
 };
 struct set_thread_info_reply
 {
     struct reply_header __header;
 };
-#define SET_THREAD_INFO_PRIORITY        0x001
-#define SET_THREAD_INFO_BASE_PRIORITY   0x002
-#define SET_THREAD_INFO_AFFINITY        0x004
-#define SET_THREAD_INFO_GROUP_AFFINITY  0x008
-#define SET_THREAD_INFO_TOKEN           0x010
-#define SET_THREAD_INFO_ENTRYPOINT      0x020
-#define SET_THREAD_INFO_DESCRIPTION     0x040
-#define SET_THREAD_INFO_DBG_HIDDEN      0x080
-#define SET_THREAD_INFO_DISABLE_BOOST   0x100
+#define SET_THREAD_INFO_PRIORITY        0x01
+#define SET_THREAD_INFO_BASE_PRIORITY   0x02
+#define SET_THREAD_INFO_AFFINITY        0x04
+#define SET_THREAD_INFO_TOKEN           0x08
+#define SET_THREAD_INFO_ENTRYPOINT      0x10
+#define SET_THREAD_INFO_DESCRIPTION     0x20
+#define SET_THREAD_INFO_DBG_HIDDEN      0x40
+#define SET_THREAD_INFO_DISABLE_BOOST   0x80
 
 
 
@@ -7246,6 +7239,6 @@ union generic_reply
     struct fsync_free_shm_idx_reply fsync_free_shm_idx_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 933
+#define SERVER_PROTOCOL_VERSION 932
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

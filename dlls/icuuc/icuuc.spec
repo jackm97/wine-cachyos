@@ -1,542 +1,542 @@
-@ cdecl -norelay UCNV_FROM_U_CALLBACK_ESCAPE() icu.UCNV_FROM_U_CALLBACK_ESCAPE
-@ cdecl -norelay UCNV_FROM_U_CALLBACK_SKIP() icu.UCNV_FROM_U_CALLBACK_SKIP
-@ cdecl -norelay UCNV_FROM_U_CALLBACK_STOP() icu.UCNV_FROM_U_CALLBACK_STOP
-@ cdecl -norelay UCNV_FROM_U_CALLBACK_SUBSTITUTE() icu.UCNV_FROM_U_CALLBACK_SUBSTITUTE
-@ cdecl -norelay UCNV_TO_U_CALLBACK_ESCAPE() icu.UCNV_TO_U_CALLBACK_ESCAPE
-@ cdecl -norelay UCNV_TO_U_CALLBACK_SKIP() icu.UCNV_TO_U_CALLBACK_SKIP
-@ cdecl -norelay UCNV_TO_U_CALLBACK_STOP() icu.UCNV_TO_U_CALLBACK_STOP
-@ cdecl -norelay UCNV_TO_U_CALLBACK_SUBSTITUTE() icu.UCNV_TO_U_CALLBACK_SUBSTITUTE
-@ cdecl -norelay u_UCharsToChars() icu.u_UCharsToChars
-@ cdecl -norelay u_austrcpy() icu.u_austrcpy
-@ cdecl -norelay u_austrncpy() icu.u_austrncpy
-@ cdecl -norelay u_catclose() icu.u_catclose
-@ cdecl -norelay u_catgets() icu.u_catgets
-@ cdecl -norelay u_catopen() icu.u_catopen
-@ cdecl -norelay u_charAge() icu.u_charAge
-@ cdecl -norelay u_charDigitValue() icu.u_charDigitValue
-@ cdecl -norelay u_charDirection() icu.u_charDirection
-@ cdecl -norelay u_charFromName() icu.u_charFromName
-@ cdecl -norelay u_charMirror() icu.u_charMirror
-@ cdecl -norelay u_charName() icu.u_charName
-@ cdecl -norelay u_charType() icu.u_charType
-@ cdecl -norelay u_charsToUChars() icu.u_charsToUChars
-@ cdecl -norelay u_cleanup() icu.u_cleanup
-@ cdecl -norelay u_countChar32() icu.u_countChar32
-@ cdecl -norelay u_digit() icu.u_digit
-@ cdecl -norelay u_enumCharNames() icu.u_enumCharNames
-@ cdecl -norelay u_enumCharTypes() icu.u_enumCharTypes
-@ cdecl -norelay u_errorName() icu.u_errorName
-@ cdecl -norelay u_foldCase() icu.u_foldCase
-@ cdecl -norelay u_forDigit() icu.u_forDigit
-@ cdecl -norelay u_getBidiPairedBracket() icu.u_getBidiPairedBracket
-@ cdecl -norelay u_getCombiningClass() icu.u_getCombiningClass
-@ cdecl -norelay u_getDataVersion() icu.u_getDataVersion
-@ cdecl -norelay u_getFC_NFKC_Closure() icu.u_getFC_NFKC_Closure
-@ cdecl -norelay u_getIntPropertyMaxValue() icu.u_getIntPropertyMaxValue
-@ cdecl -norelay u_getIntPropertyMinValue() icu.u_getIntPropertyMinValue
-@ cdecl -norelay u_getIntPropertyValue() icu.u_getIntPropertyValue
-@ cdecl -norelay u_getNumericValue() icu.u_getNumericValue
-@ cdecl -norelay u_getPropertyEnum() icu.u_getPropertyEnum
-@ cdecl -norelay u_getPropertyName() icu.u_getPropertyName
-@ cdecl -norelay u_getPropertyValueEnum() icu.u_getPropertyValueEnum
-@ cdecl -norelay u_getPropertyValueName() icu.u_getPropertyValueName
-@ cdecl -norelay u_getUnicodeVersion() icu.u_getUnicodeVersion
-@ cdecl -norelay u_getVersion() icu.u_getVersion
-@ cdecl -norelay u_hasBinaryProperty() icu.u_hasBinaryProperty
-@ cdecl -norelay u_init() icu.u_init
-@ cdecl -norelay u_isIDIgnorable() icu.u_isIDIgnorable
-@ cdecl -norelay u_isIDPart() icu.u_isIDPart
-@ cdecl -norelay u_isIDStart() icu.u_isIDStart
-@ cdecl -norelay u_isISOControl() icu.u_isISOControl
-@ cdecl -norelay u_isJavaIDPart() icu.u_isJavaIDPart
-@ cdecl -norelay u_isJavaIDStart() icu.u_isJavaIDStart
-@ cdecl -norelay u_isJavaSpaceChar() icu.u_isJavaSpaceChar
-@ cdecl -norelay u_isMirrored() icu.u_isMirrored
-@ cdecl -norelay u_isUAlphabetic() icu.u_isUAlphabetic
-@ cdecl -norelay u_isULowercase() icu.u_isULowercase
-@ cdecl -norelay u_isUUppercase() icu.u_isUUppercase
-@ cdecl -norelay u_isUWhiteSpace() icu.u_isUWhiteSpace
-@ cdecl -norelay u_isWhitespace() icu.u_isWhitespace
-@ cdecl -norelay u_isalnum() icu.u_isalnum
-@ cdecl -norelay u_isalpha() icu.u_isalpha
-@ cdecl -norelay u_isbase() icu.u_isbase
-@ cdecl -norelay u_isblank() icu.u_isblank
-@ cdecl -norelay u_iscntrl() icu.u_iscntrl
-@ cdecl -norelay u_isdefined() icu.u_isdefined
-@ cdecl -norelay u_isdigit() icu.u_isdigit
-@ cdecl -norelay u_isgraph() icu.u_isgraph
-@ cdecl -norelay u_islower() icu.u_islower
-@ cdecl -norelay u_isprint() icu.u_isprint
-@ cdecl -norelay u_ispunct() icu.u_ispunct
-@ cdecl -norelay u_isspace() icu.u_isspace
-@ cdecl -norelay u_istitle() icu.u_istitle
-@ cdecl -norelay u_isupper() icu.u_isupper
-@ cdecl -norelay u_isxdigit() icu.u_isxdigit
-@ cdecl -norelay u_memcasecmp() icu.u_memcasecmp
-@ cdecl -norelay u_memchr() icu.u_memchr
-@ cdecl -norelay u_memchr32() icu.u_memchr32
-@ cdecl -norelay u_memcmp() icu.u_memcmp
-@ cdecl -norelay u_memcmpCodePointOrder() icu.u_memcmpCodePointOrder
-@ cdecl -norelay u_memcpy() icu.u_memcpy
-@ cdecl -norelay u_memmove() icu.u_memmove
-@ cdecl -norelay u_memrchr() icu.u_memrchr
-@ cdecl -norelay u_memrchr32() icu.u_memrchr32
-@ cdecl -norelay u_memset() icu.u_memset
-@ cdecl -norelay u_setMemoryFunctions() icu.u_setMemoryFunctions
-@ cdecl -norelay u_shapeArabic() icu.u_shapeArabic
-@ cdecl -norelay u_strCaseCompare() icu.u_strCaseCompare
-@ cdecl -norelay u_strCompare() icu.u_strCompare
-@ cdecl -norelay u_strCompareIter() icu.u_strCompareIter
-@ cdecl -norelay u_strFindFirst() icu.u_strFindFirst
-@ cdecl -norelay u_strFindLast() icu.u_strFindLast
-@ cdecl -norelay u_strFoldCase() icu.u_strFoldCase
-@ cdecl -norelay u_strFromJavaModifiedUTF8WithSub() icu.u_strFromJavaModifiedUTF8WithSub
-@ cdecl -norelay u_strFromUTF32() icu.u_strFromUTF32
-@ cdecl -norelay u_strFromUTF32WithSub() icu.u_strFromUTF32WithSub
-@ cdecl -norelay u_strFromUTF8() icu.u_strFromUTF8
-@ cdecl -norelay u_strFromUTF8Lenient() icu.u_strFromUTF8Lenient
-@ cdecl -norelay u_strFromUTF8WithSub() icu.u_strFromUTF8WithSub
-@ cdecl -norelay u_strFromWCS() icu.u_strFromWCS
-@ cdecl -norelay u_strHasMoreChar32Than() icu.u_strHasMoreChar32Than
-@ cdecl -norelay u_strToJavaModifiedUTF8() icu.u_strToJavaModifiedUTF8
-@ cdecl -norelay u_strToLower() icu.u_strToLower
-@ cdecl -norelay u_strToTitle() icu.u_strToTitle
-@ cdecl -norelay u_strToUTF32() icu.u_strToUTF32
-@ cdecl -norelay u_strToUTF32WithSub() icu.u_strToUTF32WithSub
-@ cdecl -norelay u_strToUTF8() icu.u_strToUTF8
-@ cdecl -norelay u_strToUTF8WithSub() icu.u_strToUTF8WithSub
-@ cdecl -norelay u_strToUpper() icu.u_strToUpper
-@ cdecl -norelay u_strToWCS() icu.u_strToWCS
-@ cdecl -norelay u_strcasecmp() icu.u_strcasecmp
-@ cdecl -norelay u_strcat() icu.u_strcat
-@ cdecl -norelay u_strchr() icu.u_strchr
-@ cdecl -norelay u_strchr32() icu.u_strchr32
-@ cdecl -norelay u_strcmp() icu.u_strcmp
-@ cdecl -norelay u_strcmpCodePointOrder() icu.u_strcmpCodePointOrder
-@ cdecl -norelay u_strcpy() icu.u_strcpy
-@ cdecl -norelay u_strcspn() icu.u_strcspn
-@ cdecl -norelay u_strlen() icu.u_strlen
-@ cdecl -norelay u_strncasecmp() icu.u_strncasecmp
-@ cdecl -norelay u_strncat() icu.u_strncat
-@ cdecl -norelay u_strncmp() icu.u_strncmp
-@ cdecl -norelay u_strncmpCodePointOrder() icu.u_strncmpCodePointOrder
-@ cdecl -norelay u_strncpy() icu.u_strncpy
-@ cdecl -norelay u_strpbrk() icu.u_strpbrk
-@ cdecl -norelay u_strrchr() icu.u_strrchr
-@ cdecl -norelay u_strrchr32() icu.u_strrchr32
-@ cdecl -norelay u_strrstr() icu.u_strrstr
-@ cdecl -norelay u_strspn() icu.u_strspn
-@ cdecl -norelay u_strstr() icu.u_strstr
-@ cdecl -norelay u_strtok_r() icu.u_strtok_r
-@ cdecl -norelay u_tolower() icu.u_tolower
-@ cdecl -norelay u_totitle() icu.u_totitle
-@ cdecl -norelay u_toupper() icu.u_toupper
-@ cdecl -norelay u_uastrcpy() icu.u_uastrcpy
-@ cdecl -norelay u_uastrncpy() icu.u_uastrncpy
-@ cdecl -norelay u_unescape() icu.u_unescape
-@ cdecl -norelay u_unescapeAt() icu.u_unescapeAt
-@ cdecl -norelay u_versionFromString() icu.u_versionFromString
-@ cdecl -norelay u_versionFromUString() icu.u_versionFromUString
-@ cdecl -norelay u_versionToString() icu.u_versionToString
-@ cdecl -norelay ubidi_close() icu.ubidi_close
-@ cdecl -norelay ubidi_countParagraphs() icu.ubidi_countParagraphs
-@ cdecl -norelay ubidi_countRuns() icu.ubidi_countRuns
-@ cdecl -norelay ubidi_getBaseDirection() icu.ubidi_getBaseDirection
-@ cdecl -norelay ubidi_getClassCallback() icu.ubidi_getClassCallback
-@ cdecl -norelay ubidi_getCustomizedClass() icu.ubidi_getCustomizedClass
-@ cdecl -norelay ubidi_getDirection() icu.ubidi_getDirection
-@ cdecl -norelay ubidi_getLength() icu.ubidi_getLength
-@ cdecl -norelay ubidi_getLevelAt() icu.ubidi_getLevelAt
-@ cdecl -norelay ubidi_getLevels() icu.ubidi_getLevels
-@ cdecl -norelay ubidi_getLogicalIndex() icu.ubidi_getLogicalIndex
-@ cdecl -norelay ubidi_getLogicalMap() icu.ubidi_getLogicalMap
-@ cdecl -norelay ubidi_getLogicalRun() icu.ubidi_getLogicalRun
-@ cdecl -norelay ubidi_getParaLevel() icu.ubidi_getParaLevel
-@ cdecl -norelay ubidi_getParagraph() icu.ubidi_getParagraph
-@ cdecl -norelay ubidi_getParagraphByIndex() icu.ubidi_getParagraphByIndex
-@ cdecl -norelay ubidi_getProcessedLength() icu.ubidi_getProcessedLength
-@ cdecl -norelay ubidi_getReorderingMode() icu.ubidi_getReorderingMode
-@ cdecl -norelay ubidi_getReorderingOptions() icu.ubidi_getReorderingOptions
-@ cdecl -norelay ubidi_getResultLength() icu.ubidi_getResultLength
-@ cdecl -norelay ubidi_getText() icu.ubidi_getText
-@ cdecl -norelay ubidi_getVisualIndex() icu.ubidi_getVisualIndex
-@ cdecl -norelay ubidi_getVisualMap() icu.ubidi_getVisualMap
-@ cdecl -norelay ubidi_getVisualRun() icu.ubidi_getVisualRun
-@ cdecl -norelay ubidi_invertMap() icu.ubidi_invertMap
-@ cdecl -norelay ubidi_isInverse() icu.ubidi_isInverse
-@ cdecl -norelay ubidi_isOrderParagraphsLTR() icu.ubidi_isOrderParagraphsLTR
-@ cdecl -norelay ubidi_open() icu.ubidi_open
-@ cdecl -norelay ubidi_openSized() icu.ubidi_openSized
-@ cdecl -norelay ubidi_orderParagraphsLTR() icu.ubidi_orderParagraphsLTR
-@ cdecl -norelay ubidi_reorderLogical() icu.ubidi_reorderLogical
-@ cdecl -norelay ubidi_reorderVisual() icu.ubidi_reorderVisual
-@ cdecl -norelay ubidi_setClassCallback() icu.ubidi_setClassCallback
-@ cdecl -norelay ubidi_setContext() icu.ubidi_setContext
-@ cdecl -norelay ubidi_setInverse() icu.ubidi_setInverse
-@ cdecl -norelay ubidi_setLine() icu.ubidi_setLine
-@ cdecl -norelay ubidi_setPara() icu.ubidi_setPara
-@ cdecl -norelay ubidi_setReorderingMode() icu.ubidi_setReorderingMode
-@ cdecl -norelay ubidi_setReorderingOptions() icu.ubidi_setReorderingOptions
-@ cdecl -norelay ubidi_writeReordered() icu.ubidi_writeReordered
-@ cdecl -norelay ubidi_writeReverse() icu.ubidi_writeReverse
-@ cdecl -norelay ubiditransform_close() icu.ubiditransform_close
-@ cdecl -norelay ubiditransform_open() icu.ubiditransform_open
-@ cdecl -norelay ubiditransform_transform() icu.ubiditransform_transform
-@ cdecl -norelay ublock_getCode() icu.ublock_getCode
-@ cdecl -norelay ubrk_close() icu.ubrk_close
-@ cdecl -norelay ubrk_countAvailable() icu.ubrk_countAvailable
-@ cdecl -norelay ubrk_current() icu.ubrk_current
-@ cdecl -norelay ubrk_first() icu.ubrk_first
-@ cdecl -norelay ubrk_following() icu.ubrk_following
-@ cdecl -norelay ubrk_getAvailable() icu.ubrk_getAvailable
-@ cdecl -norelay ubrk_getBinaryRules() icu.ubrk_getBinaryRules
-@ cdecl -norelay ubrk_getLocaleByType() icu.ubrk_getLocaleByType
-@ cdecl -norelay ubrk_getRuleStatus() icu.ubrk_getRuleStatus
-@ cdecl -norelay ubrk_getRuleStatusVec() icu.ubrk_getRuleStatusVec
-@ cdecl -norelay ubrk_isBoundary() icu.ubrk_isBoundary
-@ cdecl -norelay ubrk_last() icu.ubrk_last
-@ cdecl -norelay ubrk_next() icu.ubrk_next
-@ cdecl -norelay ubrk_open() icu.ubrk_open
-@ cdecl -norelay ubrk_openBinaryRules() icu.ubrk_openBinaryRules
-@ cdecl -norelay ubrk_openRules() icu.ubrk_openRules
-@ cdecl -norelay ubrk_preceding() icu.ubrk_preceding
-@ cdecl -norelay ubrk_previous() icu.ubrk_previous
-@ cdecl -norelay ubrk_refreshUText() icu.ubrk_refreshUText
-@ cdecl -norelay ubrk_safeClone() icu.ubrk_safeClone
-@ cdecl -norelay ubrk_setText() icu.ubrk_setText
-@ cdecl -norelay ubrk_setUText() icu.ubrk_setUText
-@ cdecl -norelay ucasemap_close() icu.ucasemap_close
-@ cdecl -norelay ucasemap_getBreakIterator() icu.ucasemap_getBreakIterator
-@ cdecl -norelay ucasemap_getLocale() icu.ucasemap_getLocale
-@ cdecl -norelay ucasemap_getOptions() icu.ucasemap_getOptions
-@ cdecl -norelay ucasemap_open() icu.ucasemap_open
-@ cdecl -norelay ucasemap_setBreakIterator() icu.ucasemap_setBreakIterator
-@ cdecl -norelay ucasemap_setLocale() icu.ucasemap_setLocale
-@ cdecl -norelay ucasemap_setOptions() icu.ucasemap_setOptions
-@ cdecl -norelay ucasemap_toTitle() icu.ucasemap_toTitle
-@ cdecl -norelay ucasemap_utf8FoldCase() icu.ucasemap_utf8FoldCase
-@ cdecl -norelay ucasemap_utf8ToLower() icu.ucasemap_utf8ToLower
-@ cdecl -norelay ucasemap_utf8ToTitle() icu.ucasemap_utf8ToTitle
-@ cdecl -norelay ucasemap_utf8ToUpper() icu.ucasemap_utf8ToUpper
-@ cdecl -norelay ucnv_cbFromUWriteBytes() icu.ucnv_cbFromUWriteBytes
-@ cdecl -norelay ucnv_cbFromUWriteSub() icu.ucnv_cbFromUWriteSub
-@ cdecl -norelay ucnv_cbFromUWriteUChars() icu.ucnv_cbFromUWriteUChars
-@ cdecl -norelay ucnv_cbToUWriteSub() icu.ucnv_cbToUWriteSub
-@ cdecl -norelay ucnv_cbToUWriteUChars() icu.ucnv_cbToUWriteUChars
-@ cdecl -norelay ucnv_close() icu.ucnv_close
-@ cdecl -norelay ucnv_compareNames() icu.ucnv_compareNames
-@ cdecl -norelay ucnv_convert() icu.ucnv_convert
-@ cdecl -norelay ucnv_convertEx() icu.ucnv_convertEx
-@ cdecl -norelay ucnv_countAliases() icu.ucnv_countAliases
-@ cdecl -norelay ucnv_countAvailable() icu.ucnv_countAvailable
-@ cdecl -norelay ucnv_countStandards() icu.ucnv_countStandards
-@ cdecl -norelay ucnv_detectUnicodeSignature() icu.ucnv_detectUnicodeSignature
-@ cdecl -norelay ucnv_fixFileSeparator() icu.ucnv_fixFileSeparator
-@ cdecl -norelay ucnv_flushCache() icu.ucnv_flushCache
-@ cdecl -norelay ucnv_fromAlgorithmic() icu.ucnv_fromAlgorithmic
-@ cdecl -norelay ucnv_fromUChars() icu.ucnv_fromUChars
-@ cdecl -norelay ucnv_fromUCountPending() icu.ucnv_fromUCountPending
-@ cdecl -norelay ucnv_fromUnicode() icu.ucnv_fromUnicode
-@ cdecl -norelay ucnv_getAlias() icu.ucnv_getAlias
-@ cdecl -norelay ucnv_getAliases() icu.ucnv_getAliases
-@ cdecl -norelay ucnv_getAvailableName() icu.ucnv_getAvailableName
-@ cdecl -norelay ucnv_getCCSID() icu.ucnv_getCCSID
-@ cdecl -norelay ucnv_getCanonicalName() icu.ucnv_getCanonicalName
-@ cdecl -norelay ucnv_getDefaultName() icu.ucnv_getDefaultName
-@ cdecl -norelay ucnv_getDisplayName() icu.ucnv_getDisplayName
-@ cdecl -norelay ucnv_getFromUCallBack() icu.ucnv_getFromUCallBack
-@ cdecl -norelay ucnv_getInvalidChars() icu.ucnv_getInvalidChars
-@ cdecl -norelay ucnv_getInvalidUChars() icu.ucnv_getInvalidUChars
-@ cdecl -norelay ucnv_getMaxCharSize() icu.ucnv_getMaxCharSize
-@ cdecl -norelay ucnv_getMinCharSize() icu.ucnv_getMinCharSize
-@ cdecl -norelay ucnv_getName() icu.ucnv_getName
-@ cdecl -norelay ucnv_getNextUChar() icu.ucnv_getNextUChar
-@ cdecl -norelay ucnv_getPlatform() icu.ucnv_getPlatform
-@ cdecl -norelay ucnv_getStandard() icu.ucnv_getStandard
-@ cdecl -norelay ucnv_getStandardName() icu.ucnv_getStandardName
-@ cdecl -norelay ucnv_getStarters() icu.ucnv_getStarters
-@ cdecl -norelay ucnv_getSubstChars() icu.ucnv_getSubstChars
-@ cdecl -norelay ucnv_getToUCallBack() icu.ucnv_getToUCallBack
-@ cdecl -norelay ucnv_getType() icu.ucnv_getType
-@ cdecl -norelay ucnv_getUnicodeSet() icu.ucnv_getUnicodeSet
-@ cdecl -norelay ucnv_isAmbiguous() icu.ucnv_isAmbiguous
-@ cdecl -norelay ucnv_isFixedWidth() icu.ucnv_isFixedWidth
-@ cdecl -norelay ucnv_open() icu.ucnv_open
-@ cdecl -norelay ucnv_openAllNames() icu.ucnv_openAllNames
-@ cdecl -norelay ucnv_openCCSID() icu.ucnv_openCCSID
-@ cdecl -norelay ucnv_openPackage() icu.ucnv_openPackage
-@ cdecl -norelay ucnv_openStandardNames() icu.ucnv_openStandardNames
-@ cdecl -norelay ucnv_openU() icu.ucnv_openU
-@ cdecl -norelay ucnv_reset() icu.ucnv_reset
-@ cdecl -norelay ucnv_resetFromUnicode() icu.ucnv_resetFromUnicode
-@ cdecl -norelay ucnv_resetToUnicode() icu.ucnv_resetToUnicode
-@ cdecl -norelay ucnv_safeClone() icu.ucnv_safeClone
-@ cdecl -norelay ucnv_setDefaultName() icu.ucnv_setDefaultName
-@ cdecl -norelay ucnv_setFallback() icu.ucnv_setFallback
-@ cdecl -norelay ucnv_setFromUCallBack() icu.ucnv_setFromUCallBack
-@ cdecl -norelay ucnv_setSubstChars() icu.ucnv_setSubstChars
-@ cdecl -norelay ucnv_setSubstString() icu.ucnv_setSubstString
-@ cdecl -norelay ucnv_setToUCallBack() icu.ucnv_setToUCallBack
-@ cdecl -norelay ucnv_toAlgorithmic() icu.ucnv_toAlgorithmic
-@ cdecl -norelay ucnv_toUChars() icu.ucnv_toUChars
-@ cdecl -norelay ucnv_toUCountPending() icu.ucnv_toUCountPending
-@ cdecl -norelay ucnv_toUnicode() icu.ucnv_toUnicode
-@ cdecl -norelay ucnv_usesFallback() icu.ucnv_usesFallback
-@ cdecl -norelay ucnvsel_close() icu.ucnvsel_close
-@ cdecl -norelay ucnvsel_open() icu.ucnvsel_open
-@ cdecl -norelay ucnvsel_openFromSerialized() icu.ucnvsel_openFromSerialized
-@ cdecl -norelay ucnvsel_selectForString() icu.ucnvsel_selectForString
-@ cdecl -norelay ucnvsel_selectForUTF8() icu.ucnvsel_selectForUTF8
-@ cdecl -norelay ucnvsel_serialize() icu.ucnvsel_serialize
-@ cdecl -norelay ucurr_countCurrencies() icu.ucurr_countCurrencies
-@ cdecl -norelay ucurr_forLocale() icu.ucurr_forLocale
-@ cdecl -norelay ucurr_forLocaleAndDate() icu.ucurr_forLocaleAndDate
-@ cdecl -norelay ucurr_getDefaultFractionDigits() icu.ucurr_getDefaultFractionDigits
-@ cdecl -norelay ucurr_getDefaultFractionDigitsForUsage() icu.ucurr_getDefaultFractionDigitsForUsage
-@ cdecl -norelay ucurr_getKeywordValuesForLocale() icu.ucurr_getKeywordValuesForLocale
-@ cdecl -norelay ucurr_getName() icu.ucurr_getName
-@ cdecl -norelay ucurr_getNumericCode() icu.ucurr_getNumericCode
-@ cdecl -norelay ucurr_getPluralName() icu.ucurr_getPluralName
-@ cdecl -norelay ucurr_getRoundingIncrement() icu.ucurr_getRoundingIncrement
-@ cdecl -norelay ucurr_getRoundingIncrementForUsage() icu.ucurr_getRoundingIncrementForUsage
-@ cdecl -norelay ucurr_isAvailable() icu.ucurr_isAvailable
-@ cdecl -norelay ucurr_openISOCurrencies() icu.ucurr_openISOCurrencies
-@ cdecl -norelay ucurr_register() icu.ucurr_register
-@ cdecl -norelay ucurr_unregister() icu.ucurr_unregister
-@ cdecl -norelay uenum_close() icu.uenum_close
-@ cdecl -norelay uenum_count() icu.uenum_count
-@ cdecl -norelay uenum_next() icu.uenum_next
-@ cdecl -norelay uenum_openCharStringsEnumeration() icu.uenum_openCharStringsEnumeration
-@ cdecl -norelay uenum_openUCharStringsEnumeration() icu.uenum_openUCharStringsEnumeration
-@ cdecl -norelay uenum_reset() icu.uenum_reset
-@ cdecl -norelay uenum_unext() icu.uenum_unext
-@ cdecl -norelay uidna_close() icu.uidna_close
-@ cdecl -norelay uidna_labelToASCII() icu.uidna_labelToASCII
-@ cdecl -norelay uidna_labelToASCII_UTF8() icu.uidna_labelToASCII_UTF8
-@ cdecl -norelay uidna_labelToUnicode() icu.uidna_labelToUnicode
-@ cdecl -norelay uidna_labelToUnicodeUTF8() icu.uidna_labelToUnicodeUTF8
-@ cdecl -norelay uidna_nameToASCII() icu.uidna_nameToASCII
-@ cdecl -norelay uidna_nameToASCII_UTF8() icu.uidna_nameToASCII_UTF8
-@ cdecl -norelay uidna_nameToUnicode() icu.uidna_nameToUnicode
-@ cdecl -norelay uidna_nameToUnicodeUTF8() icu.uidna_nameToUnicodeUTF8
-@ cdecl -norelay uidna_openUTS46() icu.uidna_openUTS46
-@ cdecl -norelay uiter_current32() icu.uiter_current32
-@ cdecl -norelay uiter_getState() icu.uiter_getState
-@ cdecl -norelay uiter_next32() icu.uiter_next32
-@ cdecl -norelay uiter_previous32() icu.uiter_previous32
-@ cdecl -norelay uiter_setState() icu.uiter_setState
-@ cdecl -norelay uiter_setString() icu.uiter_setString
-@ cdecl -norelay uiter_setUTF16BE() icu.uiter_setUTF16BE
-@ cdecl -norelay uiter_setUTF8() icu.uiter_setUTF8
-@ cdecl -norelay uldn_close() icu.uldn_close
-@ cdecl -norelay uldn_getContext() icu.uldn_getContext
-@ cdecl -norelay uldn_getDialectHandling() icu.uldn_getDialectHandling
-@ cdecl -norelay uldn_getLocale() icu.uldn_getLocale
-@ cdecl -norelay uldn_keyDisplayName() icu.uldn_keyDisplayName
-@ cdecl -norelay uldn_keyValueDisplayName() icu.uldn_keyValueDisplayName
-@ cdecl -norelay uldn_languageDisplayName() icu.uldn_languageDisplayName
-@ cdecl -norelay uldn_localeDisplayName() icu.uldn_localeDisplayName
-@ cdecl -norelay uldn_open() icu.uldn_open
-@ cdecl -norelay uldn_openForContext() icu.uldn_openForContext
-@ cdecl -norelay uldn_regionDisplayName() icu.uldn_regionDisplayName
-@ cdecl -norelay uldn_scriptCodeDisplayName() icu.uldn_scriptCodeDisplayName
-@ cdecl -norelay uldn_scriptDisplayName() icu.uldn_scriptDisplayName
-@ cdecl -norelay uldn_variantDisplayName() icu.uldn_variantDisplayName
-@ cdecl -norelay ulistfmt_close() icu.ulistfmt_close
-@ cdecl -norelay ulistfmt_format() icu.ulistfmt_format
-@ cdecl -norelay ulistfmt_open() icu.ulistfmt_open
-@ cdecl -norelay uloc_acceptLanguage() icu.uloc_acceptLanguage
-@ cdecl -norelay uloc_acceptLanguageFromHTTP() icu.uloc_acceptLanguageFromHTTP
-@ cdecl -norelay uloc_addLikelySubtags() icu.uloc_addLikelySubtags
-@ cdecl -norelay uloc_canonicalize() icu.uloc_canonicalize
-@ cdecl -norelay uloc_countAvailable() icu.uloc_countAvailable
-@ cdecl -norelay uloc_forLanguageTag() icu.uloc_forLanguageTag
-@ cdecl -norelay uloc_getAvailable() icu.uloc_getAvailable
-@ cdecl -norelay uloc_getBaseName() icu.uloc_getBaseName
-@ cdecl -norelay uloc_getCharacterOrientation() icu.uloc_getCharacterOrientation
-@ cdecl -norelay uloc_getCountry() icu.uloc_getCountry
-@ cdecl -norelay uloc_getDefault() icu.uloc_getDefault
-@ cdecl -norelay uloc_getDisplayCountry() icu.uloc_getDisplayCountry
-@ cdecl -norelay uloc_getDisplayKeyword() icu.uloc_getDisplayKeyword
-@ cdecl -norelay uloc_getDisplayKeywordValue() icu.uloc_getDisplayKeywordValue
-@ cdecl -norelay uloc_getDisplayLanguage() icu.uloc_getDisplayLanguage
-@ cdecl -norelay uloc_getDisplayName() icu.uloc_getDisplayName
-@ cdecl -norelay uloc_getDisplayScript() icu.uloc_getDisplayScript
-@ cdecl -norelay uloc_getDisplayVariant() icu.uloc_getDisplayVariant
-@ cdecl -norelay uloc_getISO3Country() icu.uloc_getISO3Country
-@ cdecl -norelay uloc_getISO3Language() icu.uloc_getISO3Language
-@ cdecl -norelay uloc_getISOCountries() icu.uloc_getISOCountries
-@ cdecl -norelay uloc_getISOLanguages() icu.uloc_getISOLanguages
-@ cdecl -norelay uloc_getKeywordValue() icu.uloc_getKeywordValue
-@ cdecl -norelay uloc_getLCID() icu.uloc_getLCID
-@ cdecl -norelay uloc_getLanguage() icu.uloc_getLanguage
-@ cdecl -norelay uloc_getLineOrientation() icu.uloc_getLineOrientation
-@ cdecl -norelay uloc_getLocaleForLCID() icu.uloc_getLocaleForLCID
-@ cdecl -norelay uloc_getName() icu.uloc_getName
-@ cdecl -norelay uloc_getParent() icu.uloc_getParent
-@ cdecl -norelay uloc_getScript() icu.uloc_getScript
-@ cdecl -norelay uloc_getVariant() icu.uloc_getVariant
-@ cdecl -norelay uloc_isRightToLeft() icu.uloc_isRightToLeft
-@ cdecl -norelay uloc_minimizeSubtags() icu.uloc_minimizeSubtags
-@ cdecl -norelay uloc_openKeywords() icu.uloc_openKeywords
-@ cdecl -norelay uloc_setDefault() icu.uloc_setDefault
-@ cdecl -norelay uloc_setKeywordValue() icu.uloc_setKeywordValue
-@ cdecl -norelay uloc_toLanguageTag() icu.uloc_toLanguageTag
-@ cdecl -norelay uloc_toLegacyKey() icu.uloc_toLegacyKey
-@ cdecl -norelay uloc_toLegacyType() icu.uloc_toLegacyType
-@ cdecl -norelay uloc_toUnicodeLocaleKey() icu.uloc_toUnicodeLocaleKey
-@ cdecl -norelay uloc_toUnicodeLocaleType() icu.uloc_toUnicodeLocaleType
-@ cdecl -norelay unorm2_append() icu.unorm2_append
-@ cdecl -norelay unorm2_close() icu.unorm2_close
-@ cdecl -norelay unorm2_composePair() icu.unorm2_composePair
-@ cdecl -norelay unorm2_getCombiningClass() icu.unorm2_getCombiningClass
-@ cdecl -norelay unorm2_getDecomposition() icu.unorm2_getDecomposition
-@ cdecl -norelay unorm2_getInstance() icu.unorm2_getInstance
-@ cdecl -norelay unorm2_getNFCInstance() icu.unorm2_getNFCInstance
-@ cdecl -norelay unorm2_getNFDInstance() icu.unorm2_getNFDInstance
-@ cdecl -norelay unorm2_getNFKCCasefoldInstance() icu.unorm2_getNFKCCasefoldInstance
-@ cdecl -norelay unorm2_getNFKCInstance() icu.unorm2_getNFKCInstance
-@ cdecl -norelay unorm2_getNFKDInstance() icu.unorm2_getNFKDInstance
-@ cdecl -norelay unorm2_getRawDecomposition() icu.unorm2_getRawDecomposition
-@ cdecl -norelay unorm2_hasBoundaryAfter() icu.unorm2_hasBoundaryAfter
-@ cdecl -norelay unorm2_hasBoundaryBefore() icu.unorm2_hasBoundaryBefore
-@ cdecl -norelay unorm2_isInert() icu.unorm2_isInert
-@ cdecl -norelay unorm2_isNormalized() icu.unorm2_isNormalized
-@ cdecl -norelay unorm2_normalize() icu.unorm2_normalize
-@ cdecl -norelay unorm2_normalizeSecondAndAppend() icu.unorm2_normalizeSecondAndAppend
-@ cdecl -norelay unorm2_openFiltered() icu.unorm2_openFiltered
-@ cdecl -norelay unorm2_quickCheck() icu.unorm2_quickCheck
-@ cdecl -norelay unorm2_spanQuickCheckYes() icu.unorm2_spanQuickCheckYes
-@ cdecl -norelay unorm_compare() icu.unorm_compare
-@ cdecl -norelay ures_close() icu.ures_close
-@ cdecl -norelay ures_getBinary() icu.ures_getBinary
-@ cdecl -norelay ures_getByIndex() icu.ures_getByIndex
-@ cdecl -norelay ures_getByKey() icu.ures_getByKey
-@ cdecl -norelay ures_getInt() icu.ures_getInt
-@ cdecl -norelay ures_getIntVector() icu.ures_getIntVector
-@ cdecl -norelay ures_getKey() icu.ures_getKey
-@ cdecl -norelay ures_getLocaleByType() icu.ures_getLocaleByType
-@ cdecl -norelay ures_getNextResource() icu.ures_getNextResource
-@ cdecl -norelay ures_getNextString() icu.ures_getNextString
-@ cdecl -norelay ures_getSize() icu.ures_getSize
-@ cdecl -norelay ures_getString() icu.ures_getString
-@ cdecl -norelay ures_getStringByIndex() icu.ures_getStringByIndex
-@ cdecl -norelay ures_getStringByKey() icu.ures_getStringByKey
-@ cdecl -norelay ures_getType() icu.ures_getType
-@ cdecl -norelay ures_getUInt() icu.ures_getUInt
-@ cdecl -norelay ures_getUTF8String() icu.ures_getUTF8String
-@ cdecl -norelay ures_getUTF8StringByIndex() icu.ures_getUTF8StringByIndex
-@ cdecl -norelay ures_getUTF8StringByKey() icu.ures_getUTF8StringByKey
-@ cdecl -norelay ures_getVersion() icu.ures_getVersion
-@ cdecl -norelay ures_hasNext() icu.ures_hasNext
-@ cdecl -norelay ures_open() icu.ures_open
-@ cdecl -norelay ures_openAvailableLocales() icu.ures_openAvailableLocales
-@ cdecl -norelay ures_openDirect() icu.ures_openDirect
-@ cdecl -norelay ures_openU() icu.ures_openU
-@ cdecl -norelay ures_resetIterator() icu.ures_resetIterator
-@ cdecl -norelay uscript_breaksBetweenLetters() icu.uscript_breaksBetweenLetters
-@ cdecl -norelay uscript_getCode() icu.uscript_getCode
-@ cdecl -norelay uscript_getName() icu.uscript_getName
-@ cdecl -norelay uscript_getSampleString() icu.uscript_getSampleString
-@ cdecl -norelay uscript_getScript() icu.uscript_getScript
-@ cdecl -norelay uscript_getScriptExtensions() icu.uscript_getScriptExtensions
-@ cdecl -norelay uscript_getShortName() icu.uscript_getShortName
-@ cdecl -norelay uscript_getUsage() icu.uscript_getUsage
-@ cdecl -norelay uscript_hasScript() icu.uscript_hasScript
-@ cdecl -norelay uscript_isCased() icu.uscript_isCased
-@ cdecl -norelay uscript_isRightToLeft() icu.uscript_isRightToLeft
-@ cdecl -norelay uset_add() icu.uset_add
-@ cdecl -norelay uset_addAll() icu.uset_addAll
-@ cdecl -norelay uset_addAllCodePoints() icu.uset_addAllCodePoints
-@ cdecl -norelay uset_addRange() icu.uset_addRange
-@ cdecl -norelay uset_addString() icu.uset_addString
-@ cdecl -norelay uset_applyIntPropertyValue() icu.uset_applyIntPropertyValue
-@ cdecl -norelay uset_applyPattern() icu.uset_applyPattern
-@ cdecl -norelay uset_applyPropertyAlias() icu.uset_applyPropertyAlias
-@ cdecl -norelay uset_charAt() icu.uset_charAt
-@ cdecl -norelay uset_clear() icu.uset_clear
-@ cdecl -norelay uset_clone() icu.uset_clone
-@ cdecl -norelay uset_cloneAsThawed() icu.uset_cloneAsThawed
-@ cdecl -norelay uset_close() icu.uset_close
-@ cdecl -norelay uset_closeOver() icu.uset_closeOver
-@ cdecl -norelay uset_compact() icu.uset_compact
-@ cdecl -norelay uset_complement() icu.uset_complement
-@ cdecl -norelay uset_complementAll() icu.uset_complementAll
-@ cdecl -norelay uset_contains() icu.uset_contains
-@ cdecl -norelay uset_containsAll() icu.uset_containsAll
-@ cdecl -norelay uset_containsAllCodePoints() icu.uset_containsAllCodePoints
-@ cdecl -norelay uset_containsNone() icu.uset_containsNone
-@ cdecl -norelay uset_containsRange() icu.uset_containsRange
-@ cdecl -norelay uset_containsSome() icu.uset_containsSome
-@ cdecl -norelay uset_containsString() icu.uset_containsString
-@ cdecl -norelay uset_equals() icu.uset_equals
-@ cdecl -norelay uset_freeze() icu.uset_freeze
-@ cdecl -norelay uset_getItem() icu.uset_getItem
-@ cdecl -norelay uset_getItemCount() icu.uset_getItemCount
-@ cdecl -norelay uset_getSerializedRange() icu.uset_getSerializedRange
-@ cdecl -norelay uset_getSerializedRangeCount() icu.uset_getSerializedRangeCount
-@ cdecl -norelay uset_getSerializedSet() icu.uset_getSerializedSet
-@ cdecl -norelay uset_indexOf() icu.uset_indexOf
-@ cdecl -norelay uset_isEmpty() icu.uset_isEmpty
-@ cdecl -norelay uset_isFrozen() icu.uset_isFrozen
-@ cdecl -norelay uset_open() icu.uset_open
-@ cdecl -norelay uset_openEmpty() icu.uset_openEmpty
-@ cdecl -norelay uset_openPattern() icu.uset_openPattern
-@ cdecl -norelay uset_openPatternOptions() icu.uset_openPatternOptions
-@ cdecl -norelay uset_remove() icu.uset_remove
-@ cdecl -norelay uset_removeAll() icu.uset_removeAll
-@ cdecl -norelay uset_removeAllStrings() icu.uset_removeAllStrings
-@ cdecl -norelay uset_removeRange() icu.uset_removeRange
-@ cdecl -norelay uset_removeString() icu.uset_removeString
-@ cdecl -norelay uset_resemblesPattern() icu.uset_resemblesPattern
-@ cdecl -norelay uset_retain() icu.uset_retain
-@ cdecl -norelay uset_retainAll() icu.uset_retainAll
-@ cdecl -norelay uset_serialize() icu.uset_serialize
-@ cdecl -norelay uset_serializedContains() icu.uset_serializedContains
-@ cdecl -norelay uset_set() icu.uset_set
-@ cdecl -norelay uset_setSerializedToOne() icu.uset_setSerializedToOne
-@ cdecl -norelay uset_size() icu.uset_size
-@ cdecl -norelay uset_span() icu.uset_span
-@ cdecl -norelay uset_spanBack() icu.uset_spanBack
-@ cdecl -norelay uset_spanBackUTF8() icu.uset_spanBackUTF8
-@ cdecl -norelay uset_spanUTF8() icu.uset_spanUTF8
-@ cdecl -norelay uset_toPattern() icu.uset_toPattern
-@ cdecl -norelay usprep_close() icu.usprep_close
-@ cdecl -norelay usprep_open() icu.usprep_open
-@ cdecl -norelay usprep_openByType() icu.usprep_openByType
-@ cdecl -norelay usprep_prepare() icu.usprep_prepare
-@ cdecl -norelay utext_char32At() icu.utext_char32At
-@ cdecl -norelay utext_clone() icu.utext_clone
-@ cdecl -norelay utext_close() icu.utext_close
-@ cdecl -norelay utext_copy() icu.utext_copy
-@ cdecl -norelay utext_current32() icu.utext_current32
-@ cdecl -norelay utext_equals() icu.utext_equals
-@ cdecl -norelay utext_extract() icu.utext_extract
-@ cdecl -norelay utext_freeze() icu.utext_freeze
-@ cdecl -norelay utext_getNativeIndex() icu.utext_getNativeIndex
-@ cdecl -norelay utext_getPreviousNativeIndex() icu.utext_getPreviousNativeIndex
-@ cdecl -norelay utext_hasMetaData() icu.utext_hasMetaData
-@ cdecl -norelay utext_isLengthExpensive() icu.utext_isLengthExpensive
-@ cdecl -norelay utext_isWritable() icu.utext_isWritable
-@ cdecl -norelay utext_moveIndex32() icu.utext_moveIndex32
-@ cdecl -norelay utext_nativeLength() icu.utext_nativeLength
-@ cdecl -norelay utext_next32() icu.utext_next32
-@ cdecl -norelay utext_next32From() icu.utext_next32From
-@ cdecl -norelay utext_openUChars() icu.utext_openUChars
-@ cdecl -norelay utext_openUTF8() icu.utext_openUTF8
-@ cdecl -norelay utext_previous32() icu.utext_previous32
-@ cdecl -norelay utext_previous32From() icu.utext_previous32From
-@ cdecl -norelay utext_replace() icu.utext_replace
-@ cdecl -norelay utext_setNativeIndex() icu.utext_setNativeIndex
-@ cdecl -norelay utext_setup() icu.utext_setup
-@ cdecl -norelay utf8_appendCharSafeBody() icu.utf8_appendCharSafeBody
-@ cdecl -norelay utf8_back1SafeBody() icu.utf8_back1SafeBody
-@ cdecl -norelay utf8_nextCharSafeBody() icu.utf8_nextCharSafeBody
-@ cdecl -norelay utf8_prevCharSafeBody() icu.utf8_prevCharSafeBody
-@ cdecl -norelay utrace_format() icu.utrace_format
-@ cdecl -norelay utrace_functionName() icu.utrace_functionName
-@ cdecl -norelay utrace_getFunctions() icu.utrace_getFunctions
-@ cdecl -norelay utrace_getLevel() icu.utrace_getLevel
-@ cdecl -norelay utrace_setFunctions() icu.utrace_setFunctions
-@ cdecl -norelay utrace_setLevel() icu.utrace_setLevel
-@ cdecl -norelay utrace_vformat() icu.utrace_vformat
+@ cdecl UCNV_FROM_U_CALLBACK_ESCAPE(ptr ptr ptr long long long ptr) icu.UCNV_FROM_U_CALLBACK_ESCAPE
+@ cdecl UCNV_FROM_U_CALLBACK_SKIP(ptr ptr ptr long long long ptr) icu.UCNV_FROM_U_CALLBACK_SKIP
+@ cdecl UCNV_FROM_U_CALLBACK_STOP(ptr ptr ptr long long long ptr) icu.UCNV_FROM_U_CALLBACK_STOP
+@ cdecl UCNV_FROM_U_CALLBACK_SUBSTITUTE(ptr ptr ptr long long long ptr) icu.UCNV_FROM_U_CALLBACK_SUBSTITUTE
+@ cdecl UCNV_TO_U_CALLBACK_ESCAPE(ptr ptr str long long ptr) icu.UCNV_TO_U_CALLBACK_ESCAPE
+@ cdecl UCNV_TO_U_CALLBACK_SKIP(ptr ptr str long long ptr) icu.UCNV_TO_U_CALLBACK_SKIP
+@ cdecl UCNV_TO_U_CALLBACK_STOP(ptr ptr str long long ptr) icu.UCNV_TO_U_CALLBACK_STOP
+@ cdecl UCNV_TO_U_CALLBACK_SUBSTITUTE(ptr ptr str long long ptr) icu.UCNV_TO_U_CALLBACK_SUBSTITUTE
+@ cdecl u_UCharsToChars(ptr str long) icu.u_UCharsToChars
+@ cdecl u_austrcpy(str ptr) icu.u_austrcpy
+@ cdecl u_austrncpy(str ptr long) icu.u_austrncpy
+@ cdecl u_catclose(long) icu.u_catclose
+@ cdecl u_catgets(long long long ptr ptr ptr) icu.u_catgets
+@ cdecl u_catopen(str str ptr) icu.u_catopen
+@ cdecl u_charAge(long long) icu.u_charAge
+@ cdecl u_charDigitValue(long) icu.u_charDigitValue
+@ cdecl u_charDirection(long) icu.u_charDirection
+@ cdecl u_charFromName(long str ptr) icu.u_charFromName
+@ cdecl u_charMirror(long) icu.u_charMirror
+@ cdecl u_charName(long long str long ptr) icu.u_charName
+@ cdecl u_charType(long) icu.u_charType
+@ cdecl u_charsToUChars(str ptr long) icu.u_charsToUChars
+@ cdecl u_cleanup() icu.u_cleanup
+@ cdecl u_countChar32(ptr long) icu.u_countChar32
+@ cdecl u_digit(long long) icu.u_digit
+@ cdecl u_enumCharNames(long long ptr ptr long ptr) icu.u_enumCharNames
+@ cdecl u_enumCharTypes(ptr ptr) icu.u_enumCharTypes
+@ cdecl u_errorName(long) icu.u_errorName
+@ cdecl u_foldCase(long long) icu.u_foldCase
+@ cdecl u_forDigit(long long) icu.u_forDigit
+@ cdecl u_getBidiPairedBracket(long) icu.u_getBidiPairedBracket
+@ cdecl u_getCombiningClass(long) icu.u_getCombiningClass
+@ cdecl u_getDataVersion(long ptr) icu.u_getDataVersion
+@ cdecl u_getFC_NFKC_Closure(long ptr long ptr) icu.u_getFC_NFKC_Closure
+@ cdecl u_getIntPropertyMaxValue(long) icu.u_getIntPropertyMaxValue
+@ cdecl u_getIntPropertyMinValue(long) icu.u_getIntPropertyMinValue
+@ cdecl u_getIntPropertyValue(long long) icu.u_getIntPropertyValue
+@ cdecl u_getNumericValue(long) icu.u_getNumericValue
+@ cdecl u_getPropertyEnum(str) icu.u_getPropertyEnum
+@ cdecl u_getPropertyName(long long) icu.u_getPropertyName
+@ cdecl u_getPropertyValueEnum(long str) icu.u_getPropertyValueEnum
+@ cdecl u_getPropertyValueName(long long long) icu.u_getPropertyValueName
+@ cdecl u_getUnicodeVersion(long) icu.u_getUnicodeVersion
+@ cdecl u_getVersion(long) icu.u_getVersion
+@ cdecl u_hasBinaryProperty(long long) icu.u_hasBinaryProperty
+@ cdecl u_init(ptr) icu.u_init
+@ cdecl u_isIDIgnorable(long) icu.u_isIDIgnorable
+@ cdecl u_isIDPart(long) icu.u_isIDPart
+@ cdecl u_isIDStart(long) icu.u_isIDStart
+@ cdecl u_isISOControl(long) icu.u_isISOControl
+@ cdecl u_isJavaIDPart(long) icu.u_isJavaIDPart
+@ cdecl u_isJavaIDStart(long) icu.u_isJavaIDStart
+@ cdecl u_isJavaSpaceChar(long) icu.u_isJavaSpaceChar
+@ cdecl u_isMirrored(long) icu.u_isMirrored
+@ cdecl u_isUAlphabetic(long) icu.u_isUAlphabetic
+@ cdecl u_isULowercase(long) icu.u_isULowercase
+@ cdecl u_isUUppercase(long) icu.u_isUUppercase
+@ cdecl u_isUWhiteSpace(long) icu.u_isUWhiteSpace
+@ cdecl u_isWhitespace(long) icu.u_isWhitespace
+@ cdecl u_isalnum(long) icu.u_isalnum
+@ cdecl u_isalpha(long) icu.u_isalpha
+@ cdecl u_isbase(long) icu.u_isbase
+@ cdecl u_isblank(long) icu.u_isblank
+@ cdecl u_iscntrl(long) icu.u_iscntrl
+@ cdecl u_isdefined(long) icu.u_isdefined
+@ cdecl u_isdigit(long) icu.u_isdigit
+@ cdecl u_isgraph(long) icu.u_isgraph
+@ cdecl u_islower(long) icu.u_islower
+@ cdecl u_isprint(long) icu.u_isprint
+@ cdecl u_ispunct(long) icu.u_ispunct
+@ cdecl u_isspace(long) icu.u_isspace
+@ cdecl u_istitle(long) icu.u_istitle
+@ cdecl u_isupper(long) icu.u_isupper
+@ cdecl u_isxdigit(long) icu.u_isxdigit
+@ cdecl u_memcasecmp(ptr ptr long long) icu.u_memcasecmp
+@ cdecl u_memchr(ptr long long) icu.u_memchr
+@ cdecl u_memchr32(ptr long long) icu.u_memchr32
+@ cdecl u_memcmp(ptr ptr long) icu.u_memcmp
+@ cdecl u_memcmpCodePointOrder(ptr ptr long) icu.u_memcmpCodePointOrder
+@ cdecl u_memcpy(ptr ptr long) icu.u_memcpy
+@ cdecl u_memmove(ptr ptr long) icu.u_memmove
+@ cdecl u_memrchr(ptr long long) icu.u_memrchr
+@ cdecl u_memrchr32(ptr long long) icu.u_memrchr32
+@ cdecl u_memset(ptr long long) icu.u_memset
+@ cdecl u_setMemoryFunctions(ptr ptr ptr ptr ptr) icu.u_setMemoryFunctions
+@ cdecl u_shapeArabic(ptr long ptr long long ptr) icu.u_shapeArabic
+@ cdecl u_strCaseCompare(ptr long ptr long long ptr) icu.u_strCaseCompare
+@ cdecl u_strCompare(ptr long ptr long long) icu.u_strCompare
+@ cdecl u_strCompareIter(ptr ptr long) icu.u_strCompareIter
+@ cdecl u_strFindFirst(ptr long ptr long) icu.u_strFindFirst
+@ cdecl u_strFindLast(ptr long ptr long) icu.u_strFindLast
+@ cdecl u_strFoldCase(ptr long ptr long long ptr) icu.u_strFoldCase
+@ cdecl u_strFromJavaModifiedUTF8WithSub(ptr long ptr str long long ptr ptr) icu.u_strFromJavaModifiedUTF8WithSub
+@ cdecl u_strFromUTF32(ptr long ptr ptr long ptr) icu.u_strFromUTF32
+@ cdecl u_strFromUTF32WithSub(ptr long ptr ptr long long ptr ptr) icu.u_strFromUTF32WithSub
+@ cdecl u_strFromUTF8(ptr long ptr str long ptr) icu.u_strFromUTF8
+@ cdecl u_strFromUTF8Lenient(ptr long ptr str long ptr) icu.u_strFromUTF8Lenient
+@ cdecl u_strFromUTF8WithSub(ptr long ptr str long long ptr ptr) icu.u_strFromUTF8WithSub
+@ cdecl u_strFromWCS(ptr long ptr wstr long ptr) icu.u_strFromWCS
+@ cdecl u_strHasMoreChar32Than(ptr long long) icu.u_strHasMoreChar32Than
+@ cdecl u_strToJavaModifiedUTF8(str long ptr ptr long ptr) icu.u_strToJavaModifiedUTF8
+@ cdecl u_strToLower(ptr long ptr long str ptr) icu.u_strToLower
+@ cdecl u_strToTitle(ptr long ptr long ptr str ptr) icu.u_strToTitle
+@ cdecl u_strToUTF32(ptr long ptr ptr long ptr) icu.u_strToUTF32
+@ cdecl u_strToUTF32WithSub(ptr long ptr ptr long long ptr ptr) icu.u_strToUTF32WithSub
+@ cdecl u_strToUTF8(str long ptr ptr long ptr) icu.u_strToUTF8
+@ cdecl u_strToUTF8WithSub(str long ptr ptr long long ptr ptr) icu.u_strToUTF8WithSub
+@ cdecl u_strToUpper(ptr long ptr long str ptr) icu.u_strToUpper
+@ cdecl u_strToWCS(wstr long ptr ptr long ptr) icu.u_strToWCS
+@ cdecl u_strcasecmp(ptr ptr long) icu.u_strcasecmp
+@ cdecl u_strcat(ptr ptr) icu.u_strcat
+@ cdecl u_strchr(ptr long) icu.u_strchr
+@ cdecl u_strchr32(ptr long) icu.u_strchr32
+@ cdecl u_strcmp(ptr ptr) icu.u_strcmp
+@ cdecl u_strcmpCodePointOrder(ptr ptr) icu.u_strcmpCodePointOrder
+@ cdecl u_strcpy(ptr ptr) icu.u_strcpy
+@ cdecl u_strcspn(ptr ptr) icu.u_strcspn
+@ cdecl u_strlen(ptr) icu.u_strlen
+@ cdecl u_strncasecmp(ptr ptr long long) icu.u_strncasecmp
+@ cdecl u_strncat(ptr ptr long) icu.u_strncat
+@ cdecl u_strncmp(ptr ptr long) icu.u_strncmp
+@ cdecl u_strncmpCodePointOrder(ptr ptr long) icu.u_strncmpCodePointOrder
+@ cdecl u_strncpy(ptr ptr long) icu.u_strncpy
+@ cdecl u_strpbrk(ptr ptr) icu.u_strpbrk
+@ cdecl u_strrchr(ptr long) icu.u_strrchr
+@ cdecl u_strrchr32(ptr long) icu.u_strrchr32
+@ cdecl u_strrstr(ptr ptr) icu.u_strrstr
+@ cdecl u_strspn(ptr ptr) icu.u_strspn
+@ cdecl u_strstr(ptr ptr) icu.u_strstr
+@ cdecl u_strtok_r(ptr ptr ptr) icu.u_strtok_r
+@ cdecl u_tolower(long) icu.u_tolower
+@ cdecl u_totitle(long) icu.u_totitle
+@ cdecl u_toupper(long) icu.u_toupper
+@ cdecl u_uastrcpy(ptr str) icu.u_uastrcpy
+@ cdecl u_uastrncpy(ptr str long) icu.u_uastrncpy
+@ cdecl u_unescape(str ptr long) icu.u_unescape
+@ cdecl u_unescapeAt(long ptr long ptr) icu.u_unescapeAt
+@ cdecl u_versionFromString(long str) icu.u_versionFromString
+@ cdecl u_versionFromUString(long ptr) icu.u_versionFromUString
+@ cdecl u_versionToString(long str) icu.u_versionToString
+@ cdecl ubidi_close(ptr) icu.ubidi_close
+@ cdecl ubidi_countParagraphs(ptr) icu.ubidi_countParagraphs
+@ cdecl ubidi_countRuns(ptr ptr) icu.ubidi_countRuns
+@ cdecl ubidi_getBaseDirection(ptr long) icu.ubidi_getBaseDirection
+@ cdecl ubidi_getClassCallback(ptr ptr ptr) icu.ubidi_getClassCallback
+@ cdecl ubidi_getCustomizedClass(ptr long) icu.ubidi_getCustomizedClass
+@ cdecl ubidi_getDirection(ptr) icu.ubidi_getDirection
+@ cdecl ubidi_getLength(ptr) icu.ubidi_getLength
+@ cdecl ubidi_getLevelAt(ptr long) icu.ubidi_getLevelAt
+@ cdecl ubidi_getLevels(ptr ptr) icu.ubidi_getLevels
+@ cdecl ubidi_getLogicalIndex(ptr long ptr) icu.ubidi_getLogicalIndex
+@ cdecl ubidi_getLogicalMap(ptr ptr ptr) icu.ubidi_getLogicalMap
+@ cdecl ubidi_getLogicalRun(ptr long ptr ptr) icu.ubidi_getLogicalRun
+@ cdecl ubidi_getParaLevel(ptr) icu.ubidi_getParaLevel
+@ cdecl ubidi_getParagraph(ptr long ptr ptr ptr ptr) icu.ubidi_getParagraph
+@ cdecl ubidi_getParagraphByIndex(ptr long ptr ptr ptr ptr) icu.ubidi_getParagraphByIndex
+@ cdecl ubidi_getProcessedLength(ptr) icu.ubidi_getProcessedLength
+@ cdecl ubidi_getReorderingMode(ptr) icu.ubidi_getReorderingMode
+@ cdecl ubidi_getReorderingOptions(ptr) icu.ubidi_getReorderingOptions
+@ cdecl ubidi_getResultLength(ptr) icu.ubidi_getResultLength
+@ cdecl ubidi_getText(ptr) icu.ubidi_getText
+@ cdecl ubidi_getVisualIndex(ptr long ptr) icu.ubidi_getVisualIndex
+@ cdecl ubidi_getVisualMap(ptr ptr ptr) icu.ubidi_getVisualMap
+@ cdecl ubidi_getVisualRun(ptr long ptr ptr) icu.ubidi_getVisualRun
+@ cdecl ubidi_invertMap(ptr ptr long) icu.ubidi_invertMap
+@ cdecl ubidi_isInverse(ptr) icu.ubidi_isInverse
+@ cdecl ubidi_isOrderParagraphsLTR(ptr) icu.ubidi_isOrderParagraphsLTR
+@ cdecl ubidi_open() icu.ubidi_open
+@ cdecl ubidi_openSized(long long ptr) icu.ubidi_openSized
+@ cdecl ubidi_orderParagraphsLTR(ptr long) icu.ubidi_orderParagraphsLTR
+@ cdecl ubidi_reorderLogical(ptr long ptr) icu.ubidi_reorderLogical
+@ cdecl ubidi_reorderVisual(ptr long ptr) icu.ubidi_reorderVisual
+@ cdecl ubidi_setClassCallback(ptr ptr ptr ptr ptr ptr) icu.ubidi_setClassCallback
+@ cdecl ubidi_setContext(ptr ptr long ptr long ptr) icu.ubidi_setContext
+@ cdecl ubidi_setInverse(ptr long) icu.ubidi_setInverse
+@ cdecl ubidi_setLine(ptr long long ptr ptr) icu.ubidi_setLine
+@ cdecl ubidi_setPara(ptr ptr long long ptr ptr) icu.ubidi_setPara
+@ cdecl ubidi_setReorderingMode(ptr long) icu.ubidi_setReorderingMode
+@ cdecl ubidi_setReorderingOptions(ptr long) icu.ubidi_setReorderingOptions
+@ cdecl ubidi_writeReordered(ptr ptr long long ptr) icu.ubidi_writeReordered
+@ cdecl ubidi_writeReverse(ptr long ptr long long ptr) icu.ubidi_writeReverse
+@ cdecl ubiditransform_close(ptr) icu.ubiditransform_close
+@ cdecl ubiditransform_open(ptr) icu.ubiditransform_open
+@ cdecl ubiditransform_transform(ptr ptr long ptr long long long long long long long ptr) icu.ubiditransform_transform
+@ cdecl ublock_getCode(long) icu.ublock_getCode
+@ cdecl ubrk_close(ptr) icu.ubrk_close
+@ cdecl ubrk_countAvailable() icu.ubrk_countAvailable
+@ cdecl ubrk_current(ptr) icu.ubrk_current
+@ cdecl ubrk_first(ptr) icu.ubrk_first
+@ cdecl ubrk_following(ptr long) icu.ubrk_following
+@ cdecl ubrk_getAvailable(long) icu.ubrk_getAvailable
+@ cdecl ubrk_getBinaryRules(ptr ptr long ptr) icu.ubrk_getBinaryRules
+@ cdecl ubrk_getLocaleByType(ptr long ptr) icu.ubrk_getLocaleByType
+@ cdecl ubrk_getRuleStatus(ptr) icu.ubrk_getRuleStatus
+@ cdecl ubrk_getRuleStatusVec(ptr ptr long ptr) icu.ubrk_getRuleStatusVec
+@ cdecl ubrk_isBoundary(ptr long) icu.ubrk_isBoundary
+@ cdecl ubrk_last(ptr) icu.ubrk_last
+@ cdecl ubrk_next(ptr) icu.ubrk_next
+@ cdecl ubrk_open(long str ptr long ptr) icu.ubrk_open
+@ cdecl ubrk_openBinaryRules(ptr long ptr long ptr) icu.ubrk_openBinaryRules
+@ cdecl ubrk_openRules(ptr long ptr long ptr ptr) icu.ubrk_openRules
+@ cdecl ubrk_preceding(ptr long) icu.ubrk_preceding
+@ cdecl ubrk_previous(ptr) icu.ubrk_previous
+@ cdecl ubrk_refreshUText(ptr ptr ptr) icu.ubrk_refreshUText
+@ cdecl ubrk_safeClone(ptr ptr ptr ptr) icu.ubrk_safeClone
+@ cdecl ubrk_setText(ptr ptr long ptr) icu.ubrk_setText
+@ cdecl ubrk_setUText(ptr ptr ptr) icu.ubrk_setUText
+@ cdecl ucasemap_close(ptr) icu.ucasemap_close
+@ cdecl ucasemap_getBreakIterator(ptr) icu.ucasemap_getBreakIterator
+@ cdecl ucasemap_getLocale(ptr) icu.ucasemap_getLocale
+@ cdecl ucasemap_getOptions(ptr) icu.ucasemap_getOptions
+@ cdecl ucasemap_open(str long ptr) icu.ucasemap_open
+@ cdecl ucasemap_setBreakIterator(ptr ptr ptr) icu.ucasemap_setBreakIterator
+@ cdecl ucasemap_setLocale(ptr str ptr) icu.ucasemap_setLocale
+@ cdecl ucasemap_setOptions(ptr long ptr) icu.ucasemap_setOptions
+@ cdecl ucasemap_toTitle(ptr ptr long ptr long ptr) icu.ucasemap_toTitle
+@ cdecl ucasemap_utf8FoldCase(ptr str long str long ptr) icu.ucasemap_utf8FoldCase
+@ cdecl ucasemap_utf8ToLower(ptr str long str long ptr) icu.ucasemap_utf8ToLower
+@ cdecl ucasemap_utf8ToTitle(ptr str long str long ptr) icu.ucasemap_utf8ToTitle
+@ cdecl ucasemap_utf8ToUpper(ptr str long str long ptr) icu.ucasemap_utf8ToUpper
+@ cdecl ucnv_cbFromUWriteBytes(ptr str long long ptr) icu.ucnv_cbFromUWriteBytes
+@ cdecl ucnv_cbFromUWriteSub(ptr long ptr) icu.ucnv_cbFromUWriteSub
+@ cdecl ucnv_cbFromUWriteUChars(ptr ptr ptr long ptr) icu.ucnv_cbFromUWriteUChars
+@ cdecl ucnv_cbToUWriteSub(ptr long ptr) icu.ucnv_cbToUWriteSub
+@ cdecl ucnv_cbToUWriteUChars(ptr ptr long long ptr) icu.ucnv_cbToUWriteUChars
+@ cdecl ucnv_close(ptr) icu.ucnv_close
+@ cdecl ucnv_compareNames(str str) icu.ucnv_compareNames
+@ cdecl ucnv_convert(str str str long str long ptr) icu.ucnv_convert
+@ cdecl ucnv_convertEx(ptr ptr ptr str ptr str ptr ptr ptr ptr long long ptr) icu.ucnv_convertEx
+@ cdecl ucnv_countAliases(str ptr) icu.ucnv_countAliases
+@ cdecl ucnv_countAvailable() icu.ucnv_countAvailable
+@ cdecl ucnv_countStandards() icu.ucnv_countStandards
+@ cdecl ucnv_detectUnicodeSignature(str long ptr ptr) icu.ucnv_detectUnicodeSignature
+@ cdecl ucnv_fixFileSeparator(ptr ptr long) icu.ucnv_fixFileSeparator
+@ cdecl ucnv_flushCache() icu.ucnv_flushCache
+@ cdecl ucnv_fromAlgorithmic(ptr long str long str long ptr) icu.ucnv_fromAlgorithmic
+@ cdecl ucnv_fromUChars(ptr str long ptr long ptr) icu.ucnv_fromUChars
+@ cdecl ucnv_fromUCountPending(ptr ptr) icu.ucnv_fromUCountPending
+@ cdecl ucnv_fromUnicode(ptr ptr str ptr ptr ptr long ptr) icu.ucnv_fromUnicode
+@ cdecl ucnv_getAlias(str long ptr) icu.ucnv_getAlias
+@ cdecl ucnv_getAliases(str ptr ptr) icu.ucnv_getAliases
+@ cdecl ucnv_getAvailableName(long) icu.ucnv_getAvailableName
+@ cdecl ucnv_getCCSID(ptr ptr) icu.ucnv_getCCSID
+@ cdecl ucnv_getCanonicalName(str str ptr) icu.ucnv_getCanonicalName
+@ cdecl ucnv_getDefaultName() icu.ucnv_getDefaultName
+@ cdecl ucnv_getDisplayName(ptr str ptr long ptr) icu.ucnv_getDisplayName
+@ cdecl ucnv_getFromUCallBack(ptr ptr ptr) icu.ucnv_getFromUCallBack
+@ cdecl ucnv_getInvalidChars(ptr str ptr ptr) icu.ucnv_getInvalidChars
+@ cdecl ucnv_getInvalidUChars(ptr ptr ptr ptr) icu.ucnv_getInvalidUChars
+@ cdecl ucnv_getMaxCharSize(ptr) icu.ucnv_getMaxCharSize
+@ cdecl ucnv_getMinCharSize(ptr) icu.ucnv_getMinCharSize
+@ cdecl ucnv_getName(ptr ptr) icu.ucnv_getName
+@ cdecl ucnv_getNextUChar(ptr ptr str ptr) icu.ucnv_getNextUChar
+@ cdecl ucnv_getPlatform(ptr ptr) icu.ucnv_getPlatform
+@ cdecl ucnv_getStandard(long ptr) icu.ucnv_getStandard
+@ cdecl ucnv_getStandardName(str str ptr) icu.ucnv_getStandardName
+@ cdecl ucnv_getStarters(ptr long ptr) icu.ucnv_getStarters
+@ cdecl ucnv_getSubstChars(ptr str ptr ptr) icu.ucnv_getSubstChars
+@ cdecl ucnv_getToUCallBack(ptr ptr ptr) icu.ucnv_getToUCallBack
+@ cdecl ucnv_getType(ptr) icu.ucnv_getType
+@ cdecl ucnv_getUnicodeSet(ptr ptr long ptr) icu.ucnv_getUnicodeSet
+@ cdecl ucnv_isAmbiguous(ptr) icu.ucnv_isAmbiguous
+@ cdecl ucnv_isFixedWidth(ptr ptr) icu.ucnv_isFixedWidth
+@ cdecl ucnv_open(str ptr) icu.ucnv_open
+@ cdecl ucnv_openAllNames(ptr) icu.ucnv_openAllNames
+@ cdecl ucnv_openCCSID(long long ptr) icu.ucnv_openCCSID
+@ cdecl ucnv_openPackage(str str ptr) icu.ucnv_openPackage
+@ cdecl ucnv_openStandardNames(str str ptr) icu.ucnv_openStandardNames
+@ cdecl ucnv_openU(ptr ptr) icu.ucnv_openU
+@ cdecl ucnv_reset(ptr) icu.ucnv_reset
+@ cdecl ucnv_resetFromUnicode(ptr) icu.ucnv_resetFromUnicode
+@ cdecl ucnv_resetToUnicode(ptr) icu.ucnv_resetToUnicode
+@ cdecl ucnv_safeClone(ptr ptr ptr ptr) icu.ucnv_safeClone
+@ cdecl ucnv_setDefaultName(str) icu.ucnv_setDefaultName
+@ cdecl ucnv_setFallback(ptr long) icu.ucnv_setFallback
+@ cdecl ucnv_setFromUCallBack(ptr long ptr ptr ptr ptr) icu.ucnv_setFromUCallBack
+@ cdecl ucnv_setSubstChars(ptr str long ptr) icu.ucnv_setSubstChars
+@ cdecl ucnv_setSubstString(ptr ptr long ptr) icu.ucnv_setSubstString
+@ cdecl ucnv_setToUCallBack(ptr long ptr ptr ptr ptr) icu.ucnv_setToUCallBack
+@ cdecl ucnv_toAlgorithmic(long ptr str long str long ptr) icu.ucnv_toAlgorithmic
+@ cdecl ucnv_toUChars(ptr ptr long str long ptr) icu.ucnv_toUChars
+@ cdecl ucnv_toUCountPending(ptr ptr) icu.ucnv_toUCountPending
+@ cdecl ucnv_toUnicode(ptr ptr ptr ptr str ptr long ptr) icu.ucnv_toUnicode
+@ cdecl ucnv_usesFallback(ptr) icu.ucnv_usesFallback
+@ cdecl ucnvsel_close(ptr) icu.ucnvsel_close
+@ cdecl ucnvsel_open(str long ptr long ptr) icu.ucnvsel_open
+@ cdecl ucnvsel_openFromSerialized(ptr long ptr) icu.ucnvsel_openFromSerialized
+@ cdecl ucnvsel_selectForString(ptr ptr long ptr) icu.ucnvsel_selectForString
+@ cdecl ucnvsel_selectForUTF8(ptr str long ptr) icu.ucnvsel_selectForUTF8
+@ cdecl ucnvsel_serialize(ptr ptr long ptr) icu.ucnvsel_serialize
+@ cdecl ucurr_countCurrencies(str long ptr) icu.ucurr_countCurrencies
+@ cdecl ucurr_forLocale(str ptr long ptr) icu.ucurr_forLocale
+@ cdecl ucurr_forLocaleAndDate(str long long ptr long ptr) icu.ucurr_forLocaleAndDate
+@ cdecl ucurr_getDefaultFractionDigits(ptr ptr) icu.ucurr_getDefaultFractionDigits
+@ cdecl ucurr_getDefaultFractionDigitsForUsage(ptr long ptr) icu.ucurr_getDefaultFractionDigitsForUsage
+@ cdecl ucurr_getKeywordValuesForLocale(str str long ptr) icu.ucurr_getKeywordValuesForLocale
+@ cdecl ucurr_getName(ptr str long ptr ptr ptr) icu.ucurr_getName
+@ cdecl ucurr_getNumericCode(ptr) icu.ucurr_getNumericCode
+@ cdecl ucurr_getPluralName(ptr str ptr str ptr ptr) icu.ucurr_getPluralName
+@ cdecl ucurr_getRoundingIncrement(ptr ptr) icu.ucurr_getRoundingIncrement
+@ cdecl ucurr_getRoundingIncrementForUsage(ptr long ptr) icu.ucurr_getRoundingIncrementForUsage
+@ cdecl ucurr_isAvailable(ptr long long ptr) icu.ucurr_isAvailable
+@ cdecl ucurr_openISOCurrencies(long ptr) icu.ucurr_openISOCurrencies
+@ cdecl ucurr_register(ptr str ptr) icu.ucurr_register
+@ cdecl ucurr_unregister(long ptr) icu.ucurr_unregister
+@ cdecl uenum_close(ptr) icu.uenum_close
+@ cdecl uenum_count(ptr ptr) icu.uenum_count
+@ cdecl uenum_next(ptr ptr ptr) icu.uenum_next
+@ cdecl uenum_openCharStringsEnumeration(str long ptr) icu.uenum_openCharStringsEnumeration
+@ cdecl uenum_openUCharStringsEnumeration(ptr long ptr) icu.uenum_openUCharStringsEnumeration
+@ cdecl uenum_reset(ptr ptr) icu.uenum_reset
+@ cdecl uenum_unext(ptr ptr ptr) icu.uenum_unext
+@ cdecl uidna_close(ptr) icu.uidna_close
+@ cdecl uidna_labelToASCII(ptr ptr long ptr long ptr ptr) icu.uidna_labelToASCII
+@ cdecl uidna_labelToASCII_UTF8(ptr str long str long ptr ptr) icu.uidna_labelToASCII_UTF8
+@ cdecl uidna_labelToUnicode(ptr ptr long ptr long ptr ptr) icu.uidna_labelToUnicode
+@ cdecl uidna_labelToUnicodeUTF8(ptr str long str long ptr ptr) icu.uidna_labelToUnicodeUTF8
+@ cdecl uidna_nameToASCII(ptr ptr long ptr long ptr ptr) icu.uidna_nameToASCII
+@ cdecl uidna_nameToASCII_UTF8(ptr str long str long ptr ptr) icu.uidna_nameToASCII_UTF8
+@ cdecl uidna_nameToUnicode(ptr ptr long ptr long ptr ptr) icu.uidna_nameToUnicode
+@ cdecl uidna_nameToUnicodeUTF8(ptr str long str long ptr ptr) icu.uidna_nameToUnicodeUTF8
+@ cdecl uidna_openUTS46(long ptr) icu.uidna_openUTS46
+@ cdecl uiter_current32(ptr) icu.uiter_current32
+@ cdecl uiter_getState(ptr) icu.uiter_getState
+@ cdecl uiter_next32(ptr) icu.uiter_next32
+@ cdecl uiter_previous32(ptr) icu.uiter_previous32
+@ cdecl uiter_setState(ptr long ptr) icu.uiter_setState
+@ cdecl uiter_setString(ptr ptr long) icu.uiter_setString
+@ cdecl uiter_setUTF16BE(ptr str long) icu.uiter_setUTF16BE
+@ cdecl uiter_setUTF8(ptr str long) icu.uiter_setUTF8
+@ cdecl uldn_close(ptr) icu.uldn_close
+@ cdecl uldn_getContext(ptr long ptr) icu.uldn_getContext
+@ cdecl uldn_getDialectHandling(ptr) icu.uldn_getDialectHandling
+@ cdecl uldn_getLocale(ptr) icu.uldn_getLocale
+@ cdecl uldn_keyDisplayName(ptr str ptr long ptr) icu.uldn_keyDisplayName
+@ cdecl uldn_keyValueDisplayName(ptr str str ptr long ptr) icu.uldn_keyValueDisplayName
+@ cdecl uldn_languageDisplayName(ptr str ptr long ptr) icu.uldn_languageDisplayName
+@ cdecl uldn_localeDisplayName(ptr str ptr long ptr) icu.uldn_localeDisplayName
+@ cdecl uldn_open(str long ptr) icu.uldn_open
+@ cdecl uldn_openForContext(str ptr long ptr) icu.uldn_openForContext
+@ cdecl uldn_regionDisplayName(ptr str ptr long ptr) icu.uldn_regionDisplayName
+@ cdecl uldn_scriptCodeDisplayName(ptr long ptr long ptr) icu.uldn_scriptCodeDisplayName
+@ cdecl uldn_scriptDisplayName(ptr str ptr long ptr) icu.uldn_scriptDisplayName
+@ cdecl uldn_variantDisplayName(ptr str ptr long ptr) icu.uldn_variantDisplayName
+@ cdecl ulistfmt_close(ptr) icu.ulistfmt_close
+@ cdecl ulistfmt_format(ptr ptr ptr long ptr long ptr) icu.ulistfmt_format
+@ cdecl ulistfmt_open(str ptr) icu.ulistfmt_open
+@ cdecl uloc_acceptLanguage(str long ptr ptr long ptr ptr) icu.uloc_acceptLanguage
+@ cdecl uloc_acceptLanguageFromHTTP(str long ptr str ptr ptr) icu.uloc_acceptLanguageFromHTTP
+@ cdecl uloc_addLikelySubtags(str str long ptr) icu.uloc_addLikelySubtags
+@ cdecl uloc_canonicalize(str str long ptr) icu.uloc_canonicalize
+@ cdecl uloc_countAvailable() icu.uloc_countAvailable
+@ cdecl uloc_forLanguageTag(str str long ptr ptr) icu.uloc_forLanguageTag
+@ cdecl uloc_getAvailable(long) icu.uloc_getAvailable
+@ cdecl uloc_getBaseName(str str long ptr) icu.uloc_getBaseName
+@ cdecl uloc_getCharacterOrientation(str ptr) icu.uloc_getCharacterOrientation
+@ cdecl uloc_getCountry(str str long ptr) icu.uloc_getCountry
+@ cdecl uloc_getDefault() icu.uloc_getDefault
+@ cdecl uloc_getDisplayCountry(str str ptr long ptr) icu.uloc_getDisplayCountry
+@ cdecl uloc_getDisplayKeyword(str str ptr long ptr) icu.uloc_getDisplayKeyword
+@ cdecl uloc_getDisplayKeywordValue(str str str ptr long ptr) icu.uloc_getDisplayKeywordValue
+@ cdecl uloc_getDisplayLanguage(str str ptr long ptr) icu.uloc_getDisplayLanguage
+@ cdecl uloc_getDisplayName(str str ptr long ptr) icu.uloc_getDisplayName
+@ cdecl uloc_getDisplayScript(str str ptr long ptr) icu.uloc_getDisplayScript
+@ cdecl uloc_getDisplayVariant(str str ptr long ptr) icu.uloc_getDisplayVariant
+@ cdecl uloc_getISO3Country(str) icu.uloc_getISO3Country
+@ cdecl uloc_getISO3Language(str) icu.uloc_getISO3Language
+@ cdecl uloc_getISOCountries() icu.uloc_getISOCountries
+@ cdecl uloc_getISOLanguages() icu.uloc_getISOLanguages
+@ cdecl uloc_getKeywordValue(str str str long ptr) icu.uloc_getKeywordValue
+@ cdecl uloc_getLCID(str) icu.uloc_getLCID
+@ cdecl uloc_getLanguage(str str long ptr) icu.uloc_getLanguage
+@ cdecl uloc_getLineOrientation(str ptr) icu.uloc_getLineOrientation
+@ cdecl uloc_getLocaleForLCID(long str long ptr) icu.uloc_getLocaleForLCID
+@ cdecl uloc_getName(str str long ptr) icu.uloc_getName
+@ cdecl uloc_getParent(str str long ptr) icu.uloc_getParent
+@ cdecl uloc_getScript(str str long ptr) icu.uloc_getScript
+@ cdecl uloc_getVariant(str str long ptr) icu.uloc_getVariant
+@ cdecl uloc_isRightToLeft(str) icu.uloc_isRightToLeft
+@ cdecl uloc_minimizeSubtags(str str long ptr) icu.uloc_minimizeSubtags
+@ cdecl uloc_openKeywords(str ptr) icu.uloc_openKeywords
+@ cdecl uloc_setDefault(str ptr) icu.uloc_setDefault
+@ cdecl uloc_setKeywordValue(str str str long ptr) icu.uloc_setKeywordValue
+@ cdecl uloc_toLanguageTag(str str long long ptr) icu.uloc_toLanguageTag
+@ cdecl uloc_toLegacyKey(str) icu.uloc_toLegacyKey
+@ cdecl uloc_toLegacyType(str str) icu.uloc_toLegacyType
+@ cdecl uloc_toUnicodeLocaleKey(str) icu.uloc_toUnicodeLocaleKey
+@ cdecl uloc_toUnicodeLocaleType(str str) icu.uloc_toUnicodeLocaleType
+@ cdecl unorm2_append(ptr ptr long long ptr long ptr) icu.unorm2_append
+@ cdecl unorm2_close(ptr) icu.unorm2_close
+@ cdecl unorm2_composePair(ptr long long) icu.unorm2_composePair
+@ cdecl unorm2_getCombiningClass(ptr long) icu.unorm2_getCombiningClass
+@ cdecl unorm2_getDecomposition(ptr long ptr long ptr) icu.unorm2_getDecomposition
+@ cdecl unorm2_getInstance(str str long ptr) icu.unorm2_getInstance
+@ cdecl unorm2_getNFCInstance(ptr) icu.unorm2_getNFCInstance
+@ cdecl unorm2_getNFDInstance(ptr) icu.unorm2_getNFDInstance
+@ cdecl unorm2_getNFKCCasefoldInstance(ptr) icu.unorm2_getNFKCCasefoldInstance
+@ cdecl unorm2_getNFKCInstance(ptr) icu.unorm2_getNFKCInstance
+@ cdecl unorm2_getNFKDInstance(ptr) icu.unorm2_getNFKDInstance
+@ cdecl unorm2_getRawDecomposition(ptr long ptr long ptr) icu.unorm2_getRawDecomposition
+@ cdecl unorm2_hasBoundaryAfter(ptr long) icu.unorm2_hasBoundaryAfter
+@ cdecl unorm2_hasBoundaryBefore(ptr long) icu.unorm2_hasBoundaryBefore
+@ cdecl unorm2_isInert(ptr long) icu.unorm2_isInert
+@ cdecl unorm2_isNormalized(ptr ptr long ptr) icu.unorm2_isNormalized
+@ cdecl unorm2_normalize(ptr ptr long ptr long ptr) icu.unorm2_normalize
+@ cdecl unorm2_normalizeSecondAndAppend(ptr ptr long long ptr long ptr) icu.unorm2_normalizeSecondAndAppend
+@ cdecl unorm2_openFiltered(ptr ptr ptr) icu.unorm2_openFiltered
+@ cdecl unorm2_quickCheck(ptr ptr long ptr) icu.unorm2_quickCheck
+@ cdecl unorm2_spanQuickCheckYes(ptr ptr long ptr) icu.unorm2_spanQuickCheckYes
+@ cdecl unorm_compare(ptr long ptr long long ptr) icu.unorm_compare
+@ cdecl ures_close(ptr) icu.ures_close
+@ cdecl ures_getBinary(ptr ptr ptr) icu.ures_getBinary
+@ cdecl ures_getByIndex(ptr long ptr ptr) icu.ures_getByIndex
+@ cdecl ures_getByKey(ptr str ptr ptr) icu.ures_getByKey
+@ cdecl ures_getInt(ptr ptr) icu.ures_getInt
+@ cdecl ures_getIntVector(ptr ptr ptr) icu.ures_getIntVector
+@ cdecl ures_getKey(ptr) icu.ures_getKey
+@ cdecl ures_getLocaleByType(ptr long ptr) icu.ures_getLocaleByType
+@ cdecl ures_getNextResource(ptr ptr ptr) icu.ures_getNextResource
+@ cdecl ures_getNextString(ptr ptr ptr ptr) icu.ures_getNextString
+@ cdecl ures_getSize(ptr) icu.ures_getSize
+@ cdecl ures_getString(ptr ptr ptr) icu.ures_getString
+@ cdecl ures_getStringByIndex(ptr long ptr ptr) icu.ures_getStringByIndex
+@ cdecl ures_getStringByKey(ptr str ptr ptr) icu.ures_getStringByKey
+@ cdecl ures_getType(ptr) icu.ures_getType
+@ cdecl ures_getUInt(ptr ptr) icu.ures_getUInt
+@ cdecl ures_getUTF8String(ptr str ptr long ptr) icu.ures_getUTF8String
+@ cdecl ures_getUTF8StringByIndex(ptr long str ptr long ptr) icu.ures_getUTF8StringByIndex
+@ cdecl ures_getUTF8StringByKey(ptr str str ptr long ptr) icu.ures_getUTF8StringByKey
+@ cdecl ures_getVersion(ptr long) icu.ures_getVersion
+@ cdecl ures_hasNext(ptr) icu.ures_hasNext
+@ cdecl ures_open(str str ptr) icu.ures_open
+@ cdecl ures_openAvailableLocales(str ptr) icu.ures_openAvailableLocales
+@ cdecl ures_openDirect(str str ptr) icu.ures_openDirect
+@ cdecl ures_openU(ptr str ptr) icu.ures_openU
+@ cdecl ures_resetIterator(ptr) icu.ures_resetIterator
+@ cdecl uscript_breaksBetweenLetters(long) icu.uscript_breaksBetweenLetters
+@ cdecl uscript_getCode(str ptr long ptr) icu.uscript_getCode
+@ cdecl uscript_getName(long) icu.uscript_getName
+@ cdecl uscript_getSampleString(long ptr long ptr) icu.uscript_getSampleString
+@ cdecl uscript_getScript(long ptr) icu.uscript_getScript
+@ cdecl uscript_getScriptExtensions(long ptr long ptr) icu.uscript_getScriptExtensions
+@ cdecl uscript_getShortName(long) icu.uscript_getShortName
+@ cdecl uscript_getUsage(long) icu.uscript_getUsage
+@ cdecl uscript_hasScript(long long) icu.uscript_hasScript
+@ cdecl uscript_isCased(long) icu.uscript_isCased
+@ cdecl uscript_isRightToLeft(long) icu.uscript_isRightToLeft
+@ cdecl uset_add(ptr long) icu.uset_add
+@ cdecl uset_addAll(ptr ptr) icu.uset_addAll
+@ cdecl uset_addAllCodePoints(ptr ptr long) icu.uset_addAllCodePoints
+@ cdecl uset_addRange(ptr long long) icu.uset_addRange
+@ cdecl uset_addString(ptr ptr long) icu.uset_addString
+@ cdecl uset_applyIntPropertyValue(ptr long long ptr) icu.uset_applyIntPropertyValue
+@ cdecl uset_applyPattern(ptr ptr long long ptr) icu.uset_applyPattern
+@ cdecl uset_applyPropertyAlias(ptr ptr long ptr long ptr) icu.uset_applyPropertyAlias
+@ cdecl uset_charAt(ptr long) icu.uset_charAt
+@ cdecl uset_clear(ptr) icu.uset_clear
+@ cdecl uset_clone(ptr) icu.uset_clone
+@ cdecl uset_cloneAsThawed(ptr) icu.uset_cloneAsThawed
+@ cdecl uset_close(ptr) icu.uset_close
+@ cdecl uset_closeOver(ptr long) icu.uset_closeOver
+@ cdecl uset_compact(ptr) icu.uset_compact
+@ cdecl uset_complement(ptr) icu.uset_complement
+@ cdecl uset_complementAll(ptr ptr) icu.uset_complementAll
+@ cdecl uset_contains(ptr long) icu.uset_contains
+@ cdecl uset_containsAll(ptr ptr) icu.uset_containsAll
+@ cdecl uset_containsAllCodePoints(ptr ptr long) icu.uset_containsAllCodePoints
+@ cdecl uset_containsNone(ptr ptr) icu.uset_containsNone
+@ cdecl uset_containsRange(ptr long long) icu.uset_containsRange
+@ cdecl uset_containsSome(ptr ptr) icu.uset_containsSome
+@ cdecl uset_containsString(ptr ptr long) icu.uset_containsString
+@ cdecl uset_equals(ptr ptr) icu.uset_equals
+@ cdecl uset_freeze(ptr) icu.uset_freeze
+@ cdecl uset_getItem(ptr long ptr ptr ptr long ptr) icu.uset_getItem
+@ cdecl uset_getItemCount(ptr) icu.uset_getItemCount
+@ cdecl uset_getSerializedRange(ptr long ptr ptr) icu.uset_getSerializedRange
+@ cdecl uset_getSerializedRangeCount(ptr) icu.uset_getSerializedRangeCount
+@ cdecl uset_getSerializedSet(ptr ptr long) icu.uset_getSerializedSet
+@ cdecl uset_indexOf(ptr long) icu.uset_indexOf
+@ cdecl uset_isEmpty(ptr) icu.uset_isEmpty
+@ cdecl uset_isFrozen(ptr) icu.uset_isFrozen
+@ cdecl uset_open(long long) icu.uset_open
+@ cdecl uset_openEmpty() icu.uset_openEmpty
+@ cdecl uset_openPattern(ptr long ptr) icu.uset_openPattern
+@ cdecl uset_openPatternOptions(ptr long long ptr) icu.uset_openPatternOptions
+@ cdecl uset_remove(ptr long) icu.uset_remove
+@ cdecl uset_removeAll(ptr ptr) icu.uset_removeAll
+@ cdecl uset_removeAllStrings(ptr) icu.uset_removeAllStrings
+@ cdecl uset_removeRange(ptr long long) icu.uset_removeRange
+@ cdecl uset_removeString(ptr ptr long) icu.uset_removeString
+@ cdecl uset_resemblesPattern(ptr long long) icu.uset_resemblesPattern
+@ cdecl uset_retain(ptr long long) icu.uset_retain
+@ cdecl uset_retainAll(ptr ptr) icu.uset_retainAll
+@ cdecl uset_serialize(ptr ptr long ptr) icu.uset_serialize
+@ cdecl uset_serializedContains(ptr long) icu.uset_serializedContains
+@ cdecl uset_set(ptr long long) icu.uset_set
+@ cdecl uset_setSerializedToOne(ptr long) icu.uset_setSerializedToOne
+@ cdecl uset_size(ptr) icu.uset_size
+@ cdecl uset_span(ptr ptr long long) icu.uset_span
+@ cdecl uset_spanBack(ptr ptr long long) icu.uset_spanBack
+@ cdecl uset_spanBackUTF8(ptr str long long) icu.uset_spanBackUTF8
+@ cdecl uset_spanUTF8(ptr str long long) icu.uset_spanUTF8
+@ cdecl uset_toPattern(ptr ptr long long ptr) icu.uset_toPattern
+@ cdecl usprep_close(ptr) icu.usprep_close
+@ cdecl usprep_open(str str ptr) icu.usprep_open
+@ cdecl usprep_openByType(long ptr) icu.usprep_openByType
+@ cdecl usprep_prepare(ptr ptr long ptr long long ptr ptr) icu.usprep_prepare
+@ cdecl utext_char32At(ptr long) icu.utext_char32At
+@ cdecl utext_clone(ptr ptr long long ptr) icu.utext_clone
+@ cdecl utext_close(ptr) icu.utext_close
+@ cdecl utext_copy(ptr long long long long ptr) icu.utext_copy
+@ cdecl utext_current32(ptr) icu.utext_current32
+@ cdecl utext_equals(ptr ptr) icu.utext_equals
+@ cdecl utext_extract(ptr long long ptr long ptr) icu.utext_extract
+@ cdecl utext_freeze(ptr) icu.utext_freeze
+@ cdecl utext_getNativeIndex(ptr) icu.utext_getNativeIndex
+@ cdecl utext_getPreviousNativeIndex(ptr) icu.utext_getPreviousNativeIndex
+@ cdecl utext_hasMetaData(ptr) icu.utext_hasMetaData
+@ cdecl utext_isLengthExpensive(ptr) icu.utext_isLengthExpensive
+@ cdecl utext_isWritable(ptr) icu.utext_isWritable
+@ cdecl utext_moveIndex32(ptr long) icu.utext_moveIndex32
+@ cdecl utext_nativeLength(ptr) icu.utext_nativeLength
+@ cdecl utext_next32(ptr) icu.utext_next32
+@ cdecl utext_next32From(ptr long) icu.utext_next32From
+@ cdecl utext_openUChars(ptr ptr long ptr) icu.utext_openUChars
+@ cdecl utext_openUTF8(ptr str long ptr) icu.utext_openUTF8
+@ cdecl utext_previous32(ptr) icu.utext_previous32
+@ cdecl utext_previous32From(ptr long) icu.utext_previous32From
+@ cdecl utext_replace(ptr long long ptr long ptr) icu.utext_replace
+@ cdecl utext_setNativeIndex(ptr long) icu.utext_setNativeIndex
+@ cdecl utext_setup(ptr long ptr) icu.utext_setup
+@ cdecl utf8_appendCharSafeBody(ptr long long long ptr) icu.utf8_appendCharSafeBody
+@ cdecl utf8_back1SafeBody(ptr long long) icu.utf8_back1SafeBody
+@ cdecl utf8_nextCharSafeBody(ptr ptr long long long) icu.utf8_nextCharSafeBody
+@ cdecl utf8_prevCharSafeBody(ptr long ptr long long) icu.utf8_prevCharSafeBody
+@ varargs utrace_format(str long long str) icu.utrace_format
+@ cdecl utrace_functionName(long) icu.utrace_functionName
+@ cdecl utrace_getFunctions(ptr ptr ptr ptr) icu.utrace_getFunctions
+@ cdecl utrace_getLevel() icu.utrace_getLevel
+@ cdecl utrace_setFunctions(ptr ptr ptr ptr) icu.utrace_setFunctions
+@ cdecl utrace_setLevel(long) icu.utrace_setLevel
+@ cdecl utrace_vformat(str long long str long) icu.utrace_vformat
