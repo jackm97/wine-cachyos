@@ -736,13 +736,43 @@ done:
     return hr;
 }
 
+/* Keep only the adapters that support every filter attribute, preserving their order. */
+static void dxcore_adapter_list_filter(struct dxcore_adapter_list *list, uint32_t num_attributes,
+        const GUID *filter_attributes)
+{
+    uint32_t kept = 0;
+
+    for (uint32_t i = 0; i < list->adapter_count; ++i)
+    {
+        IDXCoreAdapter *adapter = &list->adapters[i]->IDXCoreAdapter_iface;
+        BOOL keep = TRUE;
+
+        for (uint32_t j = 0; j < num_attributes && keep; ++j)
+            keep = IDXCoreAdapter_IsAttributeSupported(adapter, &filter_attributes[j]);
+
+        if (keep)
+        {
+            list->adapters[kept++] = list->adapters[i];
+        }
+        else
+        {
+            TRACE("Dropping adapter %p, it does not support all filter attributes.\n", adapter);
+            IDXCoreAdapter_Release(adapter);
+        }
+    }
+
+    for (uint32_t i = kept; i < list->adapter_count; ++i)
+        list->adapters[i] = NULL;
+    list->adapter_count = kept;
+}
+
 static HRESULT STDMETHODCALLTYPE dxcore_adapter_factory_CreateAdapterList(IDXCoreAdapterFactory *iface, uint32_t num_attributes,
         const GUID *filter_attributes, REFIID riid, void **out)
 {
     struct dxcore_adapter_list *list;
     HRESULT hr;
 
-    FIXME("iface %p, num_attributes %u, filter_attributes %p, riid %s, out %p semi-stub!\n", iface, num_attributes, filter_attributes,
+    TRACE("iface %p, num_attributes %u, filter_attributes %p, riid %s, out %p.\n", iface, num_attributes, filter_attributes,
             debugstr_guid(riid), out);
 
     if (!out)
@@ -763,6 +793,8 @@ static HRESULT STDMETHODCALLTYPE dxcore_adapter_factory_CreateAdapterList(IDXCor
         IDXCoreAdapterList_Release(&list->IDXCoreAdapterList_iface);
         return hr;
     }
+
+    dxcore_adapter_list_filter(list, num_attributes, filter_attributes);
 
     hr = IDXCoreAdapterList_QueryInterface(&list->IDXCoreAdapterList_iface, riid, out);
     IDXCoreAdapterList_Release(&list->IDXCoreAdapterList_iface);
