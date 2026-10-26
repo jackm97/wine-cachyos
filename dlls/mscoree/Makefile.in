@@ -13,4 +13,3 @@ SOURCES = \
 	mscoree_classes.idl \
 	mscoree_main.c
 
-metahost_EXTRADEFS = -DINSTALL_DATADIR="\"${datadir}\""

@@ -881,9 +881,7 @@ BOOL get_mono_path(LPWSTR path, BOOL skip_local)
     return (!skip_local && get_mono_path_local(path)) ||
         get_mono_path_registry(path) ||
         get_mono_path_datadir(path) ||
-        get_mono_path_unix(L"\\\\?\\unix" INSTALL_DATADIR "/wine/mono", path) ||
-        (strcmp(INSTALL_DATADIR, "/usr/share") &&
-         get_mono_path_unix(L"\\\\?\\unix/usr/share/wine/mono", path)) ||
+        get_mono_path_unix(L"\\\\?\\unix/usr/share/wine/mono", path) ||
         get_mono_path_unix(L"\\\\?\\unix/opt/wine/mono", path);
 }
 

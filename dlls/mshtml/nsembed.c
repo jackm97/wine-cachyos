@@ -807,9 +807,7 @@ BOOL load_gecko(void)
 
         if(!(gecko_path = find_wine_gecko_reg())
            && !(gecko_path = find_wine_gecko_datadir())
-           && !(gecko_path = find_wine_gecko_unix(L"\\\\?\\unix" INSTALL_DATADIR "/wine/gecko/" GECKO_DIR_NAME))
-           && (!strcmp(INSTALL_DATADIR, "/usr/share") ||
-               !(gecko_path = find_wine_gecko_unix(L"\\\\?\\unix/usr/share/wine/gecko/" GECKO_DIR_NAME)))
+           && !(gecko_path = find_wine_gecko_unix(L"\\\\?\\unix/usr/share/wine/gecko/" GECKO_DIR_NAME))
            && !(gecko_path = find_wine_gecko_unix(L"\\\\?\\unix/opt/wine/gecko/" GECKO_DIR_NAME))
            && install_wine_gecko())
             gecko_path = find_wine_gecko_reg();

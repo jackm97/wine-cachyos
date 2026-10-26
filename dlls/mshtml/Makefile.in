@@ -66,4 +66,3 @@ SOURCES = \
 	view.c \
 	xmlhttprequest.c
 
-nsembed_EXTRADEFS = -DINSTALL_DATADIR="\"${datadir}\""
