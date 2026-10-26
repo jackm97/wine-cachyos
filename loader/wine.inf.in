@@ -1593,6 +1593,7 @@ sortdefault.nls
 windows.applicationmodel.winmd
 windows.globalization.winmd
 windows.graphics.winmd
+windows.management.deployment.winmd
 windows.media.winmd
 windows.networking.winmd
 windows.perception.winmd
