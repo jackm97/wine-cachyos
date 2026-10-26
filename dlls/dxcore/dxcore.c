@@ -604,18 +604,93 @@ static HRESULT STDMETHODCALLTYPE dxcore_adapter_list_GetFactory(IDXCoreAdapterLi
     return E_NOTIMPL;
 }
 
+static BOOL dxcore_adapter_preference_is_supported(DXCoreAdapterPreference preference)
+{
+    switch (preference)
+    {
+        case Hardware:
+        case MinimumPower:
+        case HighPerformance:
+            return TRUE;
+
+        default:
+            return FALSE;
+    }
+}
+
+/* Returns a negative value if a sorts before b, positive if after, 0 if the
+ * preferences cannot tell them apart. The preferences are criteria in priority order. */
+static int dxcore_adapter_compare(const struct dxcore_adapter *a, const struct dxcore_adapter *b,
+        uint32_t num_preferences, const DXCoreAdapterPreference *preferences)
+{
+    for (uint32_t i = 0; i < num_preferences; ++i)
+    {
+        UINT64 a_memory = a->identifier.video_memory;
+        UINT64 b_memory = b->identifier.video_memory;
+
+        switch (preferences[i])
+        {
+            case Hardware:
+                /* All adapters are reported as hardware, see IsHardware in GetProperty(). */
+                break;
+
+            case HighPerformance:
+                if (a_memory != b_memory)
+                    return a_memory > b_memory ? -1 : 1;
+                break;
+
+            case MinimumPower:
+                if (a_memory != b_memory)
+                    return a_memory < b_memory ? -1 : 1;
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    return 0;
+}
+
 static HRESULT STDMETHODCALLTYPE dxcore_adapter_list_Sort(IDXCoreAdapterList *iface, uint32_t num_preferences,
         const DXCoreAdapterPreference *preferences)
 {
-    FIXME("iface %p, num_preferences %u, preferences %p stub!\n", iface, num_preferences, preferences);
-    return E_NOTIMPL;
+    struct dxcore_adapter_list *list = impl_from_IDXCoreAdapterList(iface);
+    uint32_t i, j;
+
+    TRACE("iface %p, num_preferences %u, preferences %p.\n", iface, num_preferences, preferences);
+
+    if (num_preferences && !preferences)
+        return E_INVALIDARG;
+
+    for (i = 0; i < num_preferences; ++i)
+    {
+        if (!dxcore_adapter_preference_is_supported(preferences[i]))
+        {
+            WARN("Unsupported preference %u.\n", preferences[i]);
+            return E_INVALIDARG;
+        }
+    }
+
+    /* Insertion sort, which is stable. */
+    for (i = 1; i < list->adapter_count; ++i)
+    {
+        struct dxcore_adapter *adapter = list->adapters[i];
+
+        for (j = i; j > 0 && dxcore_adapter_compare(list->adapters[j - 1], adapter, num_preferences, preferences) > 0; --j)
+            list->adapters[j] = list->adapters[j - 1];
+        list->adapters[j] = adapter;
+    }
+
+    return S_OK;
 }
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_list_IsAdapterPreferenceSupported(IDXCoreAdapterList *iface,
         DXCoreAdapterPreference preference)
 {
-    FIXME("iface %p, preference %u stub!\n", iface, preference);
-    return FALSE;
+    TRACE("iface %p, preference %u.\n", iface, preference);
+
+    return dxcore_adapter_preference_is_supported(preference);
 }
 
 static const struct IDXCoreAdapterListVtbl dxcore_adapter_list_vtbl =
