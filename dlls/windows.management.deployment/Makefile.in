@@ -1,0 +1,7 @@
+MODULE  = windows.management.deployment.dll
+IMPORTS = combase
+
+SOURCES = \
+	classes.idl \
+	main.c \
+	packagemanager.c
