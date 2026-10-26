@@ -1,15 +1,16 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/prefix-dev/recipe-format/main/schema.json
 
 context:
-  version: "74"
+  version: "0.62.0"
 
 package:
   name: windows-winmd
   version: ${{ version }}
 
+# tag 74+ strips runtime-class members (no .ctor), which the CLR needs.
 source:
-  url: https://raw.githubusercontent.com/microsoft/windows-rs/${{ version }}/crates/libs/default/Windows.winmd
-  sha256: 9ddfc6f5e5c3d29522f35e1cac566617e9d28ccbc6ccb072c79fa9949cdbe336
+  url: https://raw.githubusercontent.com/microsoft/windows-rs/${{ version }}/crates/libs/bindgen/default/Windows.winmd
+  sha256: aea3e9828927aedd1ace2b927911e826f386d5c52dc6bd4151c10d314cb1adbf
   file_name: Windows.winmd
 
 build:
