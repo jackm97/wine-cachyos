@@ -374,6 +374,155 @@ static HRESULT async_info_create( IUnknown *invoker, IUnknown *param, async_oper
     return S_OK;
 }
 
+struct async_inspectable
+{
+    IAsyncOperation_IInspectable IAsyncOperation_IInspectable_iface;
+    IAsyncInfoImpl *IAsyncInfoImpl_inner;
+    LONG ref;
+    const GUID *iid;
+};
+
+static inline struct async_inspectable *impl_from_IAsyncOperation_IInspectable( IAsyncOperation_IInspectable *iface )
+{
+    return CONTAINING_RECORD( iface, struct async_inspectable, IAsyncOperation_IInspectable_iface );
+}
+
+static HRESULT WINAPI async_inspectable_QueryInterface( IAsyncOperation_IInspectable *iface, REFIID iid, void **out )
+{
+    struct async_inspectable *impl = impl_from_IAsyncOperation_IInspectable( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) ||
+        IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
+        IsEqualGUID( iid, impl->iid ))
+    {
+        IInspectable_AddRef( (*out = &impl->IAsyncOperation_IInspectable_iface) );
+        return S_OK;
+    }
+
+    return IAsyncInfoImpl_QueryInterface( impl->IAsyncInfoImpl_inner, iid, out );
+}
+
+static ULONG WINAPI async_inspectable_AddRef( IAsyncOperation_IInspectable *iface )
+{
+    struct async_inspectable *impl = impl_from_IAsyncOperation_IInspectable( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI async_inspectable_Release( IAsyncOperation_IInspectable *iface )
+{
+    struct async_inspectable *impl = impl_from_IAsyncOperation_IInspectable( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+
+    if (!ref)
+    {
+        /* guard against re-entry if inner releases an outer iface */
+        InterlockedIncrement( &impl->ref );
+        IAsyncInfoImpl_Release( impl->IAsyncInfoImpl_inner );
+        free( impl );
+    }
+
+    return ref;
+}
+
+static HRESULT WINAPI async_inspectable_GetIids( IAsyncOperation_IInspectable *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_inspectable_GetRuntimeClassName( IAsyncOperation_IInspectable *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.Foundation.IAsyncOperation`1<IInspectable>",
+                                ARRAY_SIZE(L"Windows.Foundation.IAsyncOperation`1<IInspectable>"),
+                                class_name );
+}
+
+static HRESULT WINAPI async_inspectable_GetTrustLevel( IAsyncOperation_IInspectable *iface, TrustLevel *trust_level )
+{
+    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_inspectable_put_Completed( IAsyncOperation_IInspectable *iface, IAsyncOperationCompletedHandler_IInspectable *bool_handler )
+{
+    IAsyncOperationCompletedHandlerImpl *handler = (IAsyncOperationCompletedHandlerImpl *)bool_handler;
+    struct async_inspectable *impl = impl_from_IAsyncOperation_IInspectable( iface );
+    TRACE( "iface %p, handler %p.\n", iface, handler );
+    return IAsyncInfoImpl_put_Completed( impl->IAsyncInfoImpl_inner, handler );
+}
+
+static HRESULT WINAPI async_inspectable_get_Completed( IAsyncOperation_IInspectable *iface, IAsyncOperationCompletedHandler_IInspectable **bool_handler )
+{
+    IAsyncOperationCompletedHandlerImpl **handler = (IAsyncOperationCompletedHandlerImpl **)bool_handler;
+    struct async_inspectable *impl = impl_from_IAsyncOperation_IInspectable( iface );
+    TRACE( "iface %p, handler %p.\n", iface, handler );
+    return IAsyncInfoImpl_get_Completed( impl->IAsyncInfoImpl_inner, handler );
+}
+
+static HRESULT WINAPI async_inspectable_GetResults( IAsyncOperation_IInspectable *iface, IInspectable **results )
+{
+    struct async_inspectable *impl = impl_from_IAsyncOperation_IInspectable( iface );
+    PROPVARIANT result = {.vt = VT_UNKNOWN};
+    HRESULT hr;
+
+    TRACE( "iface %p, results %p.\n", iface, results );
+
+    if (SUCCEEDED(hr = IAsyncInfoImpl_get_Result( impl->IAsyncInfoImpl_inner, &result )))
+    {
+        if ((*results = (IInspectable *)result.punkVal)) IInspectable_AddRef( *results );
+        PropVariantClear( &result );
+    }
+
+    return hr;
+}
+
+static const struct IAsyncOperation_IInspectableVtbl async_inspectable_vtbl =
+{
+    /* IUnknown methods */
+    async_inspectable_QueryInterface,
+    async_inspectable_AddRef,
+    async_inspectable_Release,
+    /* IInspectable methods */
+    async_inspectable_GetIids,
+    async_inspectable_GetRuntimeClassName,
+    async_inspectable_GetTrustLevel,
+    /* IAsyncOperation<IInspectable> */
+    async_inspectable_put_Completed,
+    async_inspectable_get_Completed,
+    async_inspectable_GetResults,
+};
+
+HRESULT async_operation_inspectable_create( const GUID *iid, IUnknown *invoker, IUnknown *param, async_operation_callback callback,
+                                            IAsyncOperation_IInspectable **out )
+{
+    struct async_inspectable *impl;
+    HRESULT hr;
+
+    *out = NULL;
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+    impl->IAsyncOperation_IInspectable_iface.lpVtbl = &async_inspectable_vtbl;
+    impl->ref = 1;
+    impl->iid = iid;
+
+    if (FAILED(hr = async_info_create( invoker, param, callback, (IInspectable *)&impl->IAsyncOperation_IInspectable_iface, &impl->IAsyncInfoImpl_inner )) ||
+        FAILED(hr = IAsyncInfoImpl_Start( impl->IAsyncInfoImpl_inner )))
+    {
+        if (impl->IAsyncInfoImpl_inner) IAsyncInfoImpl_Release( impl->IAsyncInfoImpl_inner );
+        free( impl );
+        return hr;
+    }
+
+    *out = &impl->IAsyncOperation_IInspectable_iface;
+    TRACE( "created IAsyncOperation_IInspectable %p\n", *out );
+    return S_OK;
+}
+
 #define DEFINE_IASYNCOPERATIONWITHPROGRESS( iface_type, progress_type, completed_type, cs_type_str, impl_type,      \
         result_type, propvar_type, propvar_name, creation_fn )                                                      \
 static inline struct impl_type *impl_from_##iface_type( iface_type *iface )                                         \

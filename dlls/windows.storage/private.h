@@ -45,6 +45,8 @@ HRESULT async_operation_buffer_uint32_create( IUnknown *invoker, IUnknown *param
         IAsyncOperationWithProgress_IBuffer_UINT32 **out );
 HRESULT async_operation_uint32_uint32_create( IUnknown *invoker, IUnknown *param, async_operation_callback callback,
         IAsyncOperationWithProgress_UINT32_UINT32 **out );
+HRESULT async_operation_inspectable_create( const GUID *iid, IUnknown *invoker, IUnknown *param, async_operation_callback callback,
+        IAsyncOperation_IInspectable **out );
 
 extern IActivationFactory *random_access_stream_reference_factory;
 extern IActivationFactory *memory_stream_activation_factory;
