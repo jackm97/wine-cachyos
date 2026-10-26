@@ -77,6 +77,11 @@ requirements:
     - sdl2
     - libunwind
     - zlib
+  # They are declared as build-dependencies in pixi.toml so the recipe can name them.
+  run:
+    - dxvk
+    - vkd3d-proton
+    - winetricks
 
 tests:
   - script:

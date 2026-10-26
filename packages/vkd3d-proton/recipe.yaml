@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/prefix-dev/recipe-format/main/schema.json
+
+context:
+  version: "3.0.1"
+
+package:
+  name: vkd3d-proton
+  version: ${{ version }}
+
+source:
+  url: https://github.com/HansKristian-Work/vkd3d-proton/releases/download/v${{ version }}/vkd3d-proton-${{ version }}.tar.zst
+  sha256: 3cf2315522af5e43605ef6d3c41dad91387040bf97199934f3f7ab76caaa2f0c
+
+build:
+  number: 0
+  noarch: generic
+  script:
+    interpreter: nu
+    content: |
+      # Prebuilt Windows DLLs: x64 -> share/vkd3d-proton/x64, x86 -> share/vkd3d-proton/x86.
+      let dst64 = ($env.PREFIX | path join share vkd3d-proton x64)
+      let dst32 = ($env.PREFIX | path join share vkd3d-proton x86)
+      mkdir $dst64
+      mkdir $dst32
+      for f in (glob ($env.SRC_DIR | path join x64 '*.dll')) { cp $f $dst64 }
+      for f in (glob ($env.SRC_DIR | path join x86 '*.dll')) { cp $f $dst32 }
+
+requirements:
+  build:
+    - nushell
+
+about:
+  homepage: https://github.com/HansKristian-Work/vkd3d-proton
+  license: LGPL-2.1-or-later
+  summary: vkd3d-proton, Vulkan-based Direct3D 12 implementation (prebuilt Windows DLLs)

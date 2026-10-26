@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/prefix-dev/recipe-format/main/schema.json
+
+context:
+  version: "3.1.1"
+
+package:
+  name: dxvk
+  version: ${{ version }}
+
+source:
+  url: https://github.com/doitsujin/dxvk/releases/download/v${{ version }}/dxvk-${{ version }}.tar.gz
+  sha256: 40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608
+
+build:
+  number: 0
+  noarch: generic
+  script:
+    interpreter: nu
+    content: |
+      # Prebuilt Windows DLLs: x64 -> share/dxvk/x64, x32 -> share/dxvk/x86.
+      let dst64 = ($env.PREFIX | path join share dxvk x64)
+      let dst32 = ($env.PREFIX | path join share dxvk x86)
+      mkdir $dst64
+      mkdir $dst32
+      for f in (glob ($env.SRC_DIR | path join x64 '*.dll')) { cp $f $dst64 }
+      for f in (glob ($env.SRC_DIR | path join x32 '*.dll')) { cp $f $dst32 }
+
+requirements:
+  build:
+    - nushell
+
+about:
+  homepage: https://github.com/doitsujin/dxvk
+  license: Zlib
+  summary: DXVK, Vulkan-based D3D8/9/10/11 translation layer (prebuilt Windows DLLs)
