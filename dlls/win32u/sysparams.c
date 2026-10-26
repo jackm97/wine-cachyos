@@ -1672,7 +1672,8 @@ static BOOL write_gpu_to_registry( const struct gpu *gpu, const struct pci_id *p
     set_reg_value( hkey, dac_typeW, REG_SZ, ramdacW, sizeof(ramdacW) );
 
     set_reg_value( hkey, qw_memory_sizeW, REG_QWORD, &memory_size, sizeof(memory_size) );
-    value = (ULONG)min( memory_size, (ULONGLONG)ULONG_MAX );
+    /* Windows reports 0xfff00000 for cards over 4 GiB; ULONG_MAX is 64-bit on the unix side, so it cannot be used to clamp. */
+    value = (ULONG)min( memory_size, (ULONGLONG)0xfff00000 );
     set_reg_value( hkey, memory_sizeW, REG_DWORD, &value, sizeof(value) );
 
     set_reg_ascii_value( hkey, "DriverVersion", driver_vendor_to_version( pci->vendor ) );
