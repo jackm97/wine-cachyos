@@ -171,6 +171,14 @@ IActivationFactory *random_access_stream_reference_factory = &random_access_stre
  * InMemoryRandomAccessStream
  */
 
+struct memory_stream_data
+{
+    LONG ref;
+    BYTE *buffer;
+    size_t capacity;
+    size_t size;
+};
+
 struct memory_stream
 {
     IRandomAccessStream IRandomAccessStream_iface;
@@ -179,12 +187,12 @@ struct memory_stream
     IClosable IClosable_iface;
     LONG ref;
 
-    BYTE *buffer;
-    size_t capacity;
-    size_t size;
+    struct memory_stream_data *data;
     size_t pos;
     BOOL closed;
 };
+
+static HRESULT memory_stream_create_with_data( struct memory_stream_data *data, IRandomAccessStream **out );
 
 static void memory_stream_read( struct memory_stream *impl, IBuffer *buffer, UINT32 count )
 {
@@ -195,8 +203,8 @@ static void memory_stream_read( struct memory_stream *impl, IBuffer *buffer, UIN
     IBufferByteAccess_Buffer( access, &data );
     IBufferByteAccess_Release( access );
 
-    count = (impl->size >= impl->pos) ? min( count, impl->size - impl->pos ) : 0;
-    memcpy( data, &impl->buffer[impl->pos], count );
+    count = (impl->data->size >= impl->pos) ? min( count, impl->data->size - impl->pos ) : 0;
+    memcpy( data, &impl->data->buffer[impl->pos], count );
     impl->pos += count;
     IBuffer_put_Length( buffer, count );
 }
@@ -205,20 +213,20 @@ static HRESULT memory_stream_require_capacity( struct memory_stream *impl, size_
 {
     BYTE *new_buffer;
 
-    if (capacity <= impl->capacity)
+    if (capacity <= impl->data->capacity)
         return S_OK;
 
-    capacity = max( capacity, impl->capacity + impl->capacity / 2u );
+    capacity = max( capacity, impl->data->capacity + impl->data->capacity / 2u );
     capacity = max( capacity, 0x1000 );
-    new_buffer = realloc( impl->buffer, capacity );
+    new_buffer = realloc( impl->data->buffer, capacity );
 
     if (!new_buffer)
         return HRESULT_FROM_WIN32( ERROR_DISK_FULL );
 
     /* Zero memory for security and to silence address sanitisers */
-    memset( &new_buffer[impl->capacity], 0, capacity - impl->capacity );
-    impl->capacity = capacity;
-    impl->buffer = new_buffer;
+    memset( &new_buffer[impl->data->capacity], 0, capacity - impl->data->capacity );
+    impl->data->capacity = capacity;
+    impl->data->buffer = new_buffer;
 
     return S_OK;
 }
@@ -279,7 +287,14 @@ static ULONG WINAPI memory_stream_random_access_Release( IRandomAccessStream *if
     TRACE( "iface %p, ref %lu.\n", iface, ref );
 
     if (!ref)
-        free( impl->buffer );
+    {
+        if (!InterlockedDecrement( &impl->data->ref ))
+        {
+            free( impl->data->buffer );
+            free( impl->data );
+        }
+        free( impl );
+    }
 
     return ref;
 }
@@ -314,7 +329,7 @@ static HRESULT WINAPI memory_stream_random_access_get_Size( IRandomAccessStream 
         return RO_E_CLOSED;
     }
 
-    *value = impl->size;
+    *value = impl->data->size;
     return S_OK;
 }
 
@@ -332,7 +347,7 @@ static HRESULT WINAPI memory_stream_random_access_put_Size( IRandomAccessStream 
     if (FAILED(hr = memory_stream_require_capacity( impl, value )))
         return hr;
 
-    impl->size = value;
+    impl->data->size = value;
     return S_OK;
 }
 
@@ -379,10 +394,16 @@ static HRESULT WINAPI memory_stream_random_access_Seek( IRandomAccessStream *ifa
 
 static HRESULT WINAPI memory_stream_random_access_CloneStream( IRandomAccessStream *iface, IRandomAccessStream **stream )
 {
-    FIXME( "iface %p, stream %p stub!\n", iface, stream );
+    struct memory_stream *impl = impl_from_IRandomAccessStream( iface );
+
+    TRACE( "iface %p, stream %p.\n", iface, stream );
 
     *stream = NULL;
-    return E_NOTIMPL;
+
+    if (impl->closed)
+        return RO_E_CLOSED;
+
+    return memory_stream_create_with_data( impl->data, stream );
 }
 
 static HRESULT WINAPI memory_stream_random_access_get_CanRead( IRandomAccessStream *iface, BOOLEAN *value )
@@ -647,9 +668,9 @@ static HRESULT memory_stream_output_async( IUnknown *invoker, IUnknown *param, P
     IBufferByteAccess_Buffer( access, &data );
     IBufferByteAccess_Release( access );
 
-    memcpy( &impl->buffer[impl->pos], data, length );
+    memcpy( &impl->data->buffer[impl->pos], data, length );
     impl->pos += length;
-    impl->size = max( impl->size, impl->pos );
+    impl->data->size = max( impl->data->size, impl->pos );
 
     result->vt = VT_UI4;
     result->ulVal = length;
@@ -704,11 +725,11 @@ static const struct IOutputStreamVtbl memory_stream_output_vtbl =
     memory_stream_output_FlushAsync,
 };
 
-static HRESULT memory_stream_create( IRandomAccessStream **out )
+static HRESULT memory_stream_create_with_data( struct memory_stream_data *data, IRandomAccessStream **out )
 {
     struct memory_stream *impl;
 
-    TRACE( "out %p.\n", out );
+    TRACE( "data %p, out %p.\n", data, out );
 
     if (!(impl = calloc( 1, sizeof(*impl) )))
     {
@@ -716,6 +737,8 @@ static HRESULT memory_stream_create( IRandomAccessStream **out )
         return E_OUTOFMEMORY;
     }
 
+    InterlockedIncrement( &data->ref );
+    impl->data = data;
     impl->ref = 1;
     impl->IRandomAccessStream_iface.lpVtbl = &memory_stream_random_access_vtbl;
     impl->IInputStream_iface.lpVtbl = &memory_stream_input_vtbl;
@@ -724,6 +747,25 @@ static HRESULT memory_stream_create( IRandomAccessStream **out )
 
     *out = &impl->IRandomAccessStream_iface;
     return S_OK;
+}
+
+static HRESULT memory_stream_create( IRandomAccessStream **out )
+{
+    struct memory_stream_data *data;
+    HRESULT hr;
+
+    TRACE( "out %p.\n", out );
+
+    if (!(data = calloc( 1, sizeof(*data) )))
+    {
+        *out = NULL;
+        return E_OUTOFMEMORY;
+    }
+
+    if (FAILED(hr = memory_stream_create_with_data( data, out )))
+        free( data );
+
+    return hr;
 }
 
 struct memory_stream_factory
