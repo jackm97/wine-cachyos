@@ -82,6 +82,7 @@ requirements:
     - dxvk
     - vkd3d-proton
     - winetricks
+    - windows-winmd
 
 tests:
   - script:

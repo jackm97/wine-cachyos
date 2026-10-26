@@ -8,6 +8,7 @@ publish = true
 dxvk = { path = "packages/dxvk" }
 vkd3d-proton = { path = "packages/vkd3d-proton" }
 winetricks = { path = "packages/winetricks" }
+windows-winmd = { path = "packages/windows-winmd" }
 
 [package.build.backend]
 name = "pixi-build-rattler-build"

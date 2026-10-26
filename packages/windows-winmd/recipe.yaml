@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/prefix-dev/recipe-format/main/schema.json
+
+context:
+  version: "74"
+
+package:
+  name: windows-winmd
+  version: ${{ version }}
+
+source:
+  url: https://raw.githubusercontent.com/microsoft/windows-rs/${{ version }}/crates/libs/default/Windows.winmd
+  sha256: 9ddfc6f5e5c3d29522f35e1cac566617e9d28ccbc6ccb072c79fa9949cdbe336
+  file_name: Windows.winmd
+
+build:
+  number: 0
+  noarch: generic
+  script:
+    interpreter: nu
+    content: |
+      # Microsoft's combined WinRT metadata; wine.inf copies it into each prefix's system32/winmetadata.
+      let dst = ($env.PREFIX | path join share wine winmd)
+      mkdir $dst
+      cp ($env.SRC_DIR | path join Windows.winmd) ($dst | path join Windows.winmd)
+
+requirements:
+  build:
+    - nushell
+
+about:
+  homepage: https://github.com/microsoft/windows-rs
+  license: MIT OR Apache-2.0
+  summary: Microsoft's combined Windows.winmd WinRT metadata, as published by windows-rs

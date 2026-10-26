@@ -55,6 +55,7 @@ RegisterDlls=RegisterDllsSection
 WineFakeDlls=FakeDlls
 UpdateInis=SystemIni
 CopyFiles=ColorFiles,EtcFiles,InfFiles,NlsFiles,SortFiles,WinmdFiles
+DelFiles=WinmdObsoleteFiles
 AddReg=\
     Classes,\
     ContentIndex,\
@@ -122,6 +123,7 @@ AddReg=\
 RegisterDlls=RegisterDllsSection
 WineFakeDlls=FakeDllsWin32,FakeDllsWow64
 CopyFiles=NlsFiles,WinmdFiles
+DelFiles=WinmdObsoleteFiles
 AddReg=\
     CurrentVersion,\
     Debugger,\
@@ -1589,7 +1591,11 @@ normnfkd.nls
 [SortFiles]
 sortdefault.nls
 
+; Microsoft's combined metadata from the windows-rs package; Wine's per-namespace files shadow it in RoResolveNamespace and break CLR assembly identity, so they are removed from existing prefixes.
 [WinmdFiles]
+Windows.winmd
+
+[WinmdObsoleteFiles]
 windows.applicationmodel.winmd
 windows.globalization.winmd
 windows.graphics.winmd
@@ -1614,6 +1620,7 @@ InfFiles  = 17
 NlsFiles  = 11
 SortFiles = 10,globalization\sorting
 WinmdFiles = 11,winmetadata
+WinmdObsoleteFiles = 11,winmetadata
 
 [SteamClient]
 HKCU,Software\Valve\Steam,"SteamPath",,"%16422%\Steam"
