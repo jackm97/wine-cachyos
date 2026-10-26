@@ -1,0 +1,9 @@
+[package]
+name = "photolab-wine"
+version = "11.0"
+license = "LGPL-2.1-or-later"
+
+[package.build.backend]
+name = "pixi-build-rattler-build"
+version = "*"
+channels = ["https://prefix.dev/pixi-build-backends"]

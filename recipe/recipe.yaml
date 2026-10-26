@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/prefix-dev/recipe-format/main/schema.json
+
+context:
+  version: "11.0"
+
+package:
+  name: photolab-wine
+  version: ${{ version }}
+
+source:
+  path: ..
+
+build:
+  number: 0
+  script:
+    interpreter: nu
+    file: build.nu
+
+requirements:
+  build:
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
+    - ${{ stdlib('c') }}
+    - clang
+    - lld
+    - autoconf
+    - perl
+    - python
+    - bison
+    - flex
+    - make
+    - pkg-config
+    - gettext
+    - wayland
+    - nushell
+  # Run deps come from the host packages' run_exports; Wine dlopens most of
+  # these, which is why they are host deps.
+  host:
+    - xorg-libx11
+    - xorg-libxext
+    - xorg-libxcursor
+    - xorg-libxi
+    - xorg-libxxf86vm
+    - xorg-libxrender
+    - xorg-libxrandr
+    - xorg-libxfixes
+    - xorg-libxinerama
+    - xorg-libxcomposite
+    - libgl-devel
+    - libegl-devel
+    - libgles-devel
+    - wayland
+    - libxkbcommon
+    - libvulkan-headers
+    - libvulkan-loader
+    - ocl-icd
+    - opencl-headers
+    - libdrm
+    - libhwloc
+    - gnutls
+    - gmp
+    - libgcrypt
+    - krb5
+    - freetype
+    - fontconfig
+    - dbus
+    - libudev
+    - libusb
+    - alsa-lib
+    - pulseaudio-client
+    - pipewire
+    - gstreamer
+    - gst-plugins-base
+    - ffmpeg
+    - sdl2
+    - libunwind
+    - zlib
+
+tests:
+  - script:
+      interpreter: nu
+      content:
+        - wine --version
+    requirements:
+      run:
+        - nushell
+
+about:
+  homepage: https://github.com/jackm97/wine-cachyos
+  license: LGPL-2.1-or-later
+  summary: Wine 11.0 (CachyOS fork, photolab branch) for DxO PhotoLab
