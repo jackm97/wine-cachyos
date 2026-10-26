@@ -24,6 +24,7 @@
 #include "dxgi1_4.h"
 #include "d3d11.h"
 #include "d3d12.h"
+#include "d3dkmdt.h"
 #include "wine/wined3d.h"
 
 #include "wine/debug.h"
@@ -336,29 +337,10 @@ static BOOL STDMETHODCALLTYPE dxcore_adapter_IsAttributeSupported(IDXCoreAdapter
     return FALSE;
 }
 
-static BOOL STDMETHODCALLTYPE dxcore_adapter_IsPropertySupported(IDXCoreAdapter *iface, DXCoreAdapterProperty property)
-{
-    TRACE("iface %p, property %u.\n", iface, property);
-
-    /* Keep in sync with dxcore_adapter_get_property_size(). */
-    switch (property)
-    {
-        case InstanceLuid:
-        case DriverVersion:
-        case DriverDescription:
-        case HardwareID:
-        case DedicatedAdapterMemory:
-        case DedicatedSystemMemory:
-        case SharedSystemMemory:
-        case IsHardware:
-            return TRUE;
-
-        default:
-            return FALSE;
-    }
-}
-
-static HRESULT dxcore_adapter_get_property_size(struct dxcore_adapter *adapter,
+/* The single source of truth for which properties are supported and how big they are;
+ * both IsPropertySupported() and GetPropertySize() use it. AdapterEngineCount and
+ * AdapterEngineName are not supported. */
+static BOOL dxcore_adapter_query_property_size(const struct dxcore_adapter *adapter,
         DXCoreAdapterProperty property, size_t *size)
 {
     static const size_t property_sizes[] =
@@ -366,10 +348,18 @@ static HRESULT dxcore_adapter_get_property_size(struct dxcore_adapter *adapter,
         [InstanceLuid] = sizeof(LUID),
         [DriverVersion] = sizeof(LARGE_INTEGER),
         [HardwareID] = sizeof(DXCoreHardwareID),
+        [KmdModelVersion] = sizeof(UINT),
+        [ComputePreemptionGranularity] = sizeof(UINT16),
+        [GraphicsPreemptionGranularity] = sizeof(UINT16),
         [DedicatedAdapterMemory] = sizeof(UINT64),
         [DedicatedSystemMemory] = sizeof(UINT64),
         [SharedSystemMemory] = sizeof(UINT64),
+        [AcgCompatible] = sizeof(BYTE),
         [IsHardware] = sizeof(BYTE),
+        [IsIntegrated] = sizeof(BYTE),
+        [IsDetachable] = sizeof(BYTE),
+        [HardwareIDParts] = sizeof(DXCoreHardwareIDParts),
+        [PhysicalAdapterCount] = sizeof(UINT),
     };
 
     switch (property)
@@ -377,20 +367,49 @@ static HRESULT dxcore_adapter_get_property_size(struct dxcore_adapter *adapter,
         case InstanceLuid:
         case DriverVersion:
         case HardwareID:
+        case KmdModelVersion:
+        case ComputePreemptionGranularity:
+        case GraphicsPreemptionGranularity:
         case DedicatedAdapterMemory:
         case DedicatedSystemMemory:
         case SharedSystemMemory:
+        case AcgCompatible:
         case IsHardware:
+        case IsIntegrated:
+        case IsDetachable:
+        case HardwareIDParts:
+        case PhysicalAdapterCount:
             *size = property_sizes[property];
-            return S_OK;
+            return TRUE;
+
         case DriverDescription:
             *size = strlen(adapter->driver_description) + 1;
-            return S_OK;
+            return TRUE;
 
         default:
-            FIXME("Property %u not implemented.\n", property);
-            return DXGI_ERROR_INVALID_CALL;
+            return FALSE;
     }
+}
+
+static BOOL STDMETHODCALLTYPE dxcore_adapter_IsPropertySupported(IDXCoreAdapter *iface, DXCoreAdapterProperty property)
+{
+    struct dxcore_adapter *adapter = impl_from_IDXCoreAdapter(iface);
+    size_t size;
+
+    TRACE("iface %p, property %u.\n", iface, property);
+
+    return dxcore_adapter_query_property_size(adapter, property, &size);
+}
+
+static HRESULT dxcore_adapter_get_property_size(struct dxcore_adapter *adapter,
+        DXCoreAdapterProperty property, size_t *size)
+{
+    if (dxcore_adapter_query_property_size(adapter, property, size))
+        return S_OK;
+
+    /* Windows returns DXGI_ERROR_INVALID_CALL for an unsupported property. */
+    FIXME("Property %u not implemented.\n", property);
+    return DXGI_ERROR_INVALID_CALL;
 }
 
 static HRESULT STDMETHODCALLTYPE dxcore_adapter_GetProperty(IDXCoreAdapter *iface, DXCoreAdapterProperty property,
@@ -437,6 +456,19 @@ static HRESULT STDMETHODCALLTYPE dxcore_adapter_GetProperty(IDXCoreAdapter *ifac
             break;
         }
 
+        case KmdModelVersion:
+            /* KMT_DRIVERVERSION_WDDM_3_2, the WDDM version of Windows 11 24H2. */
+            *(UINT *)buffer = 3200;
+            break;
+
+        case ComputePreemptionGranularity:
+            *(UINT16 *)buffer = D3DKMDT_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
+            break;
+
+        case GraphicsPreemptionGranularity:
+            *(UINT16 *)buffer = D3DKMDT_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY;
+            break;
+
         case DedicatedAdapterMemory:
             *(UINT64 *)buffer = adapter->identifier.video_memory;
             break;
@@ -450,9 +482,38 @@ static HRESULT STDMETHODCALLTYPE dxcore_adapter_GetProperty(IDXCoreAdapter *ifac
             *(UINT64 *)buffer = adapter->identifier.shared_system_memory;
             break;
 
+        case AcgCompatible:
+            *(BYTE *)buffer = 1;
+            break;
+
         case IsHardware:
             FIXME("Returning all adapters as Hardware.\n");
             *(BYTE *)buffer = 1;
+            break;
+
+        case IsIntegrated:
+            FIXME("Returning all adapters as discrete.\n");
+            *(BYTE *)buffer = 0;
+            break;
+
+        case IsDetachable:
+            *(BYTE *)buffer = 0;
+            break;
+
+        case HardwareIDParts:
+        {
+            DXCoreHardwareIDParts *parts = buffer;
+
+            parts->vendorID = adapter->identifier.vendor_id;
+            parts->deviceID = adapter->identifier.device_id;
+            parts->subSystemID = adapter->identifier.subsystem_id >> 16;
+            parts->subVendorID = adapter->identifier.subsystem_id & 0xffff;
+            parts->revisionID = adapter->identifier.revision;
+            break;
+        }
+
+        case PhysicalAdapterCount:
+            *(UINT *)buffer = 1;
             break;
 
         case DriverDescription:
