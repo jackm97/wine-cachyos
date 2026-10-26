@@ -1629,7 +1629,7 @@ static void update_user_profile(void)
 
 static void update_win_version(void)
 {
-    static const WCHAR win10_buildW[] = L"22000";
+    static const WCHAR win10_buildW[] = L"26100";
     static const WCHAR win10_ntW[] = L"6.3";
     static const DWORD win11_maj_ver = 10;
 
