@@ -23,6 +23,522 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(storage);
 
+/*
+ * RandomAccessStreamReference
+ */
+
+struct stream_with_content_type
+{
+    IRandomAccessStreamWithContentType IRandomAccessStreamWithContentType_iface;
+    IRandomAccessStream IRandomAccessStream_iface;
+    IInputStream IInputStream_iface;
+    IOutputStream IOutputStream_iface;
+    IClosable IClosable_iface;
+    IContentTypeProvider IContentTypeProvider_iface;
+    LONG ref;
+
+    IRandomAccessStream *random_access;
+    IInputStream *input;
+    IOutputStream *output;
+    IClosable *closable;
+    HSTRING content_type;
+};
+
+static inline struct stream_with_content_type *impl_from_IRandomAccessStreamWithContentType( IRandomAccessStreamWithContentType *iface )
+{
+    return CONTAINING_RECORD( iface, struct stream_with_content_type, IRandomAccessStreamWithContentType_iface );
+}
+
+static HRESULT WINAPI stream_with_content_type_QueryInterface( IRandomAccessStreamWithContentType *iface, REFIID iid, void **out )
+{
+    struct stream_with_content_type *impl = impl_from_IRandomAccessStreamWithContentType( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown )
+            || IsEqualGUID( iid, &IID_IInspectable )
+            || IsEqualGUID( iid, &IID_IRandomAccessStreamWithContentType ))
+    {
+        *out = &impl->IRandomAccessStreamWithContentType_iface;
+    }
+    else if (IsEqualGUID( iid, &IID_IRandomAccessStream ))
+    {
+        *out = &impl->IRandomAccessStream_iface;
+    }
+    else if (IsEqualGUID( iid, &IID_IInputStream ))
+    {
+        *out = &impl->IInputStream_iface;
+    }
+    else if (IsEqualGUID( iid, &IID_IOutputStream ))
+    {
+        *out = &impl->IOutputStream_iface;
+    }
+    else if (IsEqualGUID( iid, &IID_IClosable ))
+    {
+        *out = &impl->IClosable_iface;
+    }
+    else if (IsEqualGUID( iid, &IID_IContentTypeProvider ))
+    {
+        *out = &impl->IContentTypeProvider_iface;
+    }
+    else
+    {
+        WARN( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
+        *out = NULL;
+        return E_NOINTERFACE;
+    }
+
+    IUnknown_AddRef( (IUnknown *)&impl->IRandomAccessStreamWithContentType_iface );
+    return S_OK;
+}
+
+static ULONG WINAPI stream_with_content_type_AddRef( IRandomAccessStreamWithContentType *iface )
+{
+    struct stream_with_content_type *impl = impl_from_IRandomAccessStreamWithContentType( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI stream_with_content_type_Release( IRandomAccessStreamWithContentType *iface )
+{
+    struct stream_with_content_type *impl = impl_from_IRandomAccessStreamWithContentType( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+
+    if (!ref)
+    {
+        IRandomAccessStream_Release( impl->random_access );
+        IInputStream_Release( impl->input );
+        IOutputStream_Release( impl->output );
+        IClosable_Release( impl->closable );
+        WindowsDeleteString( impl->content_type );
+        free( impl );
+    }
+
+    return ref;
+}
+
+static HRESULT WINAPI stream_with_content_type_GetIids( IRandomAccessStreamWithContentType *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI stream_with_content_type_GetRuntimeClassName( IRandomAccessStreamWithContentType *iface, HSTRING *class_name )
+{
+    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI stream_with_content_type_GetTrustLevel( IRandomAccessStreamWithContentType *iface, TrustLevel *trust_level )
+{
+    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
+    return E_NOTIMPL;
+}
+
+static const struct IRandomAccessStreamWithContentTypeVtbl stream_with_content_type_vtbl =
+{
+    /* IUnknown methods */
+    stream_with_content_type_QueryInterface,
+    stream_with_content_type_AddRef,
+    stream_with_content_type_Release,
+    /* IInspectable methods */
+    stream_with_content_type_GetIids,
+    stream_with_content_type_GetRuntimeClassName,
+    stream_with_content_type_GetTrustLevel,
+};
+
+DEFINE_IINSPECTABLE_( stream_ct_random_access, IRandomAccessStream, struct stream_with_content_type,
+        stream_ct_from_IRandomAccessStream, IRandomAccessStream_iface, &impl->IRandomAccessStreamWithContentType_iface )
+
+static HRESULT WINAPI stream_ct_random_access_get_Size( IRandomAccessStream *iface, UINT64 *value )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return IRandomAccessStream_get_Size( impl->random_access, value );
+}
+
+static HRESULT WINAPI stream_ct_random_access_put_Size( IRandomAccessStream *iface, UINT64 value )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, value %I64u.\n", iface, value );
+    return IRandomAccessStream_put_Size( impl->random_access, value );
+}
+
+static HRESULT WINAPI stream_ct_random_access_GetInputStreamAt( IRandomAccessStream *iface, UINT64 position,
+        IInputStream **stream )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, position %I64u, stream %p.\n", iface, position, stream );
+    return IRandomAccessStream_GetInputStreamAt( impl->random_access, position, stream );
+}
+
+static HRESULT WINAPI stream_ct_random_access_GetOutputStreamAt( IRandomAccessStream *iface, UINT64 position,
+        IOutputStream **stream )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, position %I64u, stream %p.\n", iface, position, stream );
+    return IRandomAccessStream_GetOutputStreamAt( impl->random_access, position, stream );
+}
+
+static HRESULT WINAPI stream_ct_random_access_get_Position( IRandomAccessStream *iface, UINT64 *value )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return IRandomAccessStream_get_Position( impl->random_access, value );
+}
+
+static HRESULT WINAPI stream_ct_random_access_Seek( IRandomAccessStream *iface, UINT64 position )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, position %I64u.\n", iface, position );
+    return IRandomAccessStream_Seek( impl->random_access, position );
+}
+
+static HRESULT WINAPI stream_ct_random_access_CloneStream( IRandomAccessStream *iface, IRandomAccessStream **stream )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, stream %p.\n", iface, stream );
+    return IRandomAccessStream_CloneStream( impl->random_access, stream );
+}
+
+static HRESULT WINAPI stream_ct_random_access_get_CanRead( IRandomAccessStream *iface, BOOLEAN *value )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return IRandomAccessStream_get_CanRead( impl->random_access, value );
+}
+
+static HRESULT WINAPI stream_ct_random_access_get_CanWrite( IRandomAccessStream *iface, BOOLEAN *value )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IRandomAccessStream( iface );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return IRandomAccessStream_get_CanWrite( impl->random_access, value );
+}
+
+static const struct IRandomAccessStreamVtbl stream_ct_random_access_vtbl =
+{
+    /* IUnknown methods */
+    stream_ct_random_access_QueryInterface,
+    stream_ct_random_access_AddRef,
+    stream_ct_random_access_Release,
+    /* IInspectable methods */
+    stream_ct_random_access_GetIids,
+    stream_ct_random_access_GetRuntimeClassName,
+    stream_ct_random_access_GetTrustLevel,
+    /* IRandomAccessStream methods */
+    stream_ct_random_access_get_Size,
+    stream_ct_random_access_put_Size,
+    stream_ct_random_access_GetInputStreamAt,
+    stream_ct_random_access_GetOutputStreamAt,
+    stream_ct_random_access_get_Position,
+    stream_ct_random_access_Seek,
+    stream_ct_random_access_CloneStream,
+    stream_ct_random_access_get_CanRead,
+    stream_ct_random_access_get_CanWrite,
+};
+
+DEFINE_IINSPECTABLE_( stream_ct_input, IInputStream, struct stream_with_content_type,
+        stream_ct_from_IInputStream, IInputStream_iface, &impl->IRandomAccessStreamWithContentType_iface )
+
+static HRESULT WINAPI stream_ct_input_ReadAsync( IInputStream *iface, IBuffer *buffer, UINT32 count,
+        InputStreamOptions options, IAsyncOperationWithProgress_IBuffer_UINT32 **operation )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IInputStream( iface );
+    TRACE( "iface %p, buffer %p, count %u, options %d, operation %p.\n", iface, buffer, count, options, operation );
+    return IInputStream_ReadAsync( impl->input, buffer, count, options, operation );
+}
+
+static const struct IInputStreamVtbl stream_ct_input_vtbl =
+{
+    /* IUnknown methods */
+    stream_ct_input_QueryInterface,
+    stream_ct_input_AddRef,
+    stream_ct_input_Release,
+    /* IInspectable methods */
+    stream_ct_input_GetIids,
+    stream_ct_input_GetRuntimeClassName,
+    stream_ct_input_GetTrustLevel,
+    /* IInputStream methods */
+    stream_ct_input_ReadAsync
+};
+
+DEFINE_IINSPECTABLE_( stream_ct_output, IOutputStream, struct stream_with_content_type,
+        stream_ct_from_IOutputStream, IOutputStream_iface, &impl->IRandomAccessStreamWithContentType_iface )
+
+static HRESULT WINAPI stream_ct_output_WriteAsync( IOutputStream *iface, IBuffer *buffer,
+        IAsyncOperationWithProgress_UINT32_UINT32 **operation )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IOutputStream( iface );
+    TRACE( "iface %p, buffer %p, operation %p.\n", iface, buffer, operation );
+    return IOutputStream_WriteAsync( impl->output, buffer, operation );
+}
+
+static HRESULT WINAPI stream_ct_output_FlushAsync( IOutputStream *iface, IAsyncOperation_boolean **operation )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IOutputStream( iface );
+    TRACE( "iface %p, operation %p.\n", iface, operation );
+    return IOutputStream_FlushAsync( impl->output, operation );
+}
+
+static const struct IOutputStreamVtbl stream_ct_output_vtbl =
+{
+    /* IUnknown methods */
+    stream_ct_output_QueryInterface,
+    stream_ct_output_AddRef,
+    stream_ct_output_Release,
+    /* IInspectable methods */
+    stream_ct_output_GetIids,
+    stream_ct_output_GetRuntimeClassName,
+    stream_ct_output_GetTrustLevel,
+    /* IOutputStream methods */
+    stream_ct_output_WriteAsync,
+    stream_ct_output_FlushAsync,
+};
+
+DEFINE_IINSPECTABLE_( stream_ct_closable, IClosable, struct stream_with_content_type,
+        stream_ct_from_IClosable, IClosable_iface, &impl->IRandomAccessStreamWithContentType_iface )
+
+static HRESULT WINAPI stream_ct_closable_Close( IClosable *iface )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IClosable( iface );
+    TRACE( "iface %p.\n", iface );
+    return IClosable_Close( impl->closable );
+}
+
+static const struct IClosableVtbl stream_ct_closable_vtbl =
+{
+    /* IUnknown methods */
+    stream_ct_closable_QueryInterface,
+    stream_ct_closable_AddRef,
+    stream_ct_closable_Release,
+    /* IInspectable methods */
+    stream_ct_closable_GetIids,
+    stream_ct_closable_GetRuntimeClassName,
+    stream_ct_closable_GetTrustLevel,
+    /* IClosable methods */
+    stream_ct_closable_Close,
+};
+
+DEFINE_IINSPECTABLE_( stream_ct_content_type, IContentTypeProvider, struct stream_with_content_type,
+        stream_ct_from_IContentTypeProvider, IContentTypeProvider_iface, &impl->IRandomAccessStreamWithContentType_iface )
+
+static HRESULT WINAPI stream_ct_content_type_get_ContentType( IContentTypeProvider *iface, HSTRING *value )
+{
+    struct stream_with_content_type *impl = stream_ct_from_IContentTypeProvider( iface );
+
+    TRACE( "iface %p, value %p.\n", iface, value );
+
+    return WindowsDuplicateString( impl->content_type, value );
+}
+
+static const struct IContentTypeProviderVtbl stream_ct_content_type_vtbl =
+{
+    /* IUnknown methods */
+    stream_ct_content_type_QueryInterface,
+    stream_ct_content_type_AddRef,
+    stream_ct_content_type_Release,
+    /* IInspectable methods */
+    stream_ct_content_type_GetIids,
+    stream_ct_content_type_GetRuntimeClassName,
+    stream_ct_content_type_GetTrustLevel,
+    /* IContentTypeProvider methods */
+    stream_ct_content_type_get_ContentType,
+};
+
+static HRESULT stream_with_content_type_create( IRandomAccessStream *stream, HSTRING content_type,
+        IRandomAccessStreamWithContentType **out )
+{
+    struct stream_with_content_type *impl;
+    HRESULT hr;
+
+    TRACE( "stream %p, content_type %s, out %p.\n", stream, debugstr_hstring( content_type ), out );
+
+    *out = NULL;
+
+    if (!(impl = calloc( 1, sizeof(*impl) )))
+        return E_OUTOFMEMORY;
+
+    impl->IRandomAccessStreamWithContentType_iface.lpVtbl = &stream_with_content_type_vtbl;
+    impl->IRandomAccessStream_iface.lpVtbl = &stream_ct_random_access_vtbl;
+    impl->IInputStream_iface.lpVtbl = &stream_ct_input_vtbl;
+    impl->IOutputStream_iface.lpVtbl = &stream_ct_output_vtbl;
+    impl->IClosable_iface.lpVtbl = &stream_ct_closable_vtbl;
+    impl->IContentTypeProvider_iface.lpVtbl = &stream_ct_content_type_vtbl;
+    impl->ref = 1;
+
+    if (FAILED(hr = IRandomAccessStream_QueryInterface( stream, &IID_IRandomAccessStream, (void **)&impl->random_access ))
+            || FAILED(hr = IRandomAccessStream_QueryInterface( stream, &IID_IInputStream, (void **)&impl->input ))
+            || FAILED(hr = IRandomAccessStream_QueryInterface( stream, &IID_IOutputStream, (void **)&impl->output ))
+            || FAILED(hr = IRandomAccessStream_QueryInterface( stream, &IID_IClosable, (void **)&impl->closable ))
+            || FAILED(hr = WindowsDuplicateString( content_type, &impl->content_type )))
+    {
+        if (impl->random_access) IRandomAccessStream_Release( impl->random_access );
+        if (impl->input) IInputStream_Release( impl->input );
+        if (impl->output) IOutputStream_Release( impl->output );
+        if (impl->closable) IClosable_Release( impl->closable );
+        free( impl );
+        return hr;
+    }
+
+    *out = &impl->IRandomAccessStreamWithContentType_iface;
+    return S_OK;
+}
+
+struct stream_reference
+{
+    IRandomAccessStreamReference IRandomAccessStreamReference_iface;
+    LONG ref;
+
+    IRandomAccessStream *stream;
+};
+
+static inline struct stream_reference *impl_from_IRandomAccessStreamReference( IRandomAccessStreamReference *iface )
+{
+    return CONTAINING_RECORD( iface, struct stream_reference, IRandomAccessStreamReference_iface );
+}
+
+static HRESULT WINAPI stream_reference_QueryInterface( IRandomAccessStreamReference *iface, REFIID iid, void **out )
+{
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown )
+            || IsEqualGUID( iid, &IID_IInspectable )
+            || IsEqualGUID( iid, &IID_IAgileObject )
+            || IsEqualGUID( iid, &IID_IRandomAccessStreamReference ))
+    {
+        IRandomAccessStreamReference_AddRef( iface );
+        *out = iface;
+        return S_OK;
+    }
+
+    WARN( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI stream_reference_AddRef( IRandomAccessStreamReference *iface )
+{
+    struct stream_reference *impl = impl_from_IRandomAccessStreamReference( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI stream_reference_Release( IRandomAccessStreamReference *iface )
+{
+    struct stream_reference *impl = impl_from_IRandomAccessStreamReference( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+
+    if (!ref)
+    {
+        IRandomAccessStream_Release( impl->stream );
+        free( impl );
+    }
+
+    return ref;
+}
+
+static HRESULT WINAPI stream_reference_GetIids( IRandomAccessStreamReference *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI stream_reference_GetRuntimeClassName( IRandomAccessStreamReference *iface, HSTRING *class_name )
+{
+    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI stream_reference_GetTrustLevel( IRandomAccessStreamReference *iface, TrustLevel *trust_level )
+{
+    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
+    return E_NOTIMPL;
+}
+
+static HRESULT stream_reference_open_read_async( IUnknown *invoker, IUnknown *param, PROPVARIANT *result, BOOL called_async )
+{
+    struct stream_reference *impl = impl_from_IRandomAccessStreamReference( (IRandomAccessStreamReference *)invoker );
+    IRandomAccessStreamWithContentType *wrapper;
+    IContentTypeProvider *provider;
+    HSTRING content_type = NULL;
+    IRandomAccessStream *clone;
+    HRESULT hr;
+
+    assert( !called_async );
+
+    if (FAILED(hr = IRandomAccessStream_CloneStream( impl->stream, &clone )))
+        return hr;
+
+    if (SUCCEEDED(IRandomAccessStream_QueryInterface( impl->stream, &IID_IContentTypeProvider, (void **)&provider )))
+    {
+        if (FAILED(IContentTypeProvider_get_ContentType( provider, &content_type )))
+            content_type = NULL;
+        IContentTypeProvider_Release( provider );
+    }
+
+    hr = stream_with_content_type_create( clone, content_type, &wrapper );
+    IRandomAccessStream_Release( clone );
+    WindowsDeleteString( content_type );
+    if (FAILED(hr))
+        return hr;
+
+    result->vt = VT_UNKNOWN;
+    result->punkVal = (IUnknown *)wrapper;
+    return S_OK;
+}
+
+static HRESULT WINAPI stream_reference_OpenReadAsync( IRandomAccessStreamReference *iface,
+        IAsyncOperation_IRandomAccessStreamWithContentType **operation )
+{
+    TRACE( "iface %p, operation %p.\n", iface, operation );
+
+    if (!operation)
+        return E_POINTER;
+
+    return async_operation_inspectable_create( &IID_IAsyncOperation_IRandomAccessStreamWithContentType, (IUnknown *)iface,
+            NULL, stream_reference_open_read_async, (IAsyncOperation_IInspectable **)operation );
+}
+
+static const struct IRandomAccessStreamReferenceVtbl stream_reference_vtbl =
+{
+    /* IUnknown methods */
+    stream_reference_QueryInterface,
+    stream_reference_AddRef,
+    stream_reference_Release,
+    /* IInspectable methods */
+    stream_reference_GetIids,
+    stream_reference_GetRuntimeClassName,
+    stream_reference_GetTrustLevel,
+    /* IRandomAccessStreamReference methods */
+    stream_reference_OpenReadAsync,
+};
+
+static HRESULT stream_reference_create( IRandomAccessStream *stream, IRandomAccessStreamReference **out )
+{
+    struct stream_reference *impl;
+
+    TRACE( "stream %p, out %p.\n", stream, out );
+
+    if (!(impl = calloc( 1, sizeof(*impl) )))
+    {
+        *out = NULL;
+        return E_OUTOFMEMORY;
+    }
+
+    impl->IRandomAccessStreamReference_iface.lpVtbl = &stream_reference_vtbl;
+    impl->ref = 1;
+    IRandomAccessStream_AddRef( (impl->stream = stream) );
+
+    *out = &impl->IRandomAccessStreamReference_iface;
+    return S_OK;
+}
+
 struct random_access_stream_reference_statics
 {
     IActivationFactory IActivationFactory_iface;
@@ -135,12 +651,12 @@ static HRESULT WINAPI random_access_stream_reference_statics_CreateFromUri( IRan
 static HRESULT WINAPI random_access_stream_reference_statics_CreateFromStream( IRandomAccessStreamReferenceStatics *iface, IRandomAccessStream *stream,
                                                                                IRandomAccessStreamReference **stream_reference )
 {
-    FIXME( "iface %p, stream %p, stream_reference %p stub!\n", iface, stream, stream_reference );
+    TRACE( "iface %p, stream %p, stream_reference %p.\n", iface, stream, stream_reference );
 
     *stream_reference = NULL;
 
     if (!stream) return E_POINTER;
-    return E_NOTIMPL;
+    return stream_reference_create( stream, stream_reference );
 }
 
 static const struct IRandomAccessStreamReferenceStaticsVtbl random_access_stream_reference_statics_vtbl =
