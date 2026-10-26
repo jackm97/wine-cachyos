@@ -245,27 +245,12 @@ static BOOL STDMETHODCALLTYPE dxcore_adapter_IsValid(IDXCoreAdapter *iface)
     return TRUE;
 }
 
-static BOOL STDMETHODCALLTYPE dxcore_adapter_IsAttributeSupported(IDXCoreAdapter *iface, REFGUID attribute)
+/* Returns whether the attribute is supported, probing at most once per adapter LUID and attribute. */
+static BOOL dxcore_adapter_probe_attribute(IDXCoreAdapter *iface, const LUID *luid,
+        enum dxcore_attribute id, REFGUID attribute)
 {
-    struct dxcore_adapter *adapter = impl_from_IDXCoreAdapter(iface);
-    const LUID *luid = &adapter->identifier.adapter_luid;
-    enum dxcore_attribute id;
     BOOL supported;
     HRESULT hr;
-
-    TRACE("iface %p, attribute %s.\n", iface, debugstr_guid(attribute));
-
-    if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS))
-        id = DXCORE_ATTRIBUTE_D3D12_GRAPHICS;
-    else if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE))
-        id = DXCORE_ATTRIBUTE_D3D12_CORE_COMPUTE;
-    else if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D11_GRAPHICS))
-        id = DXCORE_ATTRIBUTE_D3D11_GRAPHICS;
-    else
-    {
-        FIXME("Unhandled attribute %s.\n", debugstr_guid(attribute));
-        return FALSE;
-    }
 
     if (dxcore_attribute_cache_lookup(luid, id, &supported))
     {
@@ -298,6 +283,57 @@ static BOOL STDMETHODCALLTYPE dxcore_adapter_IsAttributeSupported(IDXCoreAdapter
 
     dxcore_attribute_cache_store(luid, id, supported);
     return supported;
+}
+
+static BOOL STDMETHODCALLTYPE dxcore_adapter_IsAttributeSupported(IDXCoreAdapter *iface, REFGUID attribute)
+{
+    struct dxcore_adapter *adapter = impl_from_IDXCoreAdapter(iface);
+    const LUID *luid = &adapter->identifier.adapter_luid;
+
+    TRACE("iface %p, attribute %s.\n", iface, debugstr_guid(attribute));
+
+    if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS))
+        return dxcore_adapter_probe_attribute(iface, luid, DXCORE_ATTRIBUTE_D3D12_GRAPHICS, attribute);
+
+    if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D11_GRAPHICS))
+        return dxcore_adapter_probe_attribute(iface, luid, DXCORE_ATTRIBUTE_D3D11_GRAPHICS, attribute);
+
+    if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE))
+    {
+        /* On Windows, any D3D12 graphics adapter is also a core compute adapter. */
+        if (dxcore_adapter_probe_attribute(iface, luid, DXCORE_ATTRIBUTE_D3D12_GRAPHICS,
+                &DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS))
+        {
+            TRACE("Adapter supports D3D12 graphics, so it supports core compute.\n");
+            return TRUE;
+        }
+        return dxcore_adapter_probe_attribute(iface, luid, DXCORE_ATTRIBUTE_D3D12_CORE_COMPUTE, attribute);
+    }
+
+    /* Every adapter wined3d enumerates is a GPU. */
+    if (IsEqualGUID(attribute, &DXCORE_HARDWARE_TYPE_ATTRIBUTE_GPU))
+        return TRUE;
+
+    /* Exactly one hardware type applies to an adapter, and ours are all GPUs. */
+    if (IsEqualGUID(attribute, &DXCORE_HARDWARE_TYPE_ATTRIBUTE_NPU)
+            || IsEqualGUID(attribute, &DXCORE_HARDWARE_TYPE_ATTRIBUTE_COMPUTE_ACCELERATOR)
+            || IsEqualGUID(attribute, &DXCORE_HARDWARE_TYPE_ATTRIBUTE_MEDIA_ACCELERATOR))
+    {
+        TRACE("Hardware type %s does not apply, returning FALSE.\n", debugstr_guid(attribute));
+        return FALSE;
+    }
+
+    /* These are driver INF declarations of metacommand or video support, which
+     * vkd3d-proton does not provide. */
+    if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D12_GENERIC_ML)
+            || IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D12_GENERIC_MEDIA))
+    {
+        TRACE("Attribute %s is not provided, returning FALSE.\n", debugstr_guid(attribute));
+        return FALSE;
+    }
+
+    FIXME("Unhandled attribute %s.\n", debugstr_guid(attribute));
+    return FALSE;
 }
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsPropertySupported(IDXCoreAdapter *iface, DXCoreAdapterProperty property)
