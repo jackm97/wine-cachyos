@@ -1622,6 +1622,7 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND t
         }
 
         client->toplevel = 0;
+        client->parent = NULL;
         return;
     }
 
@@ -1631,8 +1632,12 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND t
         return wayland_client_surface_attach(client, NULL, NULL);
     }
 
-    if (client->toplevel != toplevel)
+    /* The toplevel can keep its HWND while its wayland_surface is recreated; the old
+     * subsurface then belongs to a stale wl_surface and must be recreated too. */
+    if (client->toplevel != toplevel || client->parent != surface->wl_surface)
     {
+        if (client->toplevel == toplevel && client->wl_subsurface)
+            TRACE("hwnd=%p recreating subsurface, parent %p -> %p\n", toplevel, client->parent, surface->wl_surface);
         wayland_client_surface_attach(client, NULL, NULL);
 
         client->wl_subsurface =
@@ -1645,6 +1650,7 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND t
         wl_subsurface_set_desync(client->wl_subsurface);
 
         client->toplevel = toplevel;
+        client->parent = surface->wl_surface;
     }
 
     wayland_surface_reconfigure_client(surface, client, rect);

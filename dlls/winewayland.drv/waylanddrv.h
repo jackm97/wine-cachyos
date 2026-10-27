@@ -288,6 +288,7 @@ struct wayland_client_surface
 {
     struct client_surface client;
     HWND toplevel;
+    struct wl_surface *parent; /* wl_surface the subsurface was created on */
     RECT rect;
     struct wl_surface *wl_surface;
     struct wl_subsurface *wl_subsurface;
