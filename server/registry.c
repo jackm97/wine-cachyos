@@ -1939,7 +1939,7 @@ void init_registry(void)
 
     name.str = software;
     name.len = sizeof(software);
-    if ((key = create_key_recursive( hkcu, &name, current_time )))
+    if ((key = create_key_recursive( hkcu, name, current_time )))
     {
         key->flags |= KEY_WOWSHARE;
         key->wow6432node = NULL;
