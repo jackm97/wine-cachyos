@@ -29,15 +29,18 @@ import "windows.storage.streams.idl";
 import "windows.system.idl";
 
 namespace Windows.System.Profile {
+    typedef enum PlatformDataCollectionLevel PlatformDataCollectionLevel;
     typedef enum SystemIdentificationSource SystemIdentificationSource;
     interface IAnalyticsInfoStatics;
     interface IAnalyticsInfoStatics2;
     interface IAnalyticsVersionInfo;
     interface IAnalyticsVersionInfo2;
+    interface IPlatformDiagnosticsAndUsageDataSettingsStatics;
     interface ISystemIdentificationInfo;
     interface ISystemIdentificationStatics;
     runtimeclass AnalyticsVersionInfo;
     runtimeclass AnalyticsInfo;
+    runtimeclass PlatformDiagnosticsAndUsageDataSettings;
     runtimeclass SystemIdentification;
     runtimeclass SystemIdentificationInfo;
 
@@ -50,6 +53,31 @@ namespace Windows.System.Profile {
         [contract(Windows.Foundation.UniversalApiContract, 5.0)]
         Registry = 3,
     };
+
+    [contract(Windows.Foundation.UniversalApiContract, 2.0)]
+    enum PlatformDataCollectionLevel
+    {
+        Security = 0,
+        Basic    = 1,
+        Enhanced = 2,
+        Full     = 3,
+    };
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.System.Profile.PlatformDiagnosticsAndUsageDataSettings),
+        uuid(b6e24c1b-7b1c-4b32-8c62-a66597ce723a)
+    ]
+    interface IPlatformDiagnosticsAndUsageDataSettingsStatics : IInspectable
+    {
+        [propget] HRESULT CollectionLevel([out, retval] Windows.System.Profile.PlatformDataCollectionLevel *value);
+        [eventadd] HRESULT CollectionLevelChanged(
+                [in] Windows.Foundation.EventHandler<IInspectable *> *handler,
+                [out, retval] EventRegistrationToken *token);
+        [eventremove] HRESULT CollectionLevelChanged([in] EventRegistrationToken token);
+        HRESULT CanCollectDiagnostics([in] Windows.System.Profile.PlatformDataCollectionLevel level,
+                [out, retval] boolean *value);
+    }
 
     [
         contract(Windows.Foundation.UniversalApiContract, 1.0),
@@ -114,6 +142,17 @@ namespace Windows.System.Profile {
         threading(both)
     ]
     runtimeclass AnalyticsInfo
+    {
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        marshaling_behavior(agile),
+        static(Windows.System.Profile.IPlatformDiagnosticsAndUsageDataSettingsStatics,
+                Windows.Foundation.UniversalApiContract, 2.0),
+        threading(both)
+    ]
+    runtimeclass PlatformDiagnosticsAndUsageDataSettings
     {
     }
 

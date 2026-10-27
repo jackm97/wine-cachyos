@@ -3,4 +3,5 @@ IMPORTS = combase
 
 SOURCES = \
 	classes.idl \
+	diagnostics.c \
 	main.c

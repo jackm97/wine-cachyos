@@ -319,6 +319,8 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     if (!wcscmp( name, RuntimeClass_Windows_System_Profile_SystemIdentification ))
         IActivationFactory_QueryInterface( system_id_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( name, RuntimeClass_Windows_System_Profile_PlatformDiagnosticsAndUsageDataSettings ))
+        IActivationFactory_QueryInterface( platform_diagnostics_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

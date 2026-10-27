@@ -144,6 +144,51 @@ static void test_SystemIdentification_Statics(void)
     ok( ref == 1, "got ref %ld.\n", ref );
 }
 
+static void test_PlatformDiagnosticsAndUsageDataSettings(void)
+{
+    static const WCHAR class_name[] = L"Windows.System.Profile.PlatformDiagnosticsAndUsageDataSettings";
+    IPlatformDiagnosticsAndUsageDataSettingsStatics *statics = NULL;
+    IActivationFactory *factory = NULL;
+    PlatformDataCollectionLevel level;
+    HSTRING str;
+    boolean value;
+    HRESULT hr;
+
+    hr = WindowsCreateString( class_name, ARRAY_SIZE(class_name) - 1, &str );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = RoGetActivationFactory( str, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( str );
+    ok( hr == S_OK || broken( hr == REGDB_E_CLASSNOTREG ), "got hr %#lx.\n", hr );
+    if (FAILED( hr ))
+    {
+        win_skip( "%s runtimeclass not registered, skipping tests.\n", wine_dbgstr_w( class_name ) );
+        return;
+    }
+
+    check_interface( factory, &IID_IUnknown, TRUE );
+    check_interface( factory, &IID_IInspectable, TRUE );
+    check_interface( factory, &IID_IAgileObject, TRUE );
+    hr = IActivationFactory_QueryInterface( factory,
+            &IID_IPlatformDiagnosticsAndUsageDataSettingsStatics, (void **)&statics );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+
+    hr = IPlatformDiagnosticsAndUsageDataSettingsStatics_get_CollectionLevel( statics, NULL );
+    ok( hr == E_POINTER, "got hr %#lx.\n", hr );
+    hr = IPlatformDiagnosticsAndUsageDataSettingsStatics_get_CollectionLevel( statics, &level );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( level >= PlatformDataCollectionLevel_Security && level <= PlatformDataCollectionLevel_Full,
+        "got level %u.\n", level );
+    hr = IPlatformDiagnosticsAndUsageDataSettingsStatics_CanCollectDiagnostics( statics, level, &value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( value, "current collection level %u cannot be collected.\n", level );
+    hr = IPlatformDiagnosticsAndUsageDataSettingsStatics_CanCollectDiagnostics(
+            statics, PlatformDataCollectionLevel_Full, NULL );
+    ok( hr == E_POINTER, "got hr %#lx.\n", hr );
+
+    IPlatformDiagnosticsAndUsageDataSettingsStatics_Release( statics );
+    IActivationFactory_Release( factory );
+}
+
 START_TEST(systemid)
 {
     HRESULT hr;
@@ -152,6 +197,7 @@ START_TEST(systemid)
     ok( hr == S_OK, "RoInitialize failed, hr %#lx\n", hr );
 
     test_SystemIdentification_Statics();
+    test_PlatformDiagnosticsAndUsageDataSettings();
 
     RoUninitialize();
 }
