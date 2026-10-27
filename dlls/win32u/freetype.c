@@ -2823,7 +2823,32 @@ static DWORD get_subpixel_glyph_bitmap( FT_GlyphSlot glyph, FT_BBox bbox, UINT f
         if (matrices)
             pFT_Outline_Transform( &glyph->outline, &matrices[matrix_vert] );
 
-        pFT_Render_Glyph( glyph, render_mode );
+        if (pFT_Render_Glyph( glyph, render_mode ))
+        {
+            FT_Bitmap bitmap = {0};
+            DWORD gray_pitch = (width + 3) & ~3;
+            INT row;
+
+            bitmap.width = width;
+            bitmap.rows = height;
+            bitmap.pitch = gray_pitch;
+            bitmap.pixel_mode = FT_PIXEL_MODE_GRAY;
+            bitmap.buffer = buf;
+
+            pFT_Outline_Translate( &glyph->outline, -bbox.xMin, -bbox.yMin );
+            memset( buf, 0, buflen );
+            if (pFT_Outline_Get_Bitmap( library, &glyph->outline, &bitmap )) return GDI_ERROR;
+
+            for (row = height - 1; row >= 0; row--)
+            {
+                BYTE *gray = buf + row * gray_pitch;
+                UINT *color = (UINT *)(buf + row * pitch);
+
+                for (x = width - 1; x >= 0; x--)
+                    color[x] = gray[x] * 0x010101;
+            }
+            return needed;
+        }
 
         src_pitch = glyph->bitmap.pitch;
         src_width = glyph->bitmap.width;

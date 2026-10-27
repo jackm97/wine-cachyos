@@ -1322,6 +1322,19 @@ static BOOL xrenderdrv_ExtTextOut( PHYSDEV dev, INT x, INT y, UINT flags,
     RECT rect, bounds;
     enum glyph_type type = (flags & ETO_GLYPH_INDEX) ? GLYPH_INDEX : GLYPH_WCHAR;
 
+    if (!(flags & ETO_GLYPH_INDEX))
+    {
+        for (idx = 0; idx + 1 < count; idx++)
+        {
+            if (wstr[idx] >= 0xd800 && wstr[idx] <= 0xdbff &&
+                wstr[idx + 1] >= 0xdc00 && wstr[idx + 1] <= 0xdfff)
+            {
+                dev = GET_NEXT_PHYSDEV( dev, pExtTextOut );
+                return dev->funcs->pExtTextOut( dev, x, y, flags, lprect, wstr, count, lpDx );
+            }
+        }
+    }
+
     NtGdiGetDCDword( physdev->dev.hdc, NtGdiGetTextColor, &text_color );
     get_xrender_color( physdev, text_color, &col );
     pict = get_xrender_picture( physdev, 0, (flags & ETO_CLIPPED) ? lprect : NULL );
