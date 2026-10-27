@@ -1721,6 +1721,58 @@ HRESULT WINAPI CoCreateInstanceFromApp(REFCLSID rclsid, IUnknown *outer, DWORD c
             count, results);
 }
 
+static INIT_ONCE c2r_outlook_mapi_once = INIT_ONCE_STATIC_INIT;
+static HRESULT (WINAPI *c2r_outlook_mapi_get_class_object)(REFCLSID, REFIID, void **);
+
+static BOOL CALLBACK init_c2r_outlook_mapi(INIT_ONCE *once, void *param, void **context)
+{
+    static const WCHAR configuration[] = L"Software\\Microsoft\\Office\\ClickToRun\\Configuration";
+    static const WCHAR suffix[] = L"\\root\\Office16\\OLMAPI32.DLL";
+    WCHAR image[MAX_PATH], installation[MAX_PATH], path[MAX_PATH], *name;
+    DWORD len, size = sizeof(installation), type;
+    HMODULE module;
+    HKEY key;
+
+    if (!(len = GetModuleFileNameW(NULL, image, ARRAY_SIZE(image))) || len >= ARRAY_SIZE(image)) return TRUE;
+    name = wcsrchr(image, '\\');
+    if (wcsicmp(name ? name + 1 : image, L"outlook.exe")) return TRUE;
+
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, configuration, 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY, &key))
+        return TRUE;
+    if (RegQueryValueExW(key, L"InstallationPath", NULL, &type, (BYTE *)installation, &size) ||
+        (type != REG_SZ && type != REG_EXPAND_SZ))
+    {
+        RegCloseKey(key);
+        return TRUE;
+    }
+    RegCloseKey(key);
+    installation[ARRAY_SIZE(installation) - 1] = 0;
+
+    if (type == REG_EXPAND_SZ)
+    {
+        len = ExpandEnvironmentStringsW(installation, path, ARRAY_SIZE(path));
+        if (!len || len >= ARRAY_SIZE(path)) return TRUE;
+    }
+    else
+        lstrcpyW(path, installation);
+
+    len = lstrlenW(path);
+    if (len + ARRAY_SIZE(suffix) > ARRAY_SIZE(path)) return TRUE;
+    memcpy(path + len, suffix, sizeof(suffix));
+
+    if (!(module = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH))) return TRUE;
+    c2r_outlook_mapi_get_class_object = (void *)GetProcAddress(module, "DllGetClassObject");
+    if (!c2r_outlook_mapi_get_class_object) FreeLibrary(module);
+    return TRUE;
+}
+
+static HRESULT get_c2r_outlook_mapi_class_object(REFCLSID rclsid, REFIID riid, void **obj)
+{
+    InitOnceExecuteOnce(&c2r_outlook_mapi_once, init_c2r_outlook_mapi, NULL, NULL);
+    if (!c2r_outlook_mapi_get_class_object) return CLASS_E_CLASSNOTAVAILABLE;
+    return c2r_outlook_mapi_get_class_object(rclsid, riid, obj);
+}
+
 static HRESULT com_get_class_object(REFCLSID rclsid, DWORD clscontext,
         COSERVERINFO *server_info, REFIID riid, void **obj)
 {
@@ -1857,6 +1909,16 @@ static HRESULT com_get_class_object(REFCLSID rclsid, DWORD clscontext,
 
         /* return if we got a class, otherwise fall through to one of the
          * other types */
+        if (SUCCEEDED(hr))
+        {
+            apartment_release(apt);
+            return hr;
+        }
+    }
+
+    if ((clscontext & CLSCTX_INPROC_SERVER) && hr == REGDB_E_CLASSNOTREG)
+    {
+        hr = get_c2r_outlook_mapi_class_object(rclsid, riid, obj);
         if (SUCCEEDED(hr))
         {
             apartment_release(apt);
