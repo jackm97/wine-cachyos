@@ -961,8 +961,9 @@ extern UINT MSIREG_DeleteLocalClassesFeaturesKey(LPCWSTR szProductCode);
 extern UINT msi_locate_product(LPCWSTR szProduct, MSIINSTALLCONTEXT *context);
 extern WCHAR *msi_reg_get_val_str( HKEY hkey, const WCHAR *name ) __WINE_DEALLOC(free) __WINE_MALLOC;
 extern UINT msi_get_c2r_product_code( const WCHAR *component, WCHAR product[GUID_SIZE] );
+extern UINT msi_get_c2r_component_path( const WCHAR *product, const WCHAR *component, WCHAR **path );
 extern BOOL msi_is_c2r_proofing_component( const WCHAR *component );
-extern UINT msi_enum_c2r_proofing_qualifier( const WCHAR *component, DWORD index, WCHAR **qualifier );
+extern UINT msi_enum_c2r_proofing_qualifier( const WCHAR *component, DWORD index, WCHAR **qualifier, WCHAR **appdata );
 extern UINT msi_get_c2r_proofing_path( const WCHAR *component, const WCHAR *qualifier,
                                       const WCHAR *product, WCHAR **path );
 extern BOOL msi_reg_get_val_dword( HKEY hkey, LPCWSTR name, DWORD *val);

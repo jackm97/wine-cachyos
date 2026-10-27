@@ -269,7 +269,7 @@ static WCHAR *get_c2r_value( const WCHAR *key_name, const WCHAR *name );
 static WCHAR *read_c2r_manifest( const WCHAR *path );
 static BOOL find_c2r_manifest_component( const WCHAR *installation, const WCHAR *component,
                                          const WCHAR *qualifier, const WCHAR *product, DWORD index,
-                                         WCHAR **found_qualifier, WCHAR **key_path );
+                                         WCHAR **found_qualifier, WCHAR **appdata, WCHAR **key_path );
 
 static BOOL is_legacy_c2r_proofing_component( const WCHAR *component )
 {
@@ -288,7 +288,7 @@ BOOL msi_is_c2r_proofing_component( const WCHAR *component )
     if (is_legacy_c2r_proofing_component( component )) return TRUE;
     if (!component || !(installation = get_c2r_value( configuration_key, L"InstallationPath" )))
         return FALSE;
-    found = find_c2r_manifest_component( installation, component, NULL, NULL, 0, NULL, NULL );
+    found = find_c2r_manifest_component( installation, component, NULL, NULL, 0, NULL, NULL, NULL );
     free( installation );
     return found;
 }
@@ -421,7 +421,7 @@ static LCID c2r_culture_lcid( const WCHAR *cultures, DWORD index )
     return 0;
 }
 
-UINT msi_enum_c2r_proofing_qualifier( const WCHAR *component, DWORD index, WCHAR **qualifier )
+UINT msi_enum_c2r_proofing_qualifier( const WCHAR *component, DWORD index, WCHAR **qualifier, WCHAR **appdata )
 {
     static const WCHAR configuration_key[] = L"Software\\Microsoft\\Office\\ClickToRun\\Configuration";
     WCHAR *installation, *cultures, buffer[32];
@@ -430,11 +430,12 @@ UINT msi_enum_c2r_proofing_qualifier( const WCHAR *component, DWORD index, WCHAR
     UINT ret = ERROR_NO_MORE_ITEMS;
 
     *qualifier = NULL;
+    *appdata = NULL;
     if (!(installation = get_c2r_value( configuration_key, L"InstallationPath" )))
         return ERROR_UNKNOWN_COMPONENT;
     if (!is_legacy_c2r_proofing_component( component ))
     {
-        if (find_c2r_manifest_component( installation, component, NULL, NULL, index, qualifier, NULL ))
+        if (find_c2r_manifest_component( installation, component, NULL, NULL, index, qualifier, appdata, NULL ))
             ret = *qualifier ? ERROR_SUCCESS : ERROR_OUTOFMEMORY;
         free( installation );
         return ret;
@@ -465,7 +466,14 @@ UINT msi_enum_c2r_proofing_qualifier( const WCHAR *component, DWORD index, WCHAR
         goto done;
 
     *qualifier = wcsdup( buffer );
-    ret = *qualifier ? ERROR_SUCCESS : ERROR_OUTOFMEMORY;
+    *appdata = wcsdup( L"" );
+    ret = *qualifier && *appdata ? ERROR_SUCCESS : ERROR_OUTOFMEMORY;
+    if (ret != ERROR_SUCCESS)
+    {
+        free( *qualifier );
+        free( *appdata );
+        *qualifier = *appdata = NULL;
+    }
 
 done:
     free( cultures );
@@ -546,33 +554,53 @@ static WCHAR *c2r_xml_attribute_range( const WCHAR *start, const WCHAR *end, con
     return NULL;
 }
 
-static BOOL c2r_manifest_has_component( const WCHAR *text, const WCHAR *component )
+static BOOL c2r_manifest_has_component( const WCHAR *text, const WCHAR *component, WCHAR **path )
 {
-    const WCHAR *start = text, *end;
-    WCHAR *id;
+    static const WCHAR * const tags[] = {L"<Component ", L"<PublishComponent "};
+    const WCHAR *start, *end;
+    WCHAR *id, *key_path;
+    unsigned int i;
     BOOL found;
 
-    while ((start = StrStrIW( start, L"<PublishComponent " )))
+    if (path) *path = NULL;
+    for (i = 0; i < ARRAY_SIZE( tags ); i++)
     {
-        if (!(end = wcschr( start, '>' ))) break;
-        id = c2r_xml_attribute_range( start, end, L"ComponentId" );
-        found = id && !wcsicmp( id, component );
-        free( id );
-        if (found) return TRUE;
-        start = end + 1;
+        start = text;
+        while ((start = StrStrIW( start, tags[i] )))
+        {
+            if (!(end = wcschr( start, '>' ))) break;
+            id = c2r_xml_attribute_range( start, end, L"ComponentId" );
+            key_path = i ? NULL : c2r_xml_attribute_range( start, end, L"KeyPath" );
+            found = id && (key_path || (i && !path)) && !wcsicmp( id, component );
+            if (found && path)
+            {
+                *path = key_path;
+                key_path = NULL;
+            }
+            free( key_path );
+            free( id );
+            if (found) return TRUE;
+            start = end + 1;
+        }
     }
     return FALSE;
 }
 
-UINT msi_get_c2r_product_code( const WCHAR *component, WCHAR product[GUID_SIZE] )
+static WCHAR *expand_c2r_key_path( const WCHAR *installation, const WCHAR *key_path );
+
+static UINT get_c2r_product_component( const WCHAR *component, const WCHAR *product,
+                                      WCHAR code[GUID_SIZE], WCHAR **path )
 {
     static const WCHAR configuration_key[] = L"Software\\Microsoft\\Office\\ClickToRun\\Configuration";
     WIN32_FIND_DATAW data;
     WCHAR squashed[SQUASHED_GUID_SIZE], *installation, *pattern, *manifest, *text, *manifest_product;
+    WCHAR *key_path;
     HANDLE find;
     SIZE_T len;
     UINT ret = ERROR_UNKNOWN_COMPONENT;
 
+    if (!code && !path) return ERROR_INVALID_PARAMETER;
+    if (path) *path = NULL;
     if (!(installation = get_c2r_value( configuration_key, L"InstallationPath" ))) return ret;
     len = wcslen( installation ) + wcslen( L"\\root\\Integration\\C2RManifest.*.xml" ) + 1;
     if (!(pattern = malloc( len * sizeof(WCHAR) )))
@@ -596,17 +624,23 @@ UINT msi_get_c2r_product_code( const WCHAR *component, WCHAR product[GUID_SIZE] 
         text = read_c2r_manifest( manifest );
         free( manifest );
         if (!text) continue;
-        if (c2r_manifest_has_component( text, component ) &&
-            (manifest_product = c2r_xml_attribute( text, L"ProductCode" )))
+        if (!StrStrIW( text, component ))
         {
-            if (lstrlenW( manifest_product ) == GUID_SIZE - 1 &&
-                squash_guid( manifest_product, squashed ))
-            {
-                lstrcpyW( product, manifest_product );
-                ret = ERROR_SUCCESS;
-            }
-            free( manifest_product );
+            free( text );
+            continue;
         }
+        key_path = NULL;
+        manifest_product = c2r_xml_attribute( text, L"ProductCode" );
+        if (manifest_product && lstrlenW( manifest_product ) == GUID_SIZE - 1 &&
+            squash_guid( manifest_product, squashed ) &&
+            (!product || !wcsicmp( product, manifest_product )) &&
+            c2r_manifest_has_component( text, component, path ? &key_path : NULL ))
+        {
+            if (code) lstrcpyW( code, manifest_product );
+            if (!path || (*path = expand_c2r_key_path( installation, key_path ))) ret = ERROR_SUCCESS;
+        }
+        free( key_path );
+        free( manifest_product );
         free( text );
         if (ret == ERROR_SUCCESS) break;
     } while (FindNextFileW( find, &data ));
@@ -618,9 +652,19 @@ done:
     return ret;
 }
 
+UINT msi_get_c2r_product_code( const WCHAR *component, WCHAR product[GUID_SIZE] )
+{
+    return get_c2r_product_component( component, NULL, product, NULL );
+}
+
+UINT msi_get_c2r_component_path( const WCHAR *product, const WCHAR *component, WCHAR **path )
+{
+    return get_c2r_product_component( component, product, NULL, path );
+}
+
 static BOOL find_c2r_component_in_manifest( const WCHAR *text, const WCHAR *component,
                                             const WCHAR *qualifier, DWORD *current, DWORD index,
-                                            WCHAR **found_qualifier, WCHAR **key_path )
+                                            WCHAR **found_qualifier, WCHAR **appdata, WCHAR **key_path )
 {
     const WCHAR *component_start = text, *component_tag_end, *component_end;
     const WCHAR *publish, *publish_end;
@@ -636,7 +680,7 @@ static BOOL find_c2r_component_in_manifest( const WCHAR *text, const WCHAR *comp
         }
         if (!(component_end = StrStrIW( component_tag_end, L"</Component>" ))) break;
         publish = component_tag_end + 1;
-        while ((publish = StrStrIW( publish, L"<PublishComponent " )) && publish < component_end)
+        while ((publish = StrStrNIW( publish, L"<PublishComponent ", component_end - publish )))
         {
             if (!(publish_end = wcschr( publish, '>' )) || publish_end > component_end) break;
             id = c2r_xml_attribute_range( publish, publish_end, L"PublishComponentId" );
@@ -647,11 +691,21 @@ static BOOL find_c2r_component_in_manifest( const WCHAR *text, const WCHAR *comp
                 if ((*current)++ == index)
                 {
                     if (found_qualifier) *found_qualifier = wcsdup( candidate_qualifier );
+                    if (appdata)
+                    {
+                        *appdata = c2r_xml_attribute_range( publish, publish_end, L"AppData" );
+                        if (!*appdata) *appdata = wcsdup( L"" );
+                    }
                     if (key_path)
                         *key_path = c2r_xml_attribute_range( component_start, component_tag_end, L"KeyPath" );
                     free( candidate_qualifier );
                     free( id );
-                    return (!found_qualifier || *found_qualifier) && (!key_path || *key_path);
+                    if ((!found_qualifier || *found_qualifier) && (!appdata || *appdata) &&
+                        (!key_path || *key_path)) return TRUE;
+                    if (found_qualifier) { free( *found_qualifier ); *found_qualifier = NULL; }
+                    if (appdata) { free( *appdata ); *appdata = NULL; }
+                    if (key_path) { free( *key_path ); *key_path = NULL; }
+                    return FALSE;
                 }
             }
             free( candidate_qualifier );
@@ -665,7 +719,7 @@ static BOOL find_c2r_component_in_manifest( const WCHAR *text, const WCHAR *comp
 
 static BOOL find_c2r_manifest_component( const WCHAR *installation, const WCHAR *component,
                                          const WCHAR *qualifier, const WCHAR *product, DWORD index,
-                                         WCHAR **found_qualifier, WCHAR **key_path )
+                                         WCHAR **found_qualifier, WCHAR **appdata, WCHAR **key_path )
 {
     WIN32_FIND_DATAW data;
     WCHAR *pattern, *manifest, *text, *manifest_product;
@@ -675,11 +729,12 @@ static BOOL find_c2r_manifest_component( const WCHAR *installation, const WCHAR 
     BOOL found = FALSE;
 
     if (found_qualifier) *found_qualifier = NULL;
+    if (appdata) *appdata = NULL;
     if (key_path) *key_path = NULL;
     len = wcslen( installation ) +
-          wcslen( L"\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.*.xml" ) + 1;
+          wcslen( L"\\root\\Integration\\C2RManifest.*.xml" ) + 1;
     if (!(pattern = malloc( len * sizeof(WCHAR) ))) return FALSE;
-    swprintf( pattern, len, L"%s\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.*.xml",
+    swprintf( pattern, len, L"%s\\root\\Integration\\C2RManifest.*.xml",
               installation );
     if ((find = FindFirstFileW( pattern, &data )) == INVALID_HANDLE_VALUE)
     {
@@ -695,10 +750,15 @@ static BOOL find_c2r_manifest_component( const WCHAR *installation, const WCHAR 
         text = read_c2r_manifest( manifest );
         free( manifest );
         if (!text) continue;
+        if (!StrStrIW( text, component ))
+        {
+            free( text );
+            continue;
+        }
         manifest_product = c2r_xml_attribute( text, L"ProductCode" );
         if ((!product || (manifest_product && !wcsicmp( product, manifest_product ))) &&
             find_c2r_component_in_manifest( text, component, qualifier, &current, index,
-                                            found_qualifier, key_path ))
+                                            found_qualifier, appdata, key_path ))
             found = TRUE;
         free( manifest_product );
         free( text );
@@ -778,7 +838,7 @@ UINT msi_get_c2r_proofing_path( const WCHAR *component, const WCHAR *qualifier,
         if (!(installation = get_c2r_value( configuration_key, L"InstallationPath" )))
             return ERROR_UNKNOWN_COMPONENT;
         if (!find_c2r_manifest_component( installation, manifest_component, qualifier, product,
-                                          0, NULL, &key_path ))
+                                          0, NULL, NULL, &key_path ))
             goto done;
         *path = expand_c2r_key_path( installation, key_path );
         free( key_path );
@@ -2032,14 +2092,15 @@ static UINT MSI_EnumComponentQualifiers( const WCHAR *szComponent, DWORD iIndex,
     r = MSIREG_OpenUserComponentsKey( szComponent, &key, FALSE );
     if (r != ERROR_SUCCESS)
     {
-        WCHAR *qualifier;
+        WCHAR *qualifier, *appdata;
 
         if (!msi_is_c2r_proofing_component( szComponent )) return ERROR_UNKNOWN_COMPONENT;
-        r = msi_enum_c2r_proofing_qualifier( szComponent, iIndex, &qualifier );
+        r = msi_enum_c2r_proofing_qualifier( szComponent, iIndex, &qualifier, &appdata );
         if (r != ERROR_SUCCESS) return r;
         r = msi_strcpy_to_awstring( qualifier, -1, lpQualBuf, pcchQual );
         free( qualifier );
-        r2 = msi_strcpy_to_awstring( L"", -1, lpAppBuf, pcchAppBuf );
+        r2 = msi_strcpy_to_awstring( appdata, -1, lpAppBuf, pcchAppBuf );
+        free( appdata );
         return r2 == ERROR_SUCCESS ? r : r2;
     }
 
