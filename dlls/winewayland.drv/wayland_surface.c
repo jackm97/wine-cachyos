@@ -262,7 +262,7 @@ static void xdg_popup_handle_configure(void *private, struct xdg_popup *xdg_popu
 
 static void xdg_popup_handle_done(void *private, struct xdg_popup *xdg_popup)
 {
-    struct wayland_win_data *data, *owner_data;
+    struct wayland_win_data *data, *owner_data = NULL;
     struct wayland_surface *surface = NULL, *owner_surface = NULL;
     HWND hwnd = private;
 
@@ -286,7 +286,8 @@ static void xdg_popup_handle_done(void *private, struct xdg_popup *xdg_popup)
     /* the protocol requires us to destroy the xdg_popup */
     wayland_surface_clear_role(surface);
 
-    if (!(owner_data = wayland_win_data_get_nolock(surface->owner_hwnd)) ||
+    /* win_data_mutex is recursive, so taking the owner's data while holding ours is fine */
+    if (!(owner_data = wayland_win_data_get(surface->owner_hwnd)) ||
         !(owner_surface = owner_data->wayland_surface) || !owner_surface->xdg_surface)
     {
         ERR("Failed to recreate popup!\n");
@@ -296,9 +297,10 @@ static void xdg_popup_handle_done(void *private, struct xdg_popup *xdg_popup)
     wayland_surface_make_popup(surface, owner_surface);
 
 done:
+    if (owner_data) wayland_win_data_release(owner_data);
     if (data) wayland_win_data_release(data);
     if (surface && owner_surface && owner_surface->xdg_surface)
-        NtUserExposeWindowSurface(hwnd, 0, NULL, 0);
+        NtUserExposeWindowSurface(hwnd, 0, NULL);
 }
 
 static void xdg_popup_handle_reposition(void *private, struct xdg_popup *xdg_popup, uint32_t token)
@@ -318,7 +320,7 @@ void wp_fractional_scale_handle_scale(void* user_data,
                                       struct wp_fractional_scale_v1 *fractional_scale_v1,
                                       uint32_t scale_fixed)
 {
-    struct wayland_win_data *data, *owner_data;
+    struct wayland_win_data *data, *owner_data = NULL;
     struct wayland_surface *surface;
     double scale = scale_fixed / 120.0;
     HWND hwnd = user_data;
@@ -339,11 +341,12 @@ void wp_fractional_scale_handle_scale(void* user_data,
 
     /* the popup x,y position has changed */
     if (wayland_surface_is_popup(surface) &&
-       (owner_data = wayland_win_data_get_nolock(surface->owner_hwnd)) &&
+       (owner_data = wayland_win_data_get(surface->owner_hwnd)) &&
         owner_data->wayland_surface)
     {
         wayland_surface_make_popup(surface, owner_data->wayland_surface);
     }
+    if (owner_data) wayland_win_data_release(owner_data);
 
     wayland_win_data_release(data);
 
@@ -1847,20 +1850,6 @@ const static struct xdg_activation_token_v1_listener activate_listener = {
     activate_token_handle_done,
 };
 
-static void save_token_handle_done(void *user_data,
-                                   struct xdg_activation_token_v1 *xdg_activation_token_v1,
-                                   const char *token)
-{
-    /* TODO: move this token to wineserver (or a shared memory) */
-    char *temp = InterlockedExchangePointer((void **)&process_activate_token, strdup(token));
-    xdg_activation_token_v1_destroy(xdg_activation_token_v1);
-    if (temp) free(temp);
-}
-
-const static struct xdg_activation_token_v1_listener save_token_listener = {
-    save_token_handle_done,
-};
-
 static struct xdg_activation_token_v1 *wayland_surface_create_token(
                                         struct wayland_surface *surface,
                                         BOOL activate)
@@ -1898,40 +1887,4 @@ void wayland_surface_flash_window(struct wayland_surface *surface)
     if (!(token = wayland_surface_create_token(surface, FALSE))) return;
     xdg_activation_token_v1_add_listener(token, &activate_listener, surface->hwnd);
     xdg_activation_token_v1_commit(token);
-}
-
-void wayland_surface_refresh_token(struct wayland_surface *surface)
-{
-    struct xdg_activation_token_v1 *token;
-
-    if (!process_wayland.xdg_activation_v1) return;
-    if (!wayland_surface_is_toplevel(surface)) return;
-
-    if (!(token = wayland_surface_create_token(surface, TRUE))) return;
-    xdg_activation_token_v1_add_listener(token, &save_token_listener, NULL);
-    xdg_activation_token_v1_commit(token);
-}
-
-void wayland_surface_activate(struct wayland_surface *surface)
-{
-    struct xdg_activation_token_v1 *token;
-    char *token_str = InterlockedExchangePointer((void **)&process_activate_token, NULL);
-
-    if (!process_wayland.xdg_activation_v1) return;
-    if (!wayland_surface_is_toplevel(surface)) return;
-
-    if (token_str)
-    {
-        xdg_activation_v1_activate(process_wayland.xdg_activation_v1, token_str, surface->wl_surface);
-        free(token_str);
-    }
-    else
-    {
-        token = wayland_surface_create_token(surface, TRUE);
-        xdg_activation_token_v1_add_listener(token, &activate_listener, surface->hwnd);
-        xdg_activation_token_v1_commit(token);
-    }
-
-    /* The previous activation token is now consumed. The window that (hopefully) gets
-     * activated will create a new token for us to use in the future. */
 }

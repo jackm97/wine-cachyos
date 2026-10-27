@@ -1087,17 +1087,6 @@ static void send_right_control(HWND hwnd, uint32_t state)
     update_keystate(KEY_RIGHTCTRL, state);
 }
 
-static void set_async_key_state(const BYTE state[256])
-{
-    SERVER_START_REQ(set_key_state)
-    {
-        req->async = 1;
-        wine_server_add_data(req, state, 256);
-        wine_server_call(req);
-    }
-    SERVER_END_REQ;
-}
-
 static void update_mod_state(HWND hwnd)
 {
     struct wayland_keyboard *keyboard = &process_wayland.keyboard;

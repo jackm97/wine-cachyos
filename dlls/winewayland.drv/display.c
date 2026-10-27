@@ -200,8 +200,7 @@ static void output_info_array_zero_primary(struct wl_array *output_info_array)
             UINT64 score = (UINT64)mode->height *
                         (UINT64)mode->width * ((UINT64)(mode->refresh + 500) / 1000)
                         - (INT64)(info->output->logical_x / 100)
-                        - (INT64)(info->output->logical_y / 100)
-                        + (UINT64)info->output->max_cll;
+                        - (INT64)(info->output->logical_y / 100);
 
             if (score > max_score)
             {
