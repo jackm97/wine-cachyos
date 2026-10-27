@@ -4210,8 +4210,8 @@ VkCommandBuffer wined3d_context_vk_apply_draw_state(struct wined3d_context_vk *c
 
                 scissor->offset.x = r->left;
                 scissor->offset.y = r->top;
-                scissor->extent.width =  r->right - r->left;
-                scissor->extent.height = r->bottom - r->top;
+                scissor->extent.width = max( 0, r->right - r->left );
+                scissor->extent.height = max( 0, r->bottom - r->top );
             }
             else
             {
