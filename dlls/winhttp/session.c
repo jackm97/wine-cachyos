@@ -296,16 +296,6 @@ static BOOL session_set_option( struct object_header *hdr, DWORD option, void *b
         FIXME( "WINHTTP_OPTION_MAX_CONNS_PER_1_0_SERVER: %lu\n", *(DWORD *)buffer );
         return TRUE;
 
-    case WINHTTP_OPTION_IPV6_FAST_FALLBACK:
-        if (buflen != sizeof(BOOL))
-        {
-            SetLastError( ERROR_INSUFFICIENT_BUFFER );
-            return FALSE;
-        }
-
-        TRACE( "%u\n", *(BOOL *)buffer );
-        return TRUE;
-
     case WINHTTP_OPTION_WEB_SOCKET_RECEIVE_BUFFER_SIZE:
     {
         if (buflen != sizeof(session->websocket_receive_buffer_size))
