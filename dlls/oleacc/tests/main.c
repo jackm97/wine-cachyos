@@ -1648,6 +1648,36 @@ static void test_CreateStdAccessibleObject_classes(void)
     }
 }
 
+static void test_CreateStdAccessibleProxy(void)
+{
+    VARIANT child, role;
+    IAccessible *acc;
+    HRESULT hr;
+    HWND hwnd;
+
+    hwnd = CreateWindowA("oleacc_test", "test", WS_OVERLAPPEDWINDOW,
+            0, 0, 0, 0, NULL, NULL, NULL, NULL);
+    ok(hwnd != NULL, "CreateWindow failed\n");
+
+    hr = CreateStdAccessibleProxyW(hwnd, L"Edit", OBJID_CLIENT, &IID_IAccessible, (void **)&acc);
+    ok(hr == S_OK, "CreateStdAccessibleProxyW failed %lx\n", hr);
+    V_VT(&child) = VT_I4;
+    V_I4(&child) = CHILDID_SELF;
+    VariantInit(&role);
+    hr = IAccessible_get_accRole(acc, child, &role);
+    ok(hr == S_OK, "get_accRole failed %lx\n", hr);
+    ok(V_VT(&role) == VT_I4, "unexpected role type %u\n", V_VT(&role));
+    ok(V_I4(&role) == ROLE_SYSTEM_TEXT, "unexpected role %#lx\n", V_I4(&role));
+    VariantClear(&role);
+    IAccessible_Release(acc);
+
+    hr = CreateStdAccessibleProxyA(hwnd, "Edit", OBJID_CLIENT, &IID_IAccessible, (void **)&acc);
+    ok(hr == S_OK, "CreateStdAccessibleProxyA failed %lx\n", hr);
+    IAccessible_Release(acc);
+
+    DestroyWindow(hwnd);
+}
+
 typedef struct
 {
     const WCHAR *name;
@@ -2059,6 +2089,7 @@ START_TEST(main)
     test_AccessibleObjectFromEvent();
     test_AccessibleObjectFromPoint();
     test_CreateStdAccessibleObject_classes();
+    test_CreateStdAccessibleProxy();
     test_default_edit_accessible_object();
     test_WindowFromAccessibleObject();
 

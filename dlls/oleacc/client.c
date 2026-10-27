@@ -900,9 +900,9 @@ static const struct win_class_data classes[] = {
     {NULL}
 };
 
-HRESULT create_client_object(HWND hwnd, const IID *iid, void **obj)
+static HRESULT create_client_object_with_data(HWND hwnd, const struct win_class_data *data,
+        const IID *iid, void **obj)
 {
-    const struct win_class_data *data;
     Client *client;
     HRESULT hres = S_OK;
 
@@ -912,8 +912,6 @@ HRESULT create_client_object(HWND hwnd, const IID *iid, void **obj)
     client = calloc(1, sizeof(Client));
     if(!client)
         return E_OUTOFMEMORY;
-
-    data = find_class_data(hwnd, classes);
 
     client->IAccessible_iface.lpVtbl = &ClientVtbl;
     client->IOleWindow_iface.lpVtbl = &ClientOleWindowVtbl;
@@ -932,4 +930,26 @@ HRESULT create_client_object(HWND hwnd, const IID *iid, void **obj)
     hres = IAccessible_QueryInterface(&client->IAccessible_iface, iid, obj);
     IAccessible_Release(&client->IAccessible_iface);
     return hres;
+}
+
+HRESULT create_client_object(HWND hwnd, const IID *iid, void **obj)
+{
+    return create_client_object_with_data(hwnd, find_class_data(hwnd, classes), iid, obj);
+}
+
+HRESULT create_client_object_for_class(HWND hwnd, const WCHAR *class_name, const IID *iid, void **obj)
+{
+    const struct win_class_data *data = NULL;
+    int i;
+
+    for (i = 0; classes[i].name; i++)
+    {
+        if (!wcsicmp(class_name, classes[i].name))
+        {
+            data = &classes[i];
+            break;
+        }
+    }
+
+    return create_client_object_with_data(hwnd, data, iid, obj);
 }

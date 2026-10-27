@@ -101,6 +101,50 @@ HRESULT WINAPI CreateStdAccessibleObject( HWND hwnd, LONG idObject,
     }
 }
 
+HRESULT WINAPI CreateStdAccessibleProxyW( HWND hwnd, LPCWSTR class_name, LONG object_id,
+        REFIID iid, void **object )
+{
+    TRACE("%p %s %ld %s %p\n", hwnd, debugstr_w(class_name), object_id,
+          debugstr_guid(iid), object);
+
+    if (!class_name)
+        return E_INVALIDARG;
+
+    switch (object_id)
+    {
+    case OBJID_CLIENT:
+        return create_client_object_for_class(hwnd, class_name, iid, object);
+    case OBJID_WINDOW:
+        return create_window_object(hwnd, iid, object);
+    default:
+        FIXME("unhandled object id: %ld\n", object_id);
+        return E_NOTIMPL;
+    }
+}
+
+HRESULT WINAPI CreateStdAccessibleProxyA( HWND hwnd, LPCSTR class_name, LONG object_id,
+        REFIID iid, void **object )
+{
+    WCHAR *class_nameW;
+    HRESULT hr;
+    int len;
+
+    TRACE("%p %s %ld %s %p\n", hwnd, debugstr_a(class_name), object_id,
+          debugstr_guid(iid), object);
+
+    if (!class_name)
+        return E_INVALIDARG;
+
+    len = MultiByteToWideChar(CP_ACP, 0, class_name, -1, NULL, 0);
+    if (!(class_nameW = malloc(len * sizeof(*class_nameW))))
+        return E_OUTOFMEMORY;
+    MultiByteToWideChar(CP_ACP, 0, class_name, -1, class_nameW, len);
+
+    hr = CreateStdAccessibleProxyW(hwnd, class_nameW, object_id, iid, object);
+    free(class_nameW);
+    return hr;
+}
+
 HRESULT WINAPI ObjectFromLresult( LRESULT result, REFIID riid, WPARAM wParam, void **ppObject )
 {
     WCHAR atom_str[ARRAY_SIZE(lresult_atom_prefix)+3*8+3];
