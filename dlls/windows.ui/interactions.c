@@ -729,7 +729,7 @@ struct interaction_tracker
     ICompositor *compositor;
     IInspectable *owner;
     struct list bindings;
-    struct list scale_entry;
+    struct list update_entry;
     IInspectable *position_decay_rate;
     IInspectable *scale_decay_rate;
     CRITICAL_SECTION animation_cs;
@@ -1169,16 +1169,65 @@ static INT32 interaction_tracker_next_request_id( struct interaction_tracker *im
     return InterlockedIncrement( &impl->next_request_id );
 }
 
+static void interaction_tracker_update_axis( struct interaction_tracker *impl,
+        enum InteractionBindingAxisModes axis, FLOAT value )
+{
+    struct interaction_tracker_binding *binding;
+    struct interaction_tracker *current;
+    struct list pending, visited;
+
+    list_init( &pending );
+    list_init( &visited );
+    list_add_tail( &pending, &impl->update_entry );
+    while (!list_empty( &pending ))
+    {
+        current = LIST_ENTRY( list_head( &pending ), struct interaction_tracker, update_entry );
+        list_remove( &current->update_entry );
+        list_add_tail( &visited, &current->update_entry );
+        EnterCriticalSection( &current->animation_cs );
+        if (axis == InteractionBindingAxisModes_PositionX) current->position.X = value;
+        else if (axis == InteractionBindingAxisModes_PositionY) current->position.Y = value;
+        else current->scale = value;
+        ++current->animation_revision;
+        LeaveCriticalSection( &current->animation_cs );
+        LIST_FOR_EACH_ENTRY( binding, &current->bindings, struct interaction_tracker_binding, entry )
+            if ((binding->axis_mode & axis) && list_empty( &binding->peer->update_entry ))
+                list_add_tail( &pending, &binding->peer->update_entry );
+    }
+    while (!list_empty( &visited ))
+    {
+        current = LIST_ENTRY( list_head( &visited ), struct interaction_tracker, update_entry );
+        list_remove( &current->update_entry );
+        list_init( &current->update_entry );
+    }
+}
+
+static void interaction_tracker_update_position( struct interaction_tracker *impl,
+        struct Vector3 value, BOOL relative )
+{
+    EnterCriticalSection( &tracker_binding_cs );
+    EnterCriticalSection( &impl->animation_cs );
+    if (relative)
+    {
+        value.X += impl->position.X;
+        value.Y += impl->position.Y;
+        value.Z += impl->position.Z;
+    }
+    impl->position.Z = value.Z;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
+    interaction_tracker_update_axis( impl, InteractionBindingAxisModes_PositionX, value.X );
+    interaction_tracker_update_axis( impl, InteractionBindingAxisModes_PositionY, value.Y );
+    LeaveCriticalSection( &tracker_binding_cs );
+}
+
 static HRESULT WINAPI interaction_tracker_TryUpdatePosition( IInteractionTracker *iface,
         struct Vector3 value, INT32 *request_id )
 {
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
 
     if (!request_id) return E_POINTER;
-    EnterCriticalSection( &impl->animation_cs );
-    impl->position = value;
-    ++impl->animation_revision;
-    LeaveCriticalSection( &impl->animation_cs );
+    interaction_tracker_update_position( impl, value, FALSE );
     *request_id = interaction_tracker_next_request_id( impl );
     return S_OK;
 }
@@ -1189,12 +1238,7 @@ static HRESULT WINAPI interaction_tracker_TryUpdatePositionBy( IInteractionTrack
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
 
     if (!request_id) return E_POINTER;
-    EnterCriticalSection( &impl->animation_cs );
-    impl->position.X += amount.X;
-    impl->position.Y += amount.Y;
-    impl->position.Z += amount.Z;
-    ++impl->animation_revision;
-    LeaveCriticalSection( &impl->animation_cs );
+    interaction_tracker_update_position( impl, amount, TRUE );
     *request_id = interaction_tracker_next_request_id( impl );
     return S_OK;
 }
@@ -1215,45 +1259,15 @@ static HRESULT WINAPI interaction_tracker_TryUpdatePositionWithAdditionalVelocit
     return S_OK;
 }
 
-static void interaction_tracker_update_scale( struct interaction_tracker *impl, FLOAT value )
-{
-    struct interaction_tracker_binding *binding;
-    struct interaction_tracker *current;
-    struct list pending, visited;
-
-    list_init( &pending );
-    list_init( &visited );
-    EnterCriticalSection( &tracker_binding_cs );
-    list_add_tail( &pending, &impl->scale_entry );
-    while (!list_empty( &pending ))
-    {
-        current = LIST_ENTRY( list_head( &pending ), struct interaction_tracker, scale_entry );
-        list_remove( &current->scale_entry );
-        list_add_tail( &visited, &current->scale_entry );
-        EnterCriticalSection( &current->animation_cs );
-        current->scale = value;
-        ++current->animation_revision;
-        LeaveCriticalSection( &current->animation_cs );
-        LIST_FOR_EACH_ENTRY( binding, &current->bindings, struct interaction_tracker_binding, entry )
-            if ((binding->axis_mode & InteractionBindingAxisModes_Scale) && list_empty( &binding->peer->scale_entry ))
-                list_add_tail( &pending, &binding->peer->scale_entry );
-    }
-    while (!list_empty( &visited ))
-    {
-        current = LIST_ENTRY( list_head( &visited ), struct interaction_tracker, scale_entry );
-        list_remove( &current->scale_entry );
-        list_init( &current->scale_entry );
-    }
-    LeaveCriticalSection( &tracker_binding_cs );
-}
-
 static HRESULT WINAPI interaction_tracker_TryUpdateScale( IInteractionTracker *iface, FLOAT value,
         struct Vector3 center_point, INT32 *request_id )
 {
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
 
     if (!request_id) return E_POINTER;
-    interaction_tracker_update_scale( impl, value );
+    EnterCriticalSection( &tracker_binding_cs );
+    interaction_tracker_update_axis( impl, InteractionBindingAxisModes_Scale, value );
+    LeaveCriticalSection( &tracker_binding_cs );
     *request_id = interaction_tracker_next_request_id( impl );
     return S_OK;
 }
@@ -1321,10 +1335,7 @@ static HRESULT WINAPI interaction_tracker5_TryUpdatePositionWithOption( IInterac
     struct interaction_tracker *impl = impl_from_IInteractionTracker5( iface );
 
     if (!request_id) return E_POINTER;
-    EnterCriticalSection( &impl->animation_cs );
-    impl->position = value;
-    ++impl->animation_revision;
-    LeaveCriticalSection( &impl->animation_cs );
+    interaction_tracker_update_position( impl, value, FALSE );
     *request_id = interaction_tracker_next_request_id( impl );
     return S_OK;
 }
@@ -1590,7 +1601,7 @@ static HRESULT interaction_tracker_create( ICompositor *compositor, IInspectable
     impl->compositor = compositor;
     impl->owner = owner;
     list_init( &impl->bindings );
-    list_init( &impl->scale_entry );
+    list_init( &impl->update_entry );
     impl->max_scale = 1.0f;
     impl->scale = 1.0f;
     impl->ref = 1;
