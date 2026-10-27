@@ -292,7 +292,6 @@ int32_t GetLocaleInfoExWrapper(LPCWSTR lpLocaleName, LCTYPE LCType, LPWSTR lpLCD
 {
     RETURN_VALUE_IF(U_FAILURE(*status), 0);
 
-#ifndef UPREFS_TEST
     *status = U_ZERO_ERROR;
     int32_t result = GetLocaleInfoEx(lpLocaleName, LCType, lpLCData, cchData);
 
@@ -301,11 +300,6 @@ int32_t GetLocaleInfoExWrapper(LPCWSTR lpLocaleName, LCTYPE LCType, LPWSTR lpLCD
         *status = getUErrorCodeFromLastError();
     }
     return result;
-#else
-    #include "uprefstest.h"
-    UPrefsTest prefTests;
-    return prefTests.MockGetLocaleInfoEx(lpLocaleName, LCType, lpLCData, cchData, status);
-#endif
 }
 
 // Copies a string to a buffer if its size allows it and returns the size.

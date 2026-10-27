@@ -56,7 +56,6 @@
  * @internal ICU 4.0
  */
 #if defined(UCONFIG_USE_LOCAL)
-#include "uconfig_local.h"
 #endif
 
 //IGNORE_WINDOWS_HEADERS_END
