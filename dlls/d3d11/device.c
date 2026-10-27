@@ -4654,7 +4654,7 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_OpenSharedResource(ID3D11Device5 *
     open_adapter.AdapterLuid = adapter_desc.AdapterLuid;
     if (D3DKMTOpenAdapterFromLuid(&open_adapter)) goto done;
     close_adapter.hAdapter = open_adapter.hAdapter;
-    create_device.u.hAdapter = open_adapter.hAdapter;
+    create_device.hAdapter = open_adapter.hAdapter;
     if (D3DKMTCreateDevice(&create_device)) goto done;
     destroy_device.hDevice = create_device.hDevice;
     query.hDevice = create_device.hDevice;
