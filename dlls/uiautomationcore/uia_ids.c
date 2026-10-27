@@ -23,6 +23,28 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(uiautomation);
 
+struct uia_custom_property
+{
+    struct list entry;
+    struct uia_prop_info info;
+    GUID guid;
+    WCHAR *name;
+};
+
+struct uia_custom_event
+{
+    struct list entry;
+    struct uia_event_info info;
+    GUID guid;
+    WCHAR *name;
+};
+
+static struct list custom_properties = LIST_INIT(custom_properties);
+static struct list custom_events = LIST_INIT(custom_events);
+static SRWLOCK custom_registration_lock = SRWLOCK_INIT;
+static LONG next_custom_event_id = UIA_NotificationEventId;
+static LONG next_custom_property_id = UIA_IsDialogPropertyId;
+
 static int __cdecl uia_property_guid_compare(const void *a, const void *b)
 {
     const GUID *guid = a;
@@ -320,21 +342,44 @@ static const int prop_id_idx[] = {
 
 static const struct uia_prop_info *uia_prop_info_from_guid(const GUID *guid)
 {
+    struct uia_custom_property *custom;
     struct uia_prop_info *prop;
 
     if ((prop = bsearch(guid, default_uia_properties, ARRAY_SIZE(default_uia_properties), sizeof(*prop),
             uia_property_guid_compare)))
         return prop;
 
+    AcquireSRWLockShared(&custom_registration_lock);
+    LIST_FOR_EACH_ENTRY(custom, &custom_properties, struct uia_custom_property, entry)
+    {
+        if (IsEqualGUID(&custom->guid, guid))
+        {
+            ReleaseSRWLockShared(&custom_registration_lock);
+            return &custom->info;
+        }
+    }
+    ReleaseSRWLockShared(&custom_registration_lock);
     return NULL;
 }
 
 const struct uia_prop_info *uia_prop_info_from_id(PROPERTYID prop_id)
 {
-    if ((prop_id < PROP_ID_MIN) || (prop_id >= PROP_ID_MAX))
-        return NULL;
+    struct uia_custom_property *custom;
 
-    return &default_uia_properties[prop_id_idx[prop_id - PROP_ID_MIN]];
+    if ((prop_id >= PROP_ID_MIN) && (prop_id < PROP_ID_MAX))
+        return &default_uia_properties[prop_id_idx[prop_id - PROP_ID_MIN]];
+
+    AcquireSRWLockShared(&custom_registration_lock);
+    LIST_FOR_EACH_ENTRY(custom, &custom_properties, struct uia_custom_property, entry)
+    {
+        if (custom->info.prop_id == prop_id)
+        {
+            ReleaseSRWLockShared(&custom_registration_lock);
+            return &custom->info;
+        }
+    }
+    ReleaseSRWLockShared(&custom_registration_lock);
+    return NULL;
 }
 
 /* Sorted by GUID. */
@@ -426,21 +471,129 @@ static const int event_id_idx[] = {
 
 static const struct uia_event_info *uia_event_info_from_guid(const GUID *guid)
 {
+    struct uia_custom_event *custom;
     struct uia_event_info *event;
 
     if ((event = bsearch(guid, default_uia_events, ARRAY_SIZE(default_uia_events), sizeof(*event),
             uia_event_guid_compare)))
         return event;
 
+    AcquireSRWLockShared(&custom_registration_lock);
+    LIST_FOR_EACH_ENTRY(custom, &custom_events, struct uia_custom_event, entry)
+    {
+        if (IsEqualGUID(&custom->guid, guid))
+        {
+            ReleaseSRWLockShared(&custom_registration_lock);
+            return &custom->info;
+        }
+    }
+    ReleaseSRWLockShared(&custom_registration_lock);
     return NULL;
 }
 
 const struct uia_event_info *uia_event_info_from_id(EVENTID event_id)
 {
-    if ((event_id < EVENT_ID_MIN) || (event_id >= EVENT_ID_MAX))
-        return NULL;
+    struct uia_custom_event *custom;
 
-    return &default_uia_events[event_id_idx[event_id - EVENT_ID_MIN]];
+    if ((event_id >= EVENT_ID_MIN) && (event_id < EVENT_ID_MAX))
+        return &default_uia_events[event_id_idx[event_id - EVENT_ID_MIN]];
+
+    AcquireSRWLockShared(&custom_registration_lock);
+    LIST_FOR_EACH_ENTRY(custom, &custom_events, struct uia_custom_event, entry)
+    {
+        if (custom->info.event_id == event_id)
+        {
+            ReleaseSRWLockShared(&custom_registration_lock);
+            return &custom->info;
+        }
+    }
+    ReleaseSRWLockShared(&custom_registration_lock);
+    return NULL;
+}
+
+HRESULT uia_register_property(const struct UIAutomationPropertyInfo *property, PROPERTYID *property_id)
+{
+    struct uia_custom_property *custom;
+    HRESULT hr = S_OK;
+
+    if (!property || !property_id) return E_INVALIDARG;
+    *property_id = 0;
+    if (!property->pProgrammaticName || !*property->pProgrammaticName ||
+            IsEqualGUID(&property->guid, &GUID_NULL))
+        return E_INVALIDARG;
+    if (property->type != UIAutomationType_Int && property->type != UIAutomationType_Bool &&
+            property->type != UIAutomationType_String && property->type != UIAutomationType_Double &&
+            property->type != UIAutomationType_Point && property->type != UIAutomationType_Element)
+        return E_INVALIDARG;
+
+    AcquireSRWLockExclusive(&custom_registration_lock);
+    LIST_FOR_EACH_ENTRY(custom, &custom_properties, struct uia_custom_property, entry)
+    {
+        if (!IsEqualGUID(&custom->guid, &property->guid)) continue;
+        if (custom->info.type != property->type || wcscmp(custom->name, property->pProgrammaticName))
+            hr = E_INVALIDARG;
+        else
+            *property_id = custom->info.prop_id;
+        goto done;
+    }
+
+    if (!(custom = calloc(1, sizeof(*custom))) ||
+            !(custom->name = wcsdup(property->pProgrammaticName)))
+    {
+        free(custom);
+        hr = E_OUTOFMEMORY;
+        goto done;
+    }
+
+    custom->guid = property->guid;
+    custom->info.guid = &custom->guid;
+    custom->info.prop_id = ++next_custom_property_id;
+    custom->info.prop_type = PROP_TYPE_ELEM_PROP;
+    custom->info.type = property->type;
+    list_add_tail(&custom_properties, &custom->entry);
+    *property_id = custom->info.prop_id;
+
+done:
+    ReleaseSRWLockExclusive(&custom_registration_lock);
+    return hr;
+}
+
+HRESULT uia_register_event(const struct UIAutomationEventInfo *event, EVENTID *event_id)
+{
+    struct uia_custom_event *custom;
+    HRESULT hr = S_OK;
+
+    if (!event || !event_id) return E_INVALIDARG;
+    *event_id = 0;
+    if (!event->pProgrammaticName || !*event->pProgrammaticName || IsEqualGUID(&event->guid, &GUID_NULL))
+        return E_INVALIDARG;
+
+    AcquireSRWLockExclusive(&custom_registration_lock);
+    LIST_FOR_EACH_ENTRY(custom, &custom_events, struct uia_custom_event, entry)
+    {
+        if (!IsEqualGUID(&custom->guid, &event->guid)) continue;
+        if (wcscmp(custom->name, event->pProgrammaticName)) hr = E_INVALIDARG;
+        else *event_id = custom->info.event_id;
+        goto done;
+    }
+
+    if (!(custom = calloc(1, sizeof(*custom))) || !(custom->name = wcsdup(event->pProgrammaticName)))
+    {
+        free(custom);
+        hr = E_OUTOFMEMORY;
+        goto done;
+    }
+
+    custom->guid = event->guid;
+    custom->info.guid = &custom->guid;
+    custom->info.event_id = ++next_custom_event_id;
+    custom->info.event_arg_type = EventArgsType_Simple;
+    list_add_tail(&custom_events, &custom->entry);
+    *event_id = custom->info.event_id;
+
+done:
+    ReleaseSRWLockExclusive(&custom_registration_lock);
+    return hr;
 }
 
 /* Sorted by GUID. */

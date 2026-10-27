@@ -16266,7 +16266,56 @@ static const struct uia_com_classes com_classes[] = {
     { &CLSID_CUIAutomation8, &IID_IUIAutomation4 },
     { &CLSID_CUIAutomation8, &IID_IUIAutomation5 },
     { &CLSID_CUIAutomation8, &IID_IUIAutomation6 },
+    { &CLSID_CUIAutomationRegistrar, &IID_IUnknown },
+    { &CLSID_CUIAutomationRegistrar, &IID_IUIAutomationRegistrar },
 };
+
+static void test_CUIAutomationRegistrar(void)
+{
+    static const GUID property_guid = {0xa6292a76,0xcff7,0x46dc,{0x81,0xb4,0x93,0xf4,0x02,0x1c,0x34,0x65}};
+    static const GUID event_guid = {0xb13ed8b7,0xe438,0x4d84,{0x99,0x02,0x59,0x49,0xc2,0x7d,0x38,0x21}};
+    struct UIAutomationPropertyInfo property = {property_guid, L"Wine.TestProperty", UIAutomationType_String};
+    struct UIAutomationEventInfo event = {event_guid, L"Wine.TestEvent"};
+    IUIAutomationRegistrar *registrar;
+    PROPERTYID property_id, duplicate_id;
+    EVENTID event_id, duplicate_event_id;
+    HRESULT hr;
+
+    hr = CoCreateInstance(&CLSID_CUIAutomationRegistrar, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IUIAutomationRegistrar, (void **)&registrar);
+    ok(hr == S_OK, "Failed to create IUIAutomationRegistrar, hr %#lx.\n", hr);
+    if (FAILED(hr)) return;
+
+    hr = IUIAutomationRegistrar_RegisterProperty(registrar, &property, &property_id);
+    ok(hr == S_OK, "Failed to register property, hr %#lx.\n", hr);
+    ok(property_id != 0, "Unexpected property id %d.\n", property_id);
+    ok(UiaLookupId(AutomationIdentifierType_Property, &property_guid) == property_id,
+            "UiaLookupId did not return registered property id %d.\n", property_id);
+
+    hr = IUIAutomationRegistrar_RegisterProperty(registrar, &property, &duplicate_id);
+    ok(hr == S_OK, "Failed to register property again, hr %#lx.\n", hr);
+    ok(duplicate_id == property_id, "Expected property id %d, got %d.\n", property_id, duplicate_id);
+
+    property.type = UIAutomationType_Bool;
+    hr = IUIAutomationRegistrar_RegisterProperty(registrar, &property, &duplicate_id);
+    ok(FAILED(hr), "Expected failure for conflicting property registration, got %#lx.\n", hr);
+
+    hr = IUIAutomationRegistrar_RegisterEvent(registrar, &event, &event_id);
+    ok(hr == S_OK, "Failed to register event, hr %#lx.\n", hr);
+    ok(event_id != 0, "Unexpected event id %d.\n", event_id);
+    ok(UiaLookupId(AutomationIdentifierType_Event, &event_guid) == event_id,
+            "UiaLookupId did not return registered event id %d.\n", event_id);
+
+    hr = IUIAutomationRegistrar_RegisterEvent(registrar, &event, &duplicate_event_id);
+    ok(hr == S_OK, "Failed to register event again, hr %#lx.\n", hr);
+    ok(duplicate_event_id == event_id, "Expected event id %d, got %d.\n", event_id, duplicate_event_id);
+
+    event.pProgrammaticName = L"Wine.OtherEvent";
+    hr = IUIAutomationRegistrar_RegisterEvent(registrar, &event, &duplicate_event_id);
+    ok(FAILED(hr), "Expected failure for conflicting event registration, got %#lx.\n", hr);
+
+    IUIAutomationRegistrar_Release(registrar);
+}
 
 static void test_CUIAutomation(void)
 {
@@ -18685,6 +18734,7 @@ START_TEST(uiautomation)
     test_UiaGetUpdatedCache();
     test_UiaNavigate();
     test_UiaFind();
+    test_CUIAutomationRegistrar();
     test_CUIAutomation();
     test_default_clientside_providers();
     test_UiaGetRootNode();
