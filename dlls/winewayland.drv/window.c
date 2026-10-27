@@ -149,8 +149,16 @@ static void wayland_win_data_get_config(struct wayland_win_data *data,
     /* The fullscreen state is implied by the window position and style. */
     if (data->is_fullscreen)
     {
-        if ((style & WS_MAXIMIZE) && (style & WS_CAPTION) == WS_CAPTION)
-            window_state |= WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED;
+        /* A window that keeps its caption and its resizing frame is a normal
+         * window which happens to cover the monitor, not a fullscreen one:
+         * applications drop their decorations when they go fullscreen. Making
+         * it fullscreen would leave it stuck to the monitor, since a Wayland
+         * fullscreen window cannot be moved or resized. */
+        if ((style & WS_CAPTION) == WS_CAPTION && (style & WS_THICKFRAME))
+        {
+            if (style & WS_MAXIMIZE)
+                window_state |= WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED;
+        }
         else if (!(style & WS_MINIMIZE))
             window_state |= WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN;
     }
