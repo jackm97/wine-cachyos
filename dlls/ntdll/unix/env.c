@@ -1868,9 +1868,11 @@ static void *build_wow64_parameters( const RTL_USER_PROCESS_PARAMETERS *params )
  */
 static void init_peb( RTL_USER_PROCESS_PARAMETERS *params, BOOL debugged )
 {
+    struct cpu_topology_override *cpu_override = get_cpu_topology_override();
+
     peb->ImageBaseAddress           = main_module;
     peb->ProcessParameters          = params;
-    peb->NumberOfProcessors         = cpu_count;
+    peb->NumberOfProcessors         = cpu_override ? cpu_override->cpu_count : cpu_count;
     peb->OSMajorVersion             = 10;
     peb->OSMinorVersion             = 0;
     peb->OSBuildNumber              = 19045;

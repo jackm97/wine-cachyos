@@ -2117,8 +2117,7 @@ void init_cpu_info(void)
     FIXME("Detecting the number of processors is not supported.\n");
 #endif
 
-    peb->NumberOfProcessors = cpu_override.mapping.cpu_count
-            ? cpu_override.mapping.cpu_count : num;
+    /* peb does not exist yet; init_peb() sets NumberOfProcessors, honouring the CPU topology override */
     init_cpu_model();
     get_random( &process_cookie, sizeof(process_cookie) );
 }
