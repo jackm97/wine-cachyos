@@ -915,6 +915,7 @@ struct d2d_command_list
 
 HRESULT d2d_command_list_create(ID2D1Factory *factory, struct d2d_command_list **command_list);
 struct d2d_command_list *unsafe_impl_from_ID2D1CommandList(ID2D1CommandList *iface);
+HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *context);
 void d2d_command_list_begin_draw(struct d2d_command_list *command_list, const struct d2d_device_context *context);
 void d2d_command_list_set_antialias_mode(struct d2d_command_list *command_list, D2D1_ANTIALIAS_MODE mode);
 void d2d_command_list_set_primitive_blend(struct d2d_command_list *command_list,
