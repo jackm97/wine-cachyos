@@ -2422,7 +2422,7 @@ static void start_main_thread(void)
     init_files();
 
 #if defined(__x86_64__) || defined(__i386__)
-    set_thread_teb( teb );
+    set_thread_teb( data->teb );
 #endif
 
     mallopt( M_PERTURB, 0xff );

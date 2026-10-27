@@ -1167,7 +1167,7 @@ static BOOL async_send_proc( void *user, ULONG_PTR *info, unsigned int *status )
 
         *status = try_send( fd, async );
         TRACE( "got status %#x\n", *status );
-        hack_update_status( async->io.handle, status );
+        hack_update_status( async->handle, status );
 
         if (needs_close) close( fd );
 
