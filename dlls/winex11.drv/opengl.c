@@ -1446,14 +1446,13 @@ static BOOL x11drv_surface_swap( struct opengl_drawable *base )
 {
     struct opengl_context *ctx = NtCurrentTeb()->glReserved2;
     struct gl_drawable *gl = impl_from_opengl_drawable( base );
-    struct wgl_context *wgl_ctx = NtCurrentTeb()->glContext;
     INT64 ust, msc, sbc, target_sbc = 0;
     float viewport_old[4], viewport[4];
     BOOL offscreen;
 
     TRACE( "drawable %s\n", debugstr_opengl_drawable( base ) );
 
-    if (wgl_ctx && wgl_ctx->has_GL_ARB_viewport_array) funcs->p_glGetFloati_v( GL_VIEWPORT, 0, viewport_old );
+    if (ctx && ctx->extensions[GL_ARB_viewport_array]) funcs->p_glGetFloati_v( GL_VIEWPORT, 0, viewport_old );
 
     if (!(offscreen = InterlockedCompareExchange( &base->client->offscreen, 0, 0 )) ||
         !ctx || !pglXSwapBuffersMscOML) pglXSwapBuffers( gdi_display, gl->drawable );
@@ -1464,7 +1463,7 @@ static BOOL x11drv_surface_swap( struct opengl_drawable *base )
         if (pglXWaitForSbcOML) pglXWaitForSbcOML( gdi_display, gl->drawable, target_sbc, &ust, &msc, &sbc );
     }
 
-    if (wgl_ctx && wgl_ctx->has_GL_ARB_viewport_array)
+    if (ctx && ctx->extensions[GL_ARB_viewport_array])
     {
         /* Avoid setting old viewport when not needed, it may be costly in some cases. */
         funcs->p_glGetFloati_v( GL_VIEWPORT, 0, viewport );
