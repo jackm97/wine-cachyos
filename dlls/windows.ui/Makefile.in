@@ -1,5 +1,5 @@
 MODULE  = windows.ui.dll
-IMPORTS = dcomp combase advapi32 user32
+IMPORTS = dcomp combase advapi32 user32 gdi32
 
 SOURCES = \
 	accessibilitysettings.c \
