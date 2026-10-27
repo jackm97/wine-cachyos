@@ -1061,6 +1061,7 @@ SOURCES = \
 	windows.graphics.imaging.idl \
 	windows.h \
 	windows.management.deployment.idl \
+	windows.management.idl \
 	windows.media.capture.idl \
 	windows.media.closedcaptioning.idl \
 	windows.media.core.idl \
