@@ -602,6 +602,10 @@ static void check_binding_mode( IInteractionTrackerStatics2 *statics, IInteracti
 static void test_interaction_tracker_bindings(void)
 {
     IInteractionTracker *tracker1 = NULL, *tracker2 = NULL, *tracker3 = NULL, *tracker4 = NULL;
+    IClosable *closable = NULL;
+    IUnknown *identity = NULL, *other = NULL;
+    IID *iids = NULL;
+    ULONG count = 0;
     IInteractionTrackerStatics2 *statics2 = NULL;
     IInteractionTrackerStatics *statics = NULL;
     IActivationFactory *factory = NULL;
@@ -665,6 +669,29 @@ static void test_interaction_tracker_bindings(void)
     check_binding_mode( statics2, tracker1, tracker2,
                         InteractionBindingAxisModes_PositionX | InteractionBindingAxisModes_Scale );
     check_binding_mode( statics2, tracker1, tracker4, InteractionBindingAxisModes_Scale );
+
+    hr = IInteractionTracker_QueryInterface( tracker1, &IID_IClosable, (void **)&closable );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (closable)
+    {
+        IInteractionTracker_QueryInterface( tracker1, &IID_IUnknown, (void **)&identity );
+        IClosable_QueryInterface( closable, &IID_IUnknown, (void **)&other );
+        ok( identity == other, "Different object identities.\n" );
+        IUnknown_Release( other );
+        IUnknown_Release( identity );
+        hr = IClosable_GetIids( closable, &count, &iids );
+        ok( hr == S_OK, "Got hr %#lx.\n", hr );
+        ok( count == 4, "Got count %lu.\n", count );
+        if (count == 4) ok( IsEqualGUID( &iids[3], &IID_IClosable ), "Wrong interface.\n" );
+        CoTaskMemFree( iids );
+        hr = IClosable_Close( closable );
+        ok( hr == S_OK, "Got hr %#lx.\n", hr );
+        hr = IClosable_Close( closable );
+        ok( hr == S_OK, "Got hr %#lx.\n", hr );
+        check_binding_mode( statics2, tracker2, tracker1, InteractionBindingAxisModes_None );
+        check_binding_mode( statics2, tracker4, tracker1, InteractionBindingAxisModes_None );
+        IClosable_Release( closable );
+    }
 
 done:
     if (tracker4) IInteractionTracker_Release( tracker4 );

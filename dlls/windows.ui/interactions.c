@@ -714,6 +714,7 @@ struct interaction_tracker
     IInteractionTracker IInteractionTracker_iface;
     IInteractionTracker5 IInteractionTracker5_iface;
     ICompositionObject ICompositionObject_iface;
+    IClosable IClosable_iface;
     ICompositionInteractionSourceCollection *sources;
     ICompositionPropertySet *properties;
     ICompositor *compositor;
@@ -744,6 +745,11 @@ static inline struct interaction_tracker *impl_from_IInteractionTracker5( IInter
 static inline struct interaction_tracker *tracker_from_ICompositionObject( ICompositionObject *iface )
 {
     return CONTAINING_RECORD( iface, struct interaction_tracker, ICompositionObject_iface );
+}
+
+static inline struct interaction_tracker *tracker_from_IClosable( IClosable *iface )
+{
+    return CONTAINING_RECORD( iface, struct interaction_tracker, IClosable_iface );
 }
 
 static struct interaction_tracker_binding *interaction_tracker_find_binding(
@@ -790,6 +796,8 @@ static HRESULT WINAPI interaction_tracker_QueryInterface( IInteractionTracker *i
         *out = &impl_from_IInteractionTracker( iface )->IInteractionTracker5_iface;
     else if (IsEqualGUID( iid, &IID_ICompositionObject ))
         *out = &impl_from_IInteractionTracker( iface )->ICompositionObject_iface;
+    else if (IsEqualGUID( iid, &IID_IClosable ))
+        *out = &impl_from_IInteractionTracker( iface )->IClosable_iface;
     else
     {
         *out = NULL;
@@ -828,11 +836,12 @@ static HRESULT WINAPI interaction_tracker_GetIids( IInteractionTracker *iface, U
     IID *values;
 
     if (!count || !iids) return E_POINTER;
-    if (!(values = CoTaskMemAlloc( 3 * sizeof(*values) ))) return E_OUTOFMEMORY;
+    if (!(values = CoTaskMemAlloc( 4 * sizeof(*values) ))) return E_OUTOFMEMORY;
     values[0] = IID_IInteractionTracker;
     values[1] = IID_IInteractionTracker5;
     values[2] = IID_ICompositionObject;
-    *count = 3;
+    values[3] = IID_IClosable;
+    *count = 4;
     *iids = values;
     return S_OK;
 }
@@ -1287,6 +1296,66 @@ static const IInteractionTrackerVtbl interaction_tracker_vtbl =
     interaction_tracker_TryUpdateScaleWithAdditionalVelocity,
 };
 
+static HRESULT WINAPI tracker_closable_QueryInterface( IClosable *iface, REFIID iid, void **out )
+{
+    struct interaction_tracker *impl = tracker_from_IClosable( iface );
+    return IInteractionTracker_QueryInterface( &impl->IInteractionTracker_iface, iid, out );
+}
+
+static ULONG WINAPI tracker_closable_AddRef( IClosable *iface )
+{
+    struct interaction_tracker *impl = tracker_from_IClosable( iface );
+    return IInteractionTracker_AddRef( &impl->IInteractionTracker_iface );
+}
+
+static ULONG WINAPI tracker_closable_Release( IClosable *iface )
+{
+    struct interaction_tracker *impl = tracker_from_IClosable( iface );
+    return IInteractionTracker_Release( &impl->IInteractionTracker_iface );
+}
+
+static HRESULT WINAPI tracker_closable_GetIids( IClosable *iface, ULONG *count, IID **iids )
+{
+    struct interaction_tracker *impl = tracker_from_IClosable( iface );
+    return IInteractionTracker_GetIids( &impl->IInteractionTracker_iface, count, iids );
+}
+
+static HRESULT WINAPI tracker_closable_GetRuntimeClassName( IClosable *iface, HSTRING *name )
+{
+    struct interaction_tracker *impl = tracker_from_IClosable( iface );
+    return IInteractionTracker_GetRuntimeClassName( &impl->IInteractionTracker_iface, name );
+}
+
+static HRESULT WINAPI tracker_closable_GetTrustLevel( IClosable *iface, TrustLevel *level )
+{
+    struct interaction_tracker *impl = tracker_from_IClosable( iface );
+    return IInteractionTracker_GetTrustLevel( &impl->IInteractionTracker_iface, level );
+}
+
+static HRESULT WINAPI tracker_closable_Close( IClosable *iface )
+{
+    struct interaction_tracker *impl = tracker_from_IClosable( iface );
+    IInspectable *owner = impl->owner;
+
+    TRACE( "iface %p.\n", iface );
+    impl->owner = NULL;
+    interaction_tracker_clear_bindings( impl );
+    ICompositionInteractionSourceCollection_RemoveAll( impl->sources );
+    if (owner) IInspectable_Release( owner );
+    return S_OK;
+}
+
+static const IClosableVtbl tracker_closable_vtbl =
+{
+    tracker_closable_QueryInterface,
+    tracker_closable_AddRef,
+    tracker_closable_Release,
+    tracker_closable_GetIids,
+    tracker_closable_GetRuntimeClassName,
+    tracker_closable_GetTrustLevel,
+    tracker_closable_Close,
+};
+
 static HRESULT interaction_tracker_create( ICompositor *compositor, IInspectable *owner,
         IInteractionTracker **result )
 {
@@ -1299,6 +1368,7 @@ static HRESULT interaction_tracker_create( ICompositor *compositor, IInspectable
     impl->IInteractionTracker_iface.lpVtbl = &interaction_tracker_vtbl;
     impl->IInteractionTracker5_iface.lpVtbl = &interaction_tracker5_vtbl;
     impl->ICompositionObject_iface.lpVtbl = &tracker_composition_object_vtbl;
+    impl->IClosable_iface.lpVtbl = &tracker_closable_vtbl;
     impl->compositor = compositor;
     impl->owner = owner;
     list_init( &impl->bindings );
