@@ -288,7 +288,7 @@ struct wayland_client_surface
 {
     struct client_surface client;
     HWND toplevel;
-    struct wl_surface *parent; /* wl_surface the subsurface was created on */
+    UINT64 parent_serial; /* serial of the wayland_surface the subsurface was created on, 0 if none */
     RECT rect;
     struct wl_surface *wl_surface;
     struct wl_subsurface *wl_subsurface;
@@ -314,6 +314,7 @@ struct wayland_shm_buffer
 struct wayland_surface
 {
     HWND hwnd;
+    UINT64 serial; /* process-unique, never reused */
 
     struct wl_surface *wl_surface;
     struct wp_viewport *wp_viewport;
