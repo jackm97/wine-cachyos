@@ -2104,6 +2104,9 @@ BOOL WINAPI DECLSPEC_HOTPATCH SetEnvironmentVariableA( LPCSTR name, LPCSTR value
  */
 BOOL WINAPI DECLSPEC_HOTPATCH SetEnvironmentVariableW( LPCWSTR name, LPCWSTR value )
 {
+    static const WCHAR webview2_hosting_modeW[] = L"COREWEBVIEW2_FORCED_HOSTING_MODE";
+    static const WCHAR window_to_visualW[] = L"COREWEBVIEW2_HOSTING_MODE_WINDOW_TO_VISUAL";
+    static const WCHAR force_windowedW[] = L"WINE_WEBVIEW2_WINDOWED";
     UNICODE_STRING us_name, us_value;
     NTSTATUS status;
 
@@ -2113,6 +2116,13 @@ BOOL WINAPI DECLSPEC_HOTPATCH SetEnvironmentVariableW( LPCWSTR name, LPCWSTR val
     {
         SetLastError( ERROR_ENVVAR_NOT_FOUND );
         return FALSE;
+    }
+
+    if (value && !wcsicmp( name, webview2_hosting_modeW ) &&
+        !wcsicmp( value, window_to_visualW ) && GetEnvironmentVariableW( force_windowedW, NULL, 0 ))
+    {
+        TRACE( "ignoring WebView2 visual hosting request\n" );
+        return TRUE;
     }
 
     RtlInitUnicodeString( &us_name, name );

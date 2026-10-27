@@ -3177,6 +3177,9 @@ failed:
  */
 static NTSTATUS build_dlldata_path( LPCWSTR libname, ACTCTX_SECTION_KEYED_DATA *data, LPWSTR *fullname )
 {
+    static const WCHAR office_winappsdk_var[] = L"OFFICE_WINAPPSDK_RUNTIME_DIR";
+    static const WCHAR office_winappsdk_prefix[] = L"%OFFICE_WINAPPSDK_RUNTIME_DIR%";
+    static const WCHAR winappsdk_dir[] = L"WinAppSDK\\";
     ACTIVATION_CONTEXT_DATA_DLL_REDIRECTION *dlldata = data->lpData;
     ACTIVATION_CONTEXT_DATA_DLL_REDIRECTION_PATH_SEGMENT *path;
     char *base = data->lpSectionBase;
@@ -3195,11 +3198,51 @@ static NTSTATUS build_dlldata_path( LPCWSTR libname, ACTCTX_SECTION_KEYED_DATA *
     if (p == buffer || p[-1] == '\\') wcscpy( p, libname );
     else *p = 0;
 
+    TRACE( "actctx path %s flags %#lx\n", debugstr_w(buffer), dlldata->Flags );
+
     if (dlldata->Flags & ACTIVATION_CONTEXT_DATA_DLL_REDIRECTION_PATH_EXPAND)
     {
-        RtlExpandEnvironmentStrings( NULL, buffer, wcslen(buffer), NULL, 0, &total );
+        NTSTATUS expand_status;
+        SIZE_T src_len = wcslen(buffer);
+        UNICODE_STRING env_name, env_value;
+        WCHAR env_value_buffer[MAX_PATH], *image_dir_end;
+        UNICODE_STRING *image_path;
+        SIZE_T image_dir_len;
+
+        if (!wcsncmp( buffer, office_winappsdk_prefix, ARRAY_SIZE(office_winappsdk_prefix) - 1 ))
+        {
+            RtlInitUnicodeString( &env_name, office_winappsdk_var );
+            env_value.Buffer = env_value_buffer;
+            env_value.Length = 0;
+            env_value.MaximumLength = sizeof(env_value_buffer);
+            expand_status = RtlQueryEnvironmentVariable_U( NULL, &env_name, &env_value );
+            if (expand_status == STATUS_VARIABLE_NOT_FOUND)
+            {
+                image_path = &NtCurrentTeb()->Peb->ProcessParameters->ImagePathName;
+                if ((image_dir_end = wcsrchr( image_path->Buffer, '\\' )))
+                {
+                    image_dir_len = image_dir_end - image_path->Buffer + 1;
+                    if (image_dir_len + ARRAY_SIZE(winappsdk_dir) <= ARRAY_SIZE(env_value_buffer))
+                    {
+                        memcpy( env_value_buffer, image_path->Buffer, image_dir_len * sizeof(WCHAR) );
+                        wcscpy( env_value_buffer + image_dir_len, winappsdk_dir );
+                        RtlInitUnicodeString( &env_value, env_value_buffer );
+                        expand_status = RtlSetEnvironmentVariable( NULL, &env_name, &env_value );
+                        TRACE( "set Office WinAppSDK path to %s, status %#lx\n",
+                               debugstr_us(&env_value), expand_status );
+                    }
+                }
+            }
+        }
+
+        expand_status = RtlExpandEnvironmentStrings( NULL, buffer, src_len, NULL, 0, &total );
+        TRACE( "actctx expansion sizing status %#lx length %Iu\n", expand_status, total );
         if ((*fullname = RtlAllocateHeap( GetProcessHeap(), 0, total * sizeof(WCHAR) )))
-            RtlExpandEnvironmentStrings( NULL, buffer, wcslen(buffer), *fullname, total, NULL );
+        {
+            expand_status = RtlExpandEnvironmentStrings( NULL, buffer, src_len, *fullname, total, NULL );
+            TRACE( "actctx expansion result status %#lx path %s\n",
+                   expand_status, debugstr_w(*fullname) );
+        }
         else
             status = STATUS_NO_MEMORY;
 
