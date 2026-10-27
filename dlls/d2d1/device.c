@@ -2842,9 +2842,21 @@ static UINT32 STDMETHODCALLTYPE d2d_device_context_GetMaximumBitmapSize(ID2D1Dev
 static BOOL STDMETHODCALLTYPE d2d_device_context_IsSupported(ID2D1DeviceContext6 *iface,
         const D2D1_RENDER_TARGET_PROPERTIES *desc)
 {
-    FIXME("iface %p, desc %p stub!\n", iface, desc);
+    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
+    const D2D1_RENDER_TARGET_PROPERTIES *target_desc = &context->desc;
 
-    return FALSE;
+    TRACE("iface %p, desc %p.\n", iface, desc);
+
+    if (desc->type != D2D1_RENDER_TARGET_TYPE_DEFAULT && desc->type != target_desc->type)
+        return FALSE;
+    if (desc->pixelFormat.format != DXGI_FORMAT_UNKNOWN
+            && desc->pixelFormat.format != target_desc->pixelFormat.format)
+        return FALSE;
+    if (desc->pixelFormat.alphaMode != D2D1_ALPHA_MODE_UNKNOWN
+            && desc->pixelFormat.alphaMode != target_desc->pixelFormat.alphaMode)
+        return FALSE;
+
+    return (target_desc->usage & desc->usage) == desc->usage;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_ID2D1DeviceContext_CreateBitmap(ID2D1DeviceContext6 *iface,
@@ -5394,6 +5406,7 @@ static HRESULT d2d_device_context_init(struct d2d_device_context *render_target,
         goto err;
     }
 
+    render_target->desc.type = D2D1_RENDER_TARGET_TYPE_HARDWARE;
     render_target->desc.dpiX = 96.0f;
     render_target->desc.dpiY = 96.0f;
 
@@ -5465,6 +5478,10 @@ HRESULT d2d_d3d_create_render_target(struct d2d_device *device, IDXGISurface *su
         free(object);
         return hr;
     }
+
+    object->desc.type = desc->type == D2D1_RENDER_TARGET_TYPE_DEFAULT
+            ? D2D1_RENDER_TARGET_TYPE_HARDWARE : desc->type;
+    object->desc.usage = desc->usage;
 
     ID2D1DeviceContext6_SetDpi(&object->ID2D1DeviceContext6_iface, bitmap_desc.dpiX, bitmap_desc.dpiY);
 

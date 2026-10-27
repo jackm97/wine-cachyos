@@ -16283,6 +16283,21 @@ static void test_dc_target_is_supported(BOOL d3d11)
     hr = ID2D1DCRenderTarget_QueryInterface(rt, &IID_ID2D1DeviceContext, (void **)&device_context);
     ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
 
+    supported = ID2D1DeviceContext_IsSupported(device_context, &template_desc);
+    ok(supported, "Expected supported format.\n");
+    test_desc = template_desc;
+    test_desc.dpiX = 144.0f;
+    test_desc.dpiY = 192.0f;
+    supported = ID2D1DeviceContext_IsSupported(device_context, &test_desc);
+    ok(supported, "Expected supported format with different DPI.\n");
+    test_desc.pixelFormat.format = DXGI_FORMAT_UNKNOWN;
+    test_desc.pixelFormat.alphaMode = D2D1_ALPHA_MODE_UNKNOWN;
+    supported = ID2D1DeviceContext_IsSupported(device_context, &test_desc);
+    ok(supported, "Expected supported default format.\n");
+    test_desc.pixelFormat.format = (DXGI_FORMAT)~0u;
+    supported = ID2D1DeviceContext_IsSupported(device_context, &test_desc);
+    ok(!supported, "Expected unsupported format.\n");
+
     test_desc = template_desc;
     test_desc.usage = D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE;
     supported = ID2D1DCRenderTarget_IsSupported(rt, &test_desc);
