@@ -36,6 +36,8 @@ static HRESULT scalar_key_frame_animation_get_final_value( ICompositionAnimation
         FLOAT *value );
 static HRESULT boolean_key_frame_animation_get_final_value( ICompositionAnimation *animation,
         boolean *value );
+static HRESULT vector3_key_frame_animation_get_final_value( ICompositionAnimation *animation,
+        struct Vector3 *value );
 
 struct compositor2_iface;
 struct compositor4_iface;
@@ -1470,6 +1472,7 @@ static HRESULT WINAPI sprite_visual_composition_object_StartAnimation( IComposit
 {
     struct sprite_visual *impl = sprite_visual_from_ICompositionObject( iface );
     const WCHAR *property;
+    struct Vector3 vector;
     boolean visible;
     FLOAT value;
 
@@ -1482,6 +1485,13 @@ static HRESULT WINAPI sprite_visual_composition_object_StartAnimation( IComposit
     else if (!wcscmp( property, L"IsVisible" ) &&
             SUCCEEDED(boolean_key_frame_animation_get_final_value( animation, &visible )))
         impl->visible = visible;
+    else if (SUCCEEDED(vector3_key_frame_animation_get_final_value( animation, &vector )))
+    {
+        if (!wcscmp( property, L"Offset" )) impl->offset = vector;
+        else if (!wcscmp( property, L"Scale" )) impl->scale = vector;
+        else if (!wcscmp( property, L"CenterPoint" )) impl->center_point = vector;
+        else if (!wcscmp( property, L"RotationAxis" )) impl->rotation_axis = vector;
+    }
     return S_OK;
 }
 
@@ -3616,6 +3626,7 @@ static const GUID boolean_key_frame_animation_iid =
 struct scalar_key_frame_animation
 {
     IScalarKeyFrameAnimation IScalarKeyFrameAnimation_iface;
+    IVector3KeyFrameAnimation IVector3KeyFrameAnimation_iface;
     struct boolean_key_frame_animation_iface IBooleanKeyFrameAnimation_iface;
     struct key_frame_animation_iface IKeyFrameAnimation_iface;
     ICompositionAnimation ICompositionAnimation_iface;
@@ -3630,12 +3641,15 @@ struct scalar_key_frame_animation
     INT32 stop_behavior;
     FLOAT final_key;
     FLOAT final_value;
+    struct Vector3 final_vector;
     boolean has_final_value;
     boolean is_boolean;
+    boolean is_vector3;
     LONG ref;
 };
 
 static const IScalarKeyFrameAnimationVtbl scalar_key_frame_animation_vtbl;
+static const IVector3KeyFrameAnimationVtbl vector3_key_frame_animation_vtbl;
 static const struct boolean_key_frame_animation_vtbl boolean_key_frame_animation_vtbl;
 
 static inline struct scalar_key_frame_animation *impl_from_IScalarKeyFrameAnimation(
@@ -3648,6 +3662,12 @@ static inline struct scalar_key_frame_animation *scalar_animation_from_IComposit
         ICompositionAnimation *iface )
 {
     return CONTAINING_RECORD( iface, struct scalar_key_frame_animation, ICompositionAnimation_iface );
+}
+
+static inline struct scalar_key_frame_animation *impl_from_IVector3KeyFrameAnimation(
+        IVector3KeyFrameAnimation *iface )
+{
+    return CONTAINING_RECORD( iface, struct scalar_key_frame_animation, IVector3KeyFrameAnimation_iface );
 }
 
 static inline struct scalar_key_frame_animation *scalar_animation_from_IBooleanKeyFrameAnimation(
@@ -3705,6 +3725,28 @@ static HRESULT boolean_key_frame_animation_get_final_value( ICompositionAnimatio
     return hr;
 }
 
+static HRESULT vector3_key_frame_animation_get_final_value( ICompositionAnimation *animation,
+        struct Vector3 *value )
+{
+    struct scalar_key_frame_animation *impl;
+    IVector3KeyFrameAnimation *vector;
+    HRESULT hr;
+
+    if (!value) return E_POINTER;
+    if (FAILED(hr = ICompositionAnimation_QueryInterface( animation,
+            &IID_IVector3KeyFrameAnimation, (void **)&vector ))) return hr;
+    if (vector->lpVtbl != &vector3_key_frame_animation_vtbl)
+    {
+        IVector3KeyFrameAnimation_Release( vector );
+        return E_NOINTERFACE;
+    }
+    impl = impl_from_IVector3KeyFrameAnimation( vector );
+    if (!impl->has_final_value) hr = E_BOUNDS;
+    else *value = impl->final_vector;
+    IVector3KeyFrameAnimation_Release( vector );
+    return hr;
+}
+
 static inline struct scalar_key_frame_animation *scalar_animation_from_ICompositionAnimationBase(
         ICompositionAnimationBase *iface )
 {
@@ -3731,10 +3773,13 @@ static HRESULT scalar_key_frame_animation_query_interface( struct scalar_key_fra
     *out = NULL;
     if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
         IsEqualGUID( iid, &IID_IAgileObject ))
-        *out = impl->is_boolean ? (void *)&impl->IBooleanKeyFrameAnimation_iface :
+        *out = impl->is_vector3 ? (void *)&impl->IVector3KeyFrameAnimation_iface :
+               impl->is_boolean ? (void *)&impl->IBooleanKeyFrameAnimation_iface :
                                  (void *)&impl->IScalarKeyFrameAnimation_iface;
-    else if (!impl->is_boolean && IsEqualGUID( iid, &IID_IScalarKeyFrameAnimation ))
+    else if (!impl->is_boolean && !impl->is_vector3 && IsEqualGUID( iid, &IID_IScalarKeyFrameAnimation ))
         *out = &impl->IScalarKeyFrameAnimation_iface;
+    else if (impl->is_vector3 && IsEqualGUID( iid, &IID_IVector3KeyFrameAnimation ))
+        *out = &impl->IVector3KeyFrameAnimation_iface;
     else if (impl->is_boolean && IsEqualGUID( iid, &boolean_key_frame_animation_iid ))
         *out = &impl->IBooleanKeyFrameAnimation_iface;
     else if (IsEqualGUID( iid, &key_frame_animation_iid ))
@@ -3773,7 +3818,8 @@ static HRESULT scalar_key_frame_animation_get_iids( struct scalar_key_frame_anim
 {
     if (!count || !iids) return E_POINTER;
     if (!(*iids = CoTaskMemAlloc( 5 * sizeof(**iids) ))) return E_OUTOFMEMORY;
-    (*iids)[0] = impl->is_boolean ? boolean_key_frame_animation_iid :
+    (*iids)[0] = impl->is_vector3 ? IID_IVector3KeyFrameAnimation :
+                impl->is_boolean ? boolean_key_frame_animation_iid :
                                     IID_IScalarKeyFrameAnimation;
     (*iids)[1] = key_frame_animation_iid;
     (*iids)[2] = IID_ICompositionAnimation;
@@ -3787,8 +3833,11 @@ static HRESULT scalar_key_frame_animation_get_class_name( struct scalar_key_fram
         HSTRING *name )
 {
     static const WCHAR boolean_name[] = L"Windows.UI.Composition.BooleanKeyFrameAnimation";
+    static const WCHAR vector_name[] = L"Windows.UI.Composition.Vector3KeyFrameAnimation";
 
     if (!name) return E_POINTER;
+    if (impl->is_vector3)
+        return WindowsCreateString( vector_name, ARRAY_SIZE(vector_name) - 1, name );
     if (impl->is_boolean)
         return WindowsCreateString( boolean_name, ARRAY_SIZE(boolean_name) - 1, name );
     return WindowsCreateString( RuntimeClass_Windows_UI_Composition_ScalarKeyFrameAnimation,
@@ -3886,6 +3935,77 @@ static const IScalarKeyFrameAnimationVtbl scalar_key_frame_animation_vtbl =
     scalar_key_frame_animation_GetTrustLevel,
     scalar_key_frame_animation_InsertKeyFrame,
     scalar_key_frame_animation_InsertKeyFrameWithEasingFunction,
+};
+
+static HRESULT WINAPI vector3_key_frame_animation_QueryInterface( IVector3KeyFrameAnimation *iface,
+        REFIID iid, void **out )
+{
+    return scalar_key_frame_animation_query_interface( impl_from_IVector3KeyFrameAnimation( iface ),
+                                                       iid, out );
+}
+
+static ULONG WINAPI vector3_key_frame_animation_AddRef( IVector3KeyFrameAnimation *iface )
+{
+    return scalar_key_frame_animation_add_ref( impl_from_IVector3KeyFrameAnimation( iface ) );
+}
+
+static ULONG WINAPI vector3_key_frame_animation_Release( IVector3KeyFrameAnimation *iface )
+{
+    return scalar_key_frame_animation_release( impl_from_IVector3KeyFrameAnimation( iface ) );
+}
+
+static HRESULT WINAPI vector3_key_frame_animation_GetIids( IVector3KeyFrameAnimation *iface,
+        ULONG *count, IID **iids )
+{
+    return scalar_key_frame_animation_get_iids( impl_from_IVector3KeyFrameAnimation( iface ), count, iids );
+}
+
+static HRESULT WINAPI vector3_key_frame_animation_GetRuntimeClassName( IVector3KeyFrameAnimation *iface,
+        HSTRING *name )
+{
+    return scalar_key_frame_animation_get_class_name( impl_from_IVector3KeyFrameAnimation( iface ), name );
+}
+
+static HRESULT WINAPI vector3_key_frame_animation_GetTrustLevel( IVector3KeyFrameAnimation *iface,
+        TrustLevel *level )
+{
+    return scalar_key_frame_animation_get_trust_level( level );
+}
+
+static HRESULT WINAPI vector3_key_frame_animation_InsertKeyFrame( IVector3KeyFrameAnimation *iface,
+        FLOAT key, struct Vector3 value )
+{
+    struct scalar_key_frame_animation *impl = impl_from_IVector3KeyFrameAnimation( iface );
+
+    TRACE( "iface %p, key %f, value {%f, %f, %f}.\n", iface, key, value.X, value.Y, value.Z );
+    if (!(key >= 0.0f && key <= 1.0f)) return E_INVALIDARG;
+    ++impl->key_frame_count;
+    if (!impl->has_final_value || key >= impl->final_key)
+    {
+        impl->final_key = key;
+        impl->final_vector = value;
+        impl->has_final_value = TRUE;
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI vector3_key_frame_animation_InsertKeyFrameWithEasingFunction(
+        IVector3KeyFrameAnimation *iface, FLOAT key, struct Vector3 value,
+        ICompositionEasingFunction *function )
+{
+    return vector3_key_frame_animation_InsertKeyFrame( iface, key, value );
+}
+
+static const IVector3KeyFrameAnimationVtbl vector3_key_frame_animation_vtbl =
+{
+    vector3_key_frame_animation_QueryInterface,
+    vector3_key_frame_animation_AddRef,
+    vector3_key_frame_animation_Release,
+    vector3_key_frame_animation_GetIids,
+    vector3_key_frame_animation_GetRuntimeClassName,
+    vector3_key_frame_animation_GetTrustLevel,
+    vector3_key_frame_animation_InsertKeyFrame,
+    vector3_key_frame_animation_InsertKeyFrameWithEasingFunction,
 };
 
 static HRESULT WINAPI boolean_key_frame_animation_QueryInterface(
@@ -4320,6 +4440,23 @@ static HRESULT scalar_key_frame_animation_create( ICompositor *compositor,
     impl->ref = 1;
     ICompositor_AddRef( compositor );
     *result = &impl->IScalarKeyFrameAnimation_iface;
+    return S_OK;
+}
+
+static HRESULT vector3_key_frame_animation_create( ICompositor *compositor,
+        IVector3KeyFrameAnimation **result )
+{
+    struct scalar_key_frame_animation *impl;
+    IScalarKeyFrameAnimation *scalar;
+    HRESULT hr;
+
+    if (!result) return E_POINTER;
+    *result = NULL;
+    if (FAILED(hr = scalar_key_frame_animation_create( compositor, &scalar ))) return hr;
+    impl = impl_from_IScalarKeyFrameAnimation( scalar );
+    impl->IVector3KeyFrameAnimation_iface.lpVtbl = &vector3_key_frame_animation_vtbl;
+    impl->is_vector3 = TRUE;
+    *result = &impl->IVector3KeyFrameAnimation_iface;
     return S_OK;
 }
 
@@ -4969,7 +5106,6 @@ COMPOSITOR_STUB( CreateColorBrush, ICompositionColorBrush )
 COMPOSITOR_STUB( CreateQuaternionKeyFrameAnimation, IQuaternionKeyFrameAnimation )
 COMPOSITOR_STUB( CreateTargetForCurrentView, ICompositionTarget )
 COMPOSITOR_STUB( CreateVector2KeyFrameAnimation, IVector2KeyFrameAnimation )
-COMPOSITOR_STUB( CreateVector3KeyFrameAnimation, IVector3KeyFrameAnimation )
 COMPOSITOR_STUB( CreateVector4KeyFrameAnimation, IVector4KeyFrameAnimation )
 
 static HRESULT WINAPI compositor_CreateLinearEasingFunction( ICompositor *iface,
@@ -4984,6 +5120,13 @@ static HRESULT WINAPI compositor_CreateScalarKeyFrameAnimation( ICompositor *ifa
 {
     TRACE( "iface %p, result %p.\n", iface, result );
     return scalar_key_frame_animation_create( iface, result );
+}
+
+static HRESULT WINAPI compositor_CreateVector3KeyFrameAnimation( ICompositor *iface,
+        IVector3KeyFrameAnimation **result )
+{
+    TRACE( "iface %p, result %p.\n", iface, result );
+    return vector3_key_frame_animation_create( iface, result );
 }
 
 static HRESULT WINAPI compositor_CreateExpressionAnimation( ICompositor *iface,
