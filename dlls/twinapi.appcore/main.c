@@ -63,21 +63,33 @@ HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID riid, void **out )
 
 HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **factory )
 {
+    /* factories converted to the generic struct winrt_factory (Soda) */
+    static IActivationFactory **factories[] =
+    {
+        &client_device_information_factory,
+        &analytics_info_factory,
+        &advertising_manager_factory,
+        &application_view_factory,
+        &retail_info_factory,
+    };
     const WCHAR *buffer = WindowsGetStringRawBuffer( classid, NULL );
+    struct winrt_factory *impl;
+    unsigned int i;
 
     TRACE( "class %s, factory %p.\n", debugstr_hstring(classid), factory );
 
     *factory = NULL;
 
-    if (!wcscmp( buffer, RuntimeClass_Windows_Security_ExchangeActiveSyncProvisioning_EasClientDeviceInformation ))
-        IActivationFactory_QueryInterface( client_device_information_factory, &IID_IActivationFactory, (void **)factory );
-    else if (!wcscmp( buffer, RuntimeClass_Windows_System_Profile_AnalyticsInfo ))
-        IActivationFactory_QueryInterface( analytics_info_factory, &IID_IActivationFactory, (void **)factory );
-    else if (!wcscmp( buffer, RuntimeClass_Windows_System_UserProfile_AdvertisingManager ))
-        IActivationFactory_QueryInterface( advertising_manager_factory, &IID_IActivationFactory, (void **)factory );
-    else if (!wcscmp( buffer, RuntimeClass_Windows_UI_ViewManagement_ApplicationView ))
-        IActivationFactory_QueryInterface( application_view_factory, &IID_IActivationFactory, (void **)factory );
-    else if (!wcscmp( buffer, RuntimeClass_Windows_ApplicationModel_Core_CoreApplication ))
+    for (i = 0; i < ARRAY_SIZE(factories); ++i)
+    {
+        impl = CONTAINING_RECORD( *factories[i], struct winrt_factory, IActivationFactory_iface );
+        if (wcscmp( buffer, impl->class_name )) continue;
+        IActivationFactory_AddRef( *factory = *factories[i] );
+        return S_OK;
+    }
+
+    /* upstream factories keep their own implementation */
+    if (!wcscmp( buffer, RuntimeClass_Windows_ApplicationModel_Core_CoreApplication ))
         IActivationFactory_QueryInterface( core_application_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, RuntimeClass_Windows_ApplicationModel_DataTransfer_DataTransferManager ))
         IActivationFactory_QueryInterface( data_transfer_manager_statics_factory, &IID_IActivationFactory, (void **)factory );

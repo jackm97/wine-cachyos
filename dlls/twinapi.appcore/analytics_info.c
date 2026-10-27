@@ -132,96 +132,11 @@ static IAnalyticsVersionInfoVtbl analytics_version_info_vtbl =
 
 struct analytics_info_factory
 {
-    IActivationFactory IActivationFactory_iface;
+    struct winrt_factory base;
     IAnalyticsInfoStatics IAnalyticsInfoStatics_iface;
-    LONG ref;
 };
 
-static inline struct analytics_info_factory *impl_from_IActivationFactory( IActivationFactory *iface )
-{
-    return CONTAINING_RECORD( iface, struct analytics_info_factory, IActivationFactory_iface );
-}
-
-static HRESULT WINAPI activation_factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out )
-{
-    struct analytics_info_factory *impl = impl_from_IActivationFactory( iface );
-
-    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
-
-    if (IsEqualGUID( iid, &IID_IUnknown ) ||
-        IsEqualGUID( iid, &IID_IInspectable ) ||
-        IsEqualGUID( iid, &IID_IAgileObject ) ||
-        IsEqualGUID( iid, &IID_IActivationFactory ))
-    {
-        IActivationFactory_AddRef( (*out = &impl->IActivationFactory_iface) );
-        return S_OK;
-    }
-
-    if (IsEqualGUID( iid, &IID_IAnalyticsInfoStatics ))
-    {
-        IAnalyticsInfoStatics_AddRef( (*out = &impl->IAnalyticsInfoStatics_iface) );
-        return S_OK;
-    }
-
-    FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
-    *out = NULL;
-    return E_NOINTERFACE;
-}
-
-static ULONG WINAPI activation_factory_AddRef( IActivationFactory *iface )
-{
-    struct analytics_info_factory *impl = impl_from_IActivationFactory( iface );
-    ULONG ref = InterlockedIncrement( &impl->ref );
-    TRACE( "iface %p, ref %lu.\n", iface, ref );
-    return ref;
-}
-
-static ULONG WINAPI activation_factory_Release( IActivationFactory *iface )
-{
-    struct analytics_info_factory *impl = impl_from_IActivationFactory( iface );
-    ULONG ref = InterlockedDecrement( &impl->ref );
-    TRACE( "iface %p, ref %lu.\n", iface, ref );
-    return ref;
-}
-
-static HRESULT WINAPI activation_factory_GetIids( IActivationFactory *iface, ULONG *iid_count, IID **iids )
-{
-    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
-    return E_NOTIMPL;
-}
-
-static HRESULT WINAPI activation_factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name )
-{
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
-}
-
-static HRESULT WINAPI activation_factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *trust_level )
-{
-    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
-    return E_NOTIMPL;
-}
-
-static HRESULT WINAPI activation_factory_ActivateInstance( IActivationFactory *iface, IInspectable **out )
-{
-    FIXME( "iface %p, out %p stub!\n", iface, out );
-    return E_NOTIMPL;
-}
-
-static const struct IActivationFactoryVtbl activation_factory_vtbl =
-{
-    activation_factory_QueryInterface,
-    activation_factory_AddRef,
-    activation_factory_Release,
-    /* IInspectable methods */
-    activation_factory_GetIids,
-    activation_factory_GetRuntimeClassName,
-    activation_factory_GetTrustLevel,
-    /* IActivationFactory methods */
-    activation_factory_ActivateInstance,
-};
-
-DEFINE_IINSPECTABLE( statics, IAnalyticsInfoStatics, struct analytics_info_factory, IActivationFactory_iface );
+DEFINE_FACTORY_IINSPECTABLE( statics, IAnalyticsInfoStatics, struct analytics_info_factory );
 
 static HRESULT WINAPI statics_get_VersionInfo( IAnalyticsInfoStatics *iface, IAnalyticsVersionInfo **value )
 {
@@ -257,11 +172,16 @@ static const struct IAnalyticsInfoStaticsVtbl statics_vtbl =
     statics_get_DeviceForm,
 };
 
-static struct analytics_info_factory factory =
+static const struct winrt_factory_interface factory_interfaces[] =
 {
-    {&activation_factory_vtbl},
-    {&statics_vtbl},
-    1,
+    {&IID_IAnalyticsInfoStatics, offsetof(struct analytics_info_factory, IAnalyticsInfoStatics_iface)},
 };
 
-IActivationFactory *analytics_info_factory = &factory.IActivationFactory_iface;
+static struct analytics_info_factory factory =
+{
+    {{&winrt_factory_vtbl}, 1, RuntimeClass_Windows_System_Profile_AnalyticsInfo,
+      factory_interfaces, ARRAY_SIZE(factory_interfaces), TRUE, NULL},
+    {&statics_vtbl},
+};
+
+IActivationFactory *analytics_info_factory = &factory.base.IActivationFactory_iface;

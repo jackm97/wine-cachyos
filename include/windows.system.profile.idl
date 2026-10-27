@@ -29,6 +29,7 @@ import "windows.storage.streams.idl";
 import "windows.system.idl";
 
 namespace Windows.System.Profile {
+    apicontract ProfileRetailInfoContract;
     typedef enum PlatformDataCollectionLevel PlatformDataCollectionLevel;
     typedef enum SystemIdentificationSource SystemIdentificationSource;
     interface IAnalyticsInfoStatics;
@@ -38,11 +39,18 @@ namespace Windows.System.Profile {
     interface IPlatformDiagnosticsAndUsageDataSettingsStatics;
     interface ISystemIdentificationInfo;
     interface ISystemIdentificationStatics;
+    interface IRetailInfoStatics;
     runtimeclass AnalyticsVersionInfo;
     runtimeclass AnalyticsInfo;
     runtimeclass PlatformDiagnosticsAndUsageDataSettings;
     runtimeclass SystemIdentification;
     runtimeclass SystemIdentificationInfo;
+    runtimeclass RetailInfo;
+
+    [contractversion(1.0)]
+    apicontract ProfileRetailInfoContract
+    {
+    }
 
     [contract(Windows.Foundation.UniversalApiContract, 3.0)]
     enum SystemIdentificationSource
@@ -124,6 +132,17 @@ namespace Windows.System.Profile {
     }
 
     [
+        contract(Windows.System.Profile.ProfileRetailInfoContract, 1.0),
+        exclusiveto(Windows.System.Profile.RetailInfo),
+        uuid(0712c6b8-8b92-4f2a-8499-031f1798d6ef)
+    ]
+    interface IRetailInfoStatics : IInspectable
+    {
+        [propget] HRESULT IsDemoModeEnabled([out, retval] boolean *value);
+        [propget] HRESULT Properties([out, retval] Windows.Foundation.Collections.IMapView<HSTRING, IInspectable *> **value);
+    }
+
+    [
         contract(Windows.Foundation.UniversalApiContract, 1.0),
         marshaling_behavior(agile),
         threading(both)
@@ -153,6 +172,16 @@ namespace Windows.System.Profile {
         threading(both)
     ]
     runtimeclass PlatformDiagnosticsAndUsageDataSettings
+    {
+    }
+
+    [
+        contract(Windows.System.Profile.ProfileRetailInfoContract, 1.0),
+        marshaling_behavior(agile),
+        static(Windows.System.Profile.IRetailInfoStatics, Windows.System.Profile.ProfileRetailInfoContract, 1.0),
+        threading(both)
+    ]
+    runtimeclass RetailInfo
     {
     }
 

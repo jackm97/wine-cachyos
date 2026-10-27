@@ -46,10 +46,30 @@
 
 #include "wine/debug.h"
 
+struct winrt_factory_interface
+{
+    const IID *iid;
+    size_t offset;
+};
+
+struct winrt_factory
+{
+    IActivationFactory IActivationFactory_iface;
+    LONG ref;
+    const WCHAR *class_name;
+    const struct winrt_factory_interface *interfaces;
+    UINT32 interface_count;
+    BOOL agile;
+    HRESULT (*activate)(IInspectable **instance);
+};
+
+extern const IActivationFactoryVtbl winrt_factory_vtbl;
+
 extern IActivationFactory *application_view_factory;
 extern IActivationFactory *client_device_information_factory;
 extern IActivationFactory *analytics_info_factory;
 extern IActivationFactory *advertising_manager_factory;
+extern IActivationFactory *retail_info_factory;
 extern IActivationFactory *core_application_factory;
 extern IActivationFactory *data_transfer_manager_statics_factory;
 
@@ -90,3 +110,6 @@ extern IActivationFactory *data_transfer_manager_statics_factory;
     }
 #define DEFINE_IINSPECTABLE( pfx, iface_type, impl_type, base_iface )                              \
     DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from_##iface_type, iface_type##_iface, &impl->base_iface )
+#define DEFINE_FACTORY_IINSPECTABLE( pfx, iface_type, impl_type )                                  \
+    DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from_##iface_type, iface_type##_iface,  \
+                          &impl->base.IActivationFactory_iface )
