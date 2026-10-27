@@ -89,6 +89,7 @@ extern HRESULT web_accounts_result_create( IWebAccountProvider *provider, const 
 extern HRESULT string_map_create( IMap_HSTRING_HSTRING **out );
 extern HRESULT web_account_create( IWebAccountProvider *provider, HSTRING id, HSTRING username,
                                    WebAccountState state, IWebAccount **out );
+extern HRESULT web_account_set_customer_id( IWebAccount *account, HSTRING authority );
 extern HRESULT web_account_set_property( IWebAccount *account, const WCHAR *key, HSTRING value );
 extern HRESULT web_account_provider_create( HSTRING id, HSTRING display_name, HSTRING authority,
                                             boolean system_provider, IWebAccountProvider **out );
