@@ -6134,6 +6134,9 @@ ULONG get_type_size( WS_TYPE type, const void *desc )
     case WS_XML_QNAME_TYPE:
         return sizeof(WS_XML_QNAME);
 
+    case WS_XML_BUFFER_TYPE:
+        return sizeof(WS_XML_BUFFER *);
+
     case WS_DESCRIPTION_TYPE:
         return sizeof(WS_STRUCT_DESCRIPTION *);
 
@@ -6148,7 +6151,7 @@ ULONG get_type_size( WS_TYPE type, const void *desc )
         return desc_union->size;
     }
     case WS_ANY_ATTRIBUTES_TYPE:
-        return 0;
+        return sizeof(WS_ANY_ATTRIBUTES);
 
     default:
         ERR( "unhandled type %u\n", type );
@@ -6189,6 +6192,7 @@ static WS_READ_OPTION get_field_read_option( WS_TYPE type, ULONG options )
     case WS_STRUCT_TYPE:
     case WS_ENUM_TYPE:
     case WS_UNION_TYPE:
+    case WS_ANY_ATTRIBUTES_TYPE:
         if (options & (WS_FIELD_OPTIONAL|WS_FIELD_NILLABLE)) return WS_READ_NILLABLE_VALUE;
         return WS_READ_REQUIRED_VALUE;
 
@@ -6337,6 +6341,134 @@ static HRESULT read_type_text( struct reader *reader, const WS_FIELD_DESCRIPTION
     return hr;
 }
 
+static BOOL is_mapped_attribute( const WS_STRUCT_DESCRIPTION *desc, const WS_XML_ATTRIBUTE *attr )
+{
+    ULONG i;
+
+    if (!desc) return FALSE;
+    for (i = 0; i < desc->fieldCount; i++)
+    {
+        const WS_FIELD_DESCRIPTION *field = desc->fields[i];
+
+        if (field->mapping != WS_ATTRIBUTE_FIELD_MAPPING || !field->localName || !field->ns) continue;
+        if (!cmp_name( field->localName->bytes, field->localName->length,
+                       attr->localName->bytes, attr->localName->length ) &&
+            !cmp_name( field->ns->bytes, field->ns->length, attr->ns->bytes, attr->ns->length ))
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static HRESULT copy_name_to_heap( WS_HEAP *heap, const WS_XML_STRING *src, WS_XML_STRING *dst )
+{
+    memset( dst, 0, sizeof(*dst) );
+    if (!src || !src->length) return S_OK;
+    if (!(dst->bytes = ws_alloc( heap, src->length ))) return WS_E_QUOTA_EXCEEDED;
+    memcpy( dst->bytes, src->bytes, src->length );
+    dst->length = src->length;
+    return S_OK;
+}
+
+static HRESULT copy_value_to_heap( WS_HEAP *heap, const WS_XML_TEXT *src, WS_XML_TEXT **dst )
+{
+    WS_XML_UTF8_TEXT *utf8, *ret;
+    HRESULT hr;
+
+    if ((hr = text_to_utf8text( src, NULL, NULL, &utf8 )) != S_OK) return hr;
+    if (!(ret = ws_alloc( heap, sizeof(*ret) + utf8->value.length )))
+    {
+        free( utf8 );
+        return WS_E_QUOTA_EXCEEDED;
+    }
+    ret->text.textType    = WS_XML_TEXT_TYPE_UTF8;
+    ret->value.length     = utf8->value.length;
+    ret->value.bytes      = (BYTE *)(ret + 1);
+    ret->value.dictionary = NULL;
+    ret->value.id         = 0;
+    memcpy( ret->value.bytes, utf8->value.bytes, utf8->value.length );
+    free( utf8 );
+
+    *dst = &ret->text;
+    return S_OK;
+}
+
+/* Collect the attributes of the current element that no other field maps. */
+static HRESULT read_type_any_attributes( struct reader *reader, const WS_STRUCT_DESCRIPTION *desc,
+                                         WS_HEAP *heap, WS_ANY_ATTRIBUTES *ret )
+{
+    const WS_XML_ELEMENT_NODE *elem = &reader->current->hdr;
+    WS_ANY_ATTRIBUTE *attrs = NULL;
+    ULONG i, count = 0;
+    HRESULT hr;
+
+    if (node_type( reader->current ) != WS_XML_NODE_TYPE_ELEMENT) return WS_E_INVALID_FORMAT;
+
+    if (elem->attributeCount && !(attrs = ws_alloc_zero( heap, elem->attributeCount * sizeof(*attrs) )))
+        return WS_E_QUOTA_EXCEEDED;
+
+    for (i = 0; i < elem->attributeCount; i++)
+    {
+        const WS_XML_ATTRIBUTE *attr = elem->attributes[i];
+
+        if (attr->isXmlNs || is_mapped_attribute( desc, attr )) continue;
+        if ((hr = copy_name_to_heap( heap, attr->localName, &attrs[count].localName )) != S_OK) return hr;
+        if ((hr = copy_name_to_heap( heap, attr->ns, &attrs[count].ns )) != S_OK) return hr;
+        if (attr->value && (hr = copy_value_to_heap( heap, attr->value, &attrs[count].value )) != S_OK)
+            return hr;
+        count++;
+    }
+
+    ret->attributes     = count ? attrs : NULL;
+    ret->attributeCount = count;
+    return S_OK;
+}
+
+/* Copy the remaining content of the current element into an XML buffer. */
+static HRESULT read_type_any_content( struct reader *reader, WS_HEAP *heap, WS_XML_BUFFER **ret )
+{
+    const struct node *parent = find_parent( reader );
+    WS_XML_WRITER *writer = NULL;
+    WS_XML_BUFFER *buffer = NULL;
+    struct reader_pos pos;
+    ULONG depth = 0;
+    HRESULT hr;
+
+    if (!parent) return WS_E_INVALID_FORMAT;
+
+    if ((hr = WsCreateWriter( NULL, 0, &writer, NULL )) != S_OK) return hr;
+    if ((hr = WsCreateXmlBuffer( heap, NULL, 0, &buffer, NULL )) != S_OK) goto done;
+    if ((hr = WsSetOutputToBuffer( writer, buffer, NULL, 0, NULL )) != S_OK) goto done;
+
+    for (;;)
+    {
+        save_reader_position( reader, &pos );
+        if ((hr = read_next_node( reader )) != S_OK) break;
+        if (node_type( reader->current ) == WS_XML_NODE_TYPE_EOF)
+        {
+            hr = WS_E_INVALID_FORMAT;
+            break;
+        }
+        if (node_type( reader->current ) == WS_XML_NODE_TYPE_END_ELEMENT && reader->current->parent == parent)
+        {
+            /* the end element is left to the caller */
+            restore_reader_position( reader, &pos );
+            *ret = buffer;
+            break;
+        }
+        /* whitespace between top level elements cannot be written to the buffer */
+        if (!depth && node_type( reader->current ) == WS_XML_NODE_TYPE_TEXT && is_empty_text_node( reader->current ))
+            continue;
+        if ((hr = WsWriteNode( writer, (const WS_XML_NODE *)reader->current, NULL )) != S_OK) break;
+        if (node_type( reader->current ) == WS_XML_NODE_TYPE_ELEMENT) depth++;
+        else if (node_type( reader->current ) == WS_XML_NODE_TYPE_END_ELEMENT) depth--;
+    }
+
+done:
+    if (hr != S_OK) free_xmlbuf( (struct xmlbuf *)buffer );
+    WsFreeWriter( writer );
+    return hr;
+}
+
 static HRESULT read_type_field( struct reader *reader, const WS_STRUCT_DESCRIPTION *desc_struct,
                                 const WS_FIELD_DESCRIPTION *desc, WS_HEAP *heap, char *buf, ULONG offset )
 {
@@ -6394,6 +6526,16 @@ static HRESULT read_type_field( struct reader *reader, const WS_STRUCT_DESCRIPTI
     }
     case WS_TEXT_FIELD_MAPPING:
         hr = read_type_text( reader, desc, option, heap, ptr, size );
+        break;
+
+    case WS_ANY_ATTRIBUTES_FIELD_MAPPING:
+        if (desc->type != WS_ANY_ATTRIBUTES_TYPE || (desc->options & WS_FIELD_POINTER)) return E_INVALIDARG;
+        hr = read_type_any_attributes( reader, desc_struct, heap, (WS_ANY_ATTRIBUTES *)ptr );
+        break;
+
+    case WS_ANY_CONTENT_FIELD_MAPPING:
+        if (desc->type != WS_XML_BUFFER_TYPE || (desc->options & WS_FIELD_POINTER)) return E_INVALIDARG;
+        hr = read_type_any_content( reader, heap, (WS_XML_BUFFER **)ptr );
         break;
 
     default:

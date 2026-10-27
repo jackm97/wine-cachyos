@@ -2559,6 +2559,149 @@ static void test_simple_struct_type(void)
     WsFreeHeap( heap );
 }
 
+static void test_any_attributes(void)
+{
+    static WS_XML_STRING str_a = {1, (BYTE *)"a"}, str_t = {1, (BYTE *)"t"}, str_ns = {0, NULL};
+    HRESULT hr;
+    WS_XML_READER *reader;
+    WS_HEAP *heap;
+    WS_FIELD_DESCRIPTION f, f2, *fields[2];
+    WS_STRUCT_DESCRIPTION s;
+    const WS_ANY_ATTRIBUTE *attr;
+    const WS_XML_UTF8_TEXT *utf8;
+    struct test
+    {
+        INT32             a;
+        WS_ANY_ATTRIBUTES any;
+    } *test;
+
+    hr = WsCreateHeap( 1 << 16, 0, NULL, 0, &heap, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+
+    hr = WsCreateReader( NULL, 0, &reader, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+
+    memset( &f, 0, sizeof(f) );
+    f.mapping   = WS_ATTRIBUTE_FIELD_MAPPING;
+    f.localName = &str_a;
+    f.ns        = &str_ns;
+    f.type      = WS_INT32_TYPE;
+    fields[0] = &f;
+
+    memset( &f2, 0, sizeof(f2) );
+    f2.mapping = WS_ANY_ATTRIBUTES_FIELD_MAPPING;
+    f2.type    = WS_ANY_ATTRIBUTES_TYPE;
+    f2.offset  = FIELD_OFFSET(struct test, any);
+    fields[1] = &f2;
+
+    memset( &s, 0, sizeof(s) );
+    s.size          = sizeof(struct test);
+    s.alignment     = TYPE_ALIGNMENT(struct test);
+    s.fields        = fields;
+    s.fieldCount    = 2;
+    s.typeLocalName = &str_t;
+    s.typeNs        = &str_ns;
+
+    prepare_struct_type_test( reader, "<t a=\"1\" b=\"2\" xmlns:p=\"ns\" p:c=\"3\"/>" );
+    hr = WsReadToStartElement( reader, NULL, NULL, NULL, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+
+    test = NULL;
+    hr = WsReadType( reader, WS_ELEMENT_TYPE_MAPPING, WS_STRUCT_TYPE, &s,
+                     WS_READ_REQUIRED_POINTER, heap, &test, sizeof(test), NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+    ok( test != NULL, "test not set\n" );
+    if (test)
+    {
+        ok( test->a == 1, "got %d\n", test->a );
+        ok( test->any.attributeCount == 2, "got %lu\n", test->any.attributeCount );
+        if (test->any.attributeCount == 2)
+        {
+            attr = &test->any.attributes[0];
+            ok( attr->localName.length == 1 && attr->localName.bytes[0] == 'b', "wrong name\n" );
+            ok( !attr->ns.length, "got %lu\n", attr->ns.length );
+            utf8 = (const WS_XML_UTF8_TEXT *)attr->value;
+            ok( utf8->text.textType == WS_XML_TEXT_TYPE_UTF8, "got %u\n", utf8->text.textType );
+            ok( utf8->value.length == 1 && utf8->value.bytes[0] == '2', "wrong value\n" );
+
+            attr = &test->any.attributes[1];
+            ok( attr->localName.length == 1 && attr->localName.bytes[0] == 'c', "wrong name\n" );
+            ok( attr->ns.length == 2 && !memcmp( attr->ns.bytes, "ns", 2 ), "wrong ns\n" );
+            utf8 = (const WS_XML_UTF8_TEXT *)attr->value;
+            ok( utf8->value.length == 1 && utf8->value.bytes[0] == '3', "wrong value\n" );
+        }
+    }
+
+    WsFreeReader( reader );
+    WsFreeHeap( heap );
+}
+
+static void test_any_content(void)
+{
+    static WS_XML_STRING str_a = {1, (BYTE *)"a"}, str_t = {1, (BYTE *)"t"}, str_ns = {0, NULL};
+    HRESULT hr;
+    WS_XML_READER *reader;
+    WS_HEAP *heap;
+    WS_FIELD_DESCRIPTION f, f2, *fields[2];
+    WS_STRUCT_DESCRIPTION s;
+    const WS_XML_NODE *node;
+    struct test
+    {
+        INT32          a;
+        WS_XML_BUFFER *rest;
+    } *test;
+
+    hr = WsCreateHeap( 1 << 16, 0, NULL, 0, &heap, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+
+    hr = WsCreateReader( NULL, 0, &reader, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+
+    memset( &f, 0, sizeof(f) );
+    f.mapping   = WS_ELEMENT_FIELD_MAPPING;
+    f.localName = &str_a;
+    f.ns        = &str_ns;
+    f.type      = WS_INT32_TYPE;
+    fields[0] = &f;
+
+    memset( &f2, 0, sizeof(f2) );
+    f2.mapping = WS_ANY_CONTENT_FIELD_MAPPING;
+    f2.type    = WS_XML_BUFFER_TYPE;
+    f2.offset  = FIELD_OFFSET(struct test, rest);
+    fields[1] = &f2;
+
+    memset( &s, 0, sizeof(s) );
+    s.size          = sizeof(struct test);
+    s.alignment     = TYPE_ALIGNMENT(struct test);
+    s.fields        = fields;
+    s.fieldCount    = 2;
+    s.typeLocalName = &str_t;
+    s.typeNs        = &str_ns;
+
+    prepare_struct_type_test( reader, "<t><a>1</a> <b>x</b> <c/> </t>" );
+    hr = WsReadToStartElement( reader, NULL, NULL, NULL, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+
+    test = NULL;
+    hr = WsReadType( reader, WS_ELEMENT_TYPE_MAPPING, WS_STRUCT_TYPE, &s,
+                     WS_READ_REQUIRED_POINTER, heap, &test, sizeof(test), NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+    ok( test != NULL, "test not set\n" );
+    if (test)
+    {
+        ok( test->a == 1, "got %d\n", test->a );
+        ok( test->rest != NULL, "rest not set\n" );
+        if (test->rest) check_output_buffer( test->rest, "<b>x</b><c/>", __LINE__ );
+    }
+
+    hr = WsGetReaderNode( reader, &node, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+    ok( node->nodeType == WS_XML_NODE_TYPE_EOF, "got %u\n", node->nodeType );
+
+    WsFreeReader( reader );
+    WsFreeHeap( heap );
+}
+
 static void test_cdata(void)
 {
     static const char test[] = "<t><![CDATA[<data>]]></t>";
@@ -7574,6 +7717,8 @@ START_TEST(reader)
     test_WsAlloc();
     test_WsMoveReader();
     test_simple_struct_type();
+    test_any_attributes();
+    test_any_content();
     test_cdata();
     test_WsFindAttribute();
     test_WsGetNamespaceFromPrefix();

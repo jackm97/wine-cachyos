@@ -766,6 +766,17 @@ typedef struct _WS_XML_QNAME {
     WS_XML_STRING ns;
 } WS_XML_QNAME;
 
+typedef struct _WS_ANY_ATTRIBUTE {
+    WS_XML_STRING localName;
+    WS_XML_STRING ns;
+    WS_XML_TEXT *value;
+} WS_ANY_ATTRIBUTE;
+
+typedef struct _WS_ANY_ATTRIBUTES {
+    WS_ANY_ATTRIBUTE *attributes;
+    ULONG attributeCount;
+} WS_ANY_ATTRIBUTES;
+
 typedef enum {
     WS_SERVICE_PROXY_STATE_CREATED,
     WS_SERVICE_PROXY_STATE_OPENING,
