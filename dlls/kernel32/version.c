@@ -134,7 +134,8 @@ BOOL WINAPI VerifyVersionInfoW( LPOSVERSIONINFOEXW info, DWORD dwTypeMask,
         return FALSE;
     }
 
-    if (dwTypeMask & VER_PRODUCT_TYPE)
+    /* Windows also evaluates a product type condition omitted from the type mask. */
+    if ((dwTypeMask & VER_PRODUCT_TYPE) || (dwlConditionMask >> 7 * 3 & 0x07))
     {
         if (!version_compare_values(ver.wProductType, info->wProductType, dwlConditionMask >> 7*3 & 0x07))
             goto mismatch;

@@ -263,6 +263,17 @@ BOOL WINAPI SetFileCompletionNotificationModes( HANDLE file, UCHAR flags )
 }
 
 
+/**************************************************************************
+ *           SetFileShortNameW   (KERNEL32.@)
+ */
+BOOL WINAPI SetFileShortNameW( HANDLE file, const WCHAR *name )
+{
+    FIXME("%p %s: stub\n", file, debugstr_w(name));
+    SetLastError(ERROR_NOT_SUPPORTED);
+    return FALSE;
+}
+
+
 /*************************************************************************
  *           SetHandleCount   (KERNEL32.@)
  */

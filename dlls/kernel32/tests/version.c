@@ -27,6 +27,8 @@
 
 static LONG (WINAPI * pGetPackagePath)(const PACKAGE_ID *, const UINT32, UINT32 *, WCHAR *);
 static LONG (WINAPI * pGetPackagesByPackageFamily)(const WCHAR *, UINT32 *, WCHAR **, UINT32 *, WCHAR *);
+static LONG (WINAPI * pFindPackagesByPackageFamily)(const WCHAR *, UINT32, UINT32 *, WCHAR **,
+        UINT32 *, WCHAR *, UINT32 *);
 static BOOL (WINAPI * pGetProductInfo)(DWORD, DWORD, DWORD, DWORD, DWORD *);
 static UINT (WINAPI * pEnumSystemFirmwareTables)(DWORD, void *, DWORD);
 static UINT (WINAPI * pGetSystemFirmwareTable)(DWORD, DWORD, void *, DWORD);
@@ -52,6 +54,7 @@ static void init_function_pointers(void)
 
     GET_PROC(GetPackagePath);
     GET_PROC(GetPackagesByPackageFamily);
+    GET_PROC(FindPackagesByPackageFamily);
     GET_PROC(GetProductInfo);
     GET_PROC(EnumSystemFirmwareTables);
     GET_PROC(GetSystemFirmwareTable);
@@ -597,6 +600,7 @@ static void test_VerifyVersionInfo(void)
     };
 
     OSVERSIONINFOEXA info;
+    ULONGLONG mask;
     DWORD servicepack;
     unsigned int i;
     BOOL ret;
@@ -609,6 +613,27 @@ static void test_VerifyVersionInfo(void)
     servicepack = info.wServicePackMajor;
     if (servicepack == 0)
         skip("There is no ServicePack on this system. Some tests will be skipped.\n");
+
+    if (info.wProductType == VER_NT_WORKSTATION)
+    {
+        info.dwMajorVersion = 5;
+        info.dwMinorVersion = 1;
+        info.wServicePackMajor = 2;
+        info.wServicePackMinor = 0;
+        info.wProductType = VER_NT_SERVER;
+
+        mask = VerSetConditionMask(0, VER_MINORVERSION, VER_GREATER_EQUAL);
+        mask = VerSetConditionMask(mask, VER_MAJORVERSION, VER_GREATER_EQUAL);
+        mask = VerSetConditionMask(mask, VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL);
+        mask = VerSetConditionMask(mask, VER_SERVICEPACKMINOR, VER_GREATER_EQUAL);
+        mask = VerSetConditionMask(mask, VER_PRODUCT_TYPE, VER_EQUAL);
+
+        SetLastError(0xdeadbeef);
+        ret = VerifyVersionInfoA(&info, VER_MAJORVERSION | VER_MINORVERSION |
+                VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR, mask);
+        ok(!ret, "Expected product type mismatch.\n");
+        ok(GetLastError() == ERROR_OLD_WIN_VERSION, "Got unexpected error %ld.\n", GetLastError());
+    }
 
     /* Win8.1+ returns Win8 version in GetVersionEx when there's no app manifest targeting 8.1 */
     if (info.dwMajorVersion == 6 && info.dwMinorVersion == 2)
@@ -628,7 +653,6 @@ static void test_VerifyVersionInfo(void)
     {
         struct verify_version_test *test = &verify_version_tests[i];
         DWORD srcinfo = test->srcinfo;
-        ULONGLONG mask;
 
         if (servicepack == 0 && srcinfo & SRCVERSION_REQUIRES_SP)
             continue;
@@ -1145,6 +1169,17 @@ static void test_package_info(void)
     {
         win_skip("GetPackagesByPackageFamily not available.\n");
         return;
+    }
+
+    if (pFindPackagesByPackageFamily)
+    {
+        count = 0;
+        length = 0;
+        ret = pFindPackagesByPackageFamily(L"Unknown_8wekyb3d8bbwe", PACKAGE_FILTER_HEAD | PACKAGE_FILTER_DIRECT,
+                &count, NULL, &length, NULL, NULL);
+        ok(ret == ERROR_SUCCESS, "Got unexpected ret %u.\n", ret);
+        ok(!count, "Got unexpected count %u.\n", count);
+        ok(!length, "Got unexpected length %u.\n", length);
     }
 
     GetSystemInfo(&si);
