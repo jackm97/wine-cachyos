@@ -453,6 +453,15 @@ static BOOL is_window_managed(HWND hwnd, UINT swp_flags, BOOL fullscreen)
     /* child windows are not managed */
     style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
     if ((style & (WS_CHILD|WS_POPUP)) == WS_CHILD) return FALSE;
+    /* tool popups (tooltips, menus, flyouts) stay attached to the window they
+     * belong to, even when active, since a Wayland toplevel cannot be
+     * positioned. They do not always have an owner, tooltips of an application
+     * that makes its own often have none, and without this they would show up
+     * as separate windows. */
+    ex_style = NtUserGetWindowLongW(hwnd, GWL_EXSTYLE);
+    if ((style & WS_POPUP) && !(style & (WS_CAPTION|WS_THICKFRAME)) &&
+        (ex_style & WS_EX_TOOLWINDOW))
+        return FALSE;
     /* activated windows are managed */
     if (!(swp_flags & (SWP_NOACTIVATE|SWP_HIDEWINDOW))) return TRUE;
     if (hwnd == get_active_window()) return TRUE;
