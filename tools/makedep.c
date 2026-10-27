@@ -4983,8 +4983,9 @@ static void load_sources( struct makefile *make )
     /* disable tests if the tested module is disabled */
     if (make->testdll)
     {
+        /* fork ee5db912d67: the tested module may have no makefile (ir50_32 is not built) */
         struct makefile *parent = get_parent_makefile( make );
-        for (arch = 0; arch < archs.count; arch++)
+        for (arch = 0; parent && arch < archs.count; arch++)
         {
             if (parent->disabled[arch]) make->disabled[arch] = true;
             if (parent->is_exe && native_archs[arch]) make->disabled[arch] = true;
