@@ -264,7 +264,7 @@ system_fallback_config[] =
     { "0D00-0D7F",              L"Noto Sans Malayalam" },
     { "0D80-0DFF",              L"Noto Sans Sinhala" },
 
-    { "0E00-0E7F",              L"Microsoft Sans Serif" },
+    { "0E00-0E7F",              L"Microsoft Sans Serif, Noto Sans Thai, Leelawadee" },
     { "0E80-0EFF",              L"Noto Sans Lao" },
 
     { "0F00-0FFF",              L"Noto Serif Tibetan" },
