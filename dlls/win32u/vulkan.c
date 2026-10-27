@@ -2310,8 +2310,6 @@ static VkResult create_descriptor_set( struct vulkan_device *device, struct swap
     }
 
     return VK_SUCCESS;
-            if (!(values = mem_alloc( &pool, (timeline->waitSemaphoreValueCount + wait_count) * sizeof(*values) ))) goto failed;
-            memcpy( values, timeline->pWaitSemaphoreValues, timeline->waitSemaphoreValueCount * sizeof(*values) );
 }
 
 static VkFormat srgb_to_unorm(VkFormat format)
@@ -2334,8 +2332,6 @@ static BOOL is_srgb(VkFormat format)
 
 static VkResult init_compute_state( struct vulkan_device *device, struct swapchain *swapchain )
 {
-            if (!(values = mem_alloc( &pool, submit->signalSemaphoreCount * sizeof(*values) ))) goto failed;
-            memcpy( values, timeline->pSignalSemaphoreValues, timeline->signalSemaphoreValueCount * sizeof(*values) );
     VkResult res;
     VkSamplerCreateInfo samplerInfo = {0};
     VkDescriptorPoolSize poolSizes[2] = {{0}, {0}};
@@ -3449,6 +3445,7 @@ static VkResult win32u_vkQueuePresentKHR( VkQueue client_queue, const VkPresentI
 
     VkPresentInfoKHR *present_info = (VkPresentInfoKHR *)client_present_info; /* cast away const, it has been copied in the thunks */
     struct vulkan_queue *queue = vulkan_queue_from_handle( client_queue );
+    struct vulkan_device *device = queue->device;
     VkResult res = VK_ERROR_OUT_OF_HOST_MEMORY;
     const VkSwapchainKHR *client_swapchains;
     VkSwapchainKHR *swapchains;
@@ -3815,6 +3812,8 @@ static VkResult win32u_vkQueueSubmit( VkQueue client_queue, uint32_t count, cons
             }
             submit->waitSemaphoreCount += wait_count;
 
+            if (!(values = mem_alloc( &pool, (timeline->waitSemaphoreValueCount + wait_count) * sizeof(*values) ))) goto failed;
+            memcpy( values, timeline->pWaitSemaphoreValues, timeline->waitSemaphoreValueCount * sizeof(*values) );
             for (uint32_t j = 0; j < wait_count; j++) values[submit->waitSemaphoreCount + j] = wait_infos[j].value;
             timeline->waitSemaphoreValueCount = submit->waitSemaphoreCount;
             timeline->pWaitSemaphoreValues = values;
@@ -3837,6 +3836,8 @@ static VkResult win32u_vkQueueSubmit( VkQueue client_queue, uint32_t count, cons
             submit->signalSemaphoreCount += signal_count;
             submit->pSignalSemaphores = signal_semaphores;
 
+            if (!(values = mem_alloc( &pool, submit->signalSemaphoreCount * sizeof(*values) ))) goto failed;
+            memcpy( values, timeline->pSignalSemaphoreValues, timeline->signalSemaphoreValueCount * sizeof(*values) );
             for (uint32_t j = 0; j < signal_count; j++) values[submit->signalSemaphoreCount + j] = signal_infos[j].value;
             timeline->signalSemaphoreValueCount = submit->signalSemaphoreCount;
             timeline->pSignalSemaphoreValues = values;
@@ -4027,6 +4028,8 @@ static VkResult win32u_vkCreateSemaphore( VkDevice client_device, const VkSemaph
         default: FIXME( "Unhandled sType %u.\n", (*next)->sType ); break;
         }
     }
+
+    if (!(semaphore = calloc( 1, sizeof(*semaphore) ))) return VK_ERROR_OUT_OF_HOST_MEMORY;
 
     if ((res = device->p_vkCreateSemaphore( device->host.device, create_info, NULL /* allocator */, &host_semaphore )))
     {
