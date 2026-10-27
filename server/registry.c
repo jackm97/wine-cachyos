@@ -417,7 +417,7 @@ static void key_dump( struct object *obj, int verbose )
 static bool key_init( struct object *obj, const void *init_data )
 {
     struct key *key = (struct key *)obj;
-    struct key *parent = get_parent( key );
+    struct key *parent = key->obj.name ? get_parent( key ) : NULL;  /* app hive roots are created nameless */
     const struct key_init_data *data = init_data;
 
     key->class       = NULL;
@@ -2421,9 +2421,13 @@ static int app_hive_import( struct app_hive *hive, struct key *key, const struct
     struct security_descriptor *sd;
     struct key *child;
     struct unicode_str name;
+    struct key_init_data child_init = {0};
+    struct object_params child_params = { .ops = &key_ops, .root = &key->obj, .attr = OBJ_CASE_INSENSITIVE,
+                                          .init_data = &child_init };
     size_t i, j, size;
 
     if (!(sd = app_hive_security( tree->security, tree->security_size ))) return 0;
+    child_params.sd = sd;
     size = sizeof(*sd) + sd->owner_len + sd->group_len + sd->sacl_len + sd->dacl_len;
     if (size != hive->sd_size || memcmp( sd, hive->root->obj.sd, size ))
     {
@@ -2449,7 +2453,7 @@ static int app_hive_import( struct app_hive *hive, struct key *key, const struct
             set_error( STATUS_REGISTRY_CORRUPT );
             return 0;
         }
-        set_value( key, &name, value->type, value->data, value->size );
+        set_value( key, name, value->type, value->data, value->size );
         if (get_error()) return 0;
     }
     for (i = 0; i < tree->child_count; i++)
@@ -2462,8 +2466,9 @@ static int app_hive_import( struct app_hive *hive, struct key *key, const struct
             set_error( STATUS_REGISTRY_CORRUPT );
             return 0;
         }
-        if (!(child = create_key_object( &key->obj, &name, OBJ_CASE_INSENSITIVE, 0,
-                                         tree->children[i]->modified, sd ))) return 0;
+        child_init.modif = tree->children[i]->modified;
+        child_params.name = name;
+        if (!(child = create_named_object( &child_params ))) return 0;
         if (!app_hive_import( hive, child, tree->children[i] ))
         {
             release_object( child );
@@ -2679,7 +2684,8 @@ DECL_HANDLER(load_app_hive)
     static const struct security_descriptor empty_sd;
     static const WCHAR root_name[] = {'R','e','g','i','s','t','r','y','\\','A'};
     static const WCHAR file_name[] = {'R','O','O','T'};
-    struct unicode_str empty = {NULL, 0};
+    struct key_init_data root_init = { .modif = current_time };
+    struct object_params root_params = { .ops = &key_ops, .init_data = &root_init };
     struct reg_hive_key *tree = NULL;
     struct reg_hive_log logs[2];
     struct fd *file_fd;
@@ -2766,7 +2772,8 @@ DECL_HANDLER(load_app_hive)
         free( path );
         if (i <= 2) { set_error( STATUS_REGISTRY_IO_FAILED ); goto failed; }
     }
-    if (!(root = create_key_object( NULL, &empty, 0, 0, current_time, sd ))) goto failed;
+    root_params.sd = sd;
+    if (!(root = create_named_object( &root_params ))) goto failed;
     if (sd)
     {
         free( root->obj.sd );
