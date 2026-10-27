@@ -24,6 +24,7 @@
 #include "d3d11.h"
 #include "dxgi.h"
 #include "dxgi1_2.h"
+#include "effect_graph.h"
 
 #include "wine/debug.h"
 #include "wine/list.h"
@@ -32,6 +33,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(ui);
 
 static IDCompositionVisual *dcomp_visual_from_visual( IVisual *iface );
 static void surface_brush_bind( ICompositionSurfaceBrush *iface, IDCompositionVisual *visual );
+static BOOL composition_brush_contains( ICompositionBrush *brush, ICompositionBrush *target, UINT depth );
 static HRESULT scalar_key_frame_animation_get_final_value( ICompositionAnimation *animation,
         FLOAT *value );
 static HRESULT boolean_key_frame_animation_get_final_value( ICompositionAnimation *animation,
@@ -2722,6 +2724,7 @@ static HRESULT WINAPI nine_grid_brush_put_Source( struct nine_grid_brush_iface *
     struct nine_grid_brush *impl = impl_from_nine_grid_brush( iface );
     IDCompositionVisual *visual = impl->dcomp_visual;
 
+    if (value && composition_brush_contains( value, &impl->ICompositionBrush_iface, 0 )) return E_INVALIDARG;
     if (value) ICompositionBrush_AddRef( value );
     nine_grid_brush_bind( iface, NULL );
     if (impl->source) ICompositionBrush_Release( impl->source );
@@ -5170,22 +5173,460 @@ static HRESULT WINAPI compositor_CreateCubicBezierEasingFunction( ICompositor *i
     return cubic_bezier_easing_function_create( point1, point2, result );
 }
 
+struct effect_source_binding
+{
+    HSTRING name;
+    ICompositionBrush *source;
+    struct effect_source_binding *next;
+};
+
+struct composition_effect
+{
+    ICompositionEffectFactory ICompositionEffectFactory_iface;
+    ICompositionEffectBrush ICompositionEffectBrush_iface;
+    ICompositionBrush ICompositionBrush_iface;
+    ICompositionObject ICompositionObject_iface;
+    IClosable IClosable_iface;
+    struct composition_effect_graph *graph;
+    ICompositor *compositor;
+    ICompositionPropertySet *properties;
+    struct effect_source_binding *bindings;
+    CRITICAL_SECTION lock;
+    BOOL factory;
+    LONG closed;
+    LONG ref;
+};
+
+static const ICompositionBrushVtbl effect_composition_brush_vtbl;
+
+static inline struct composition_effect *effect_from_ICompositionObject( ICompositionObject *iface )
+{
+    return CONTAINING_RECORD( iface, struct composition_effect, ICompositionObject_iface );
+}
+
+static inline struct composition_effect *effect_from_ICompositionBrush( ICompositionBrush *iface )
+{
+    return CONTAINING_RECORD( iface, struct composition_effect, ICompositionBrush_iface );
+}
+
+static struct effect_source_binding *composition_effect_find_binding( struct composition_effect *impl,
+        HSTRING name )
+{
+    struct effect_source_binding *binding;
+    INT32 order;
+
+    for (binding = impl->bindings; binding; binding = binding->next)
+        if (SUCCEEDED(WindowsCompareStringOrdinal( binding->name, name, &order )) && !order) return binding;
+    return NULL;
+}
+
+static ICompositionBrush *composition_effect_get_binding( struct composition_effect *impl, UINT index )
+{
+    struct effect_source_binding *binding;
+    ICompositionBrush *source = NULL;
+
+    EnterCriticalSection( &impl->lock );
+    for (binding = impl->bindings; binding && index; binding = binding->next) --index;
+    if (binding && (source = binding->source)) ICompositionBrush_AddRef( source );
+    LeaveCriticalSection( &impl->lock );
+    return source;
+}
+
+static BOOL composition_brush_contains( ICompositionBrush *brush, ICompositionBrush *target, UINT depth )
+{
+    struct composition_effect *effect;
+    struct effect_source_binding *binding;
+    ICompositionBrush *source;
+    BOOL found;
+    UINT i;
+
+    if (!brush) return FALSE;
+    if (brush == target || depth > 64) return TRUE;
+    if (brush->lpVtbl == &nine_grid_composition_brush_vtbl)
+        return composition_brush_contains( nine_grid_brush_from_ICompositionBrush( brush )->source,
+                target, depth + 1 );
+    if (brush->lpVtbl != &effect_composition_brush_vtbl) return FALSE;
+    effect = effect_from_ICompositionBrush( brush );
+    for (i = 0, binding = effect->bindings; binding; binding = binding->next, ++i)
+    {
+        if (!(source = composition_effect_get_binding( effect, i ))) continue;
+        found = composition_brush_contains( source, target, depth + 1 );
+        ICompositionBrush_Release( source );
+        if (found) return TRUE;
+    }
+    return FALSE;
+}
+
+static HRESULT WINAPI effect_object_QueryInterface( ICompositionObject *iface, REFIID iid, void **out )
+{
+    struct composition_effect *impl = effect_from_ICompositionObject( iface );
+
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
+            IsEqualGUID( iid, &IID_IAgileObject ))
+        *out = impl->factory ? (void *)&impl->ICompositionEffectFactory_iface :
+                (void *)&impl->ICompositionEffectBrush_iface;
+    else if (IsEqualGUID( iid, &IID_ICompositionObject )) *out = iface;
+    else if (IsEqualGUID( iid, &IID_IClosable )) *out = &impl->IClosable_iface;
+    else if (impl->factory && IsEqualGUID( iid, &IID_ICompositionEffectFactory ))
+        *out = &impl->ICompositionEffectFactory_iface;
+    else if (!impl->factory && IsEqualGUID( iid, &IID_ICompositionEffectBrush ))
+        *out = &impl->ICompositionEffectBrush_iface;
+    else if (!impl->factory && IsEqualGUID( iid, &IID_ICompositionBrush ))
+        *out = &impl->ICompositionBrush_iface;
+    else return E_NOINTERFACE;
+    IUnknown_AddRef( (IUnknown *)*out );
+    return S_OK;
+}
+
+static ULONG WINAPI effect_object_AddRef( ICompositionObject *iface )
+{
+    return InterlockedIncrement( &effect_from_ICompositionObject( iface )->ref );
+}
+
+static ULONG WINAPI effect_object_Release( ICompositionObject *iface )
+{
+    struct composition_effect *impl = effect_from_ICompositionObject( iface );
+    struct effect_source_binding *binding, *next;
+    ULONG ref = InterlockedDecrement( &impl->ref );
+
+    if (!ref)
+    {
+        for (binding = impl->bindings; binding; binding = next)
+        {
+            next = binding->next;
+            if (binding->source) ICompositionBrush_Release( binding->source );
+            WindowsDeleteString( binding->name );
+            free( binding );
+        }
+        if (impl->properties) ICompositionPropertySet_Release( impl->properties );
+        if (impl->graph) composition_effect_graph_release( impl->graph );
+        ICompositor_Release( impl->compositor );
+        DeleteCriticalSection( &impl->lock );
+        free( impl );
+    }
+    return ref;
+}
+
+static HRESULT WINAPI effect_object_GetIids( ICompositionObject *iface, ULONG *count, IID **iids )
+{
+    struct composition_effect *impl = effect_from_ICompositionObject( iface );
+    UINT n = impl->factory ? 3 : 4;
+
+    if (!count || !iids) return E_POINTER;
+    *count = 0;
+    if (!(*iids = CoTaskMemAlloc( n * sizeof(**iids) ))) return E_OUTOFMEMORY;
+    (*iids)[0] = impl->factory ? IID_ICompositionEffectFactory : IID_ICompositionEffectBrush;
+    (*iids)[1] = IID_ICompositionObject;
+    (*iids)[2] = IID_IClosable;
+    if (!impl->factory) (*iids)[3] = IID_ICompositionBrush;
+    *count = n;
+    return S_OK;
+}
+
+static HRESULT WINAPI effect_object_GetRuntimeClassName( ICompositionObject *iface, HSTRING *name )
+{
+    const WCHAR *class_name = effect_from_ICompositionObject( iface )->factory ?
+            RuntimeClass_Windows_UI_Composition_CompositionEffectFactory :
+            RuntimeClass_Windows_UI_Composition_CompositionEffectBrush;
+
+    if (!name) return E_POINTER;
+    return WindowsCreateString( class_name, wcslen(class_name), name );
+}
+
+static HRESULT WINAPI effect_object_GetTrustLevel( ICompositionObject *iface, TrustLevel *level )
+{
+    if (!level) return E_POINTER;
+    *level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI effect_object_get_Compositor( ICompositionObject *iface, ICompositor **value )
+{
+    struct composition_effect *impl = effect_from_ICompositionObject( iface );
+
+    if (!value) return E_POINTER;
+    *value = NULL;
+    if (InterlockedCompareExchange( &impl->closed, 0, 0 )) return RO_E_CLOSED;
+    ICompositor_AddRef( impl->compositor );
+    *value = impl->compositor;
+    return S_OK;
+}
+
+static HRESULT WINAPI effect_object_get_Dispatcher( ICompositionObject *iface, ICoreDispatcher **value )
+{
+    if (!value) return E_POINTER;
+    *value = NULL;
+    return InterlockedCompareExchange( &effect_from_ICompositionObject( iface )->closed, 0, 0 ) ?
+            RO_E_CLOSED : S_OK;
+}
+
+static HRESULT WINAPI effect_object_get_Properties( ICompositionObject *iface, ICompositionPropertySet **value )
+{
+    struct composition_effect *impl = effect_from_ICompositionObject( iface );
+
+    if (!value) return E_POINTER;
+    *value = NULL;
+    if (InterlockedCompareExchange( &impl->closed, 0, 0 )) return RO_E_CLOSED;
+    ICompositionPropertySet_AddRef( impl->properties );
+    *value = impl->properties;
+    return S_OK;
+}
+
+static HRESULT WINAPI effect_object_StartAnimation( ICompositionObject *iface, HSTRING name,
+        ICompositionAnimation *animation )
+{
+    if (InterlockedCompareExchange( &effect_from_ICompositionObject( iface )->closed, 0, 0 )) return RO_E_CLOSED;
+    if (!name || !animation) return E_INVALIDARG;
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI effect_object_StopAnimation( ICompositionObject *iface, HSTRING name )
+{
+    if (InterlockedCompareExchange( &effect_from_ICompositionObject( iface )->closed, 0, 0 )) return RO_E_CLOSED;
+    if (!name) return E_INVALIDARG;
+    return S_OK;
+}
+
+static const ICompositionObjectVtbl effect_object_vtbl =
+{
+    effect_object_QueryInterface,
+    effect_object_AddRef,
+    effect_object_Release,
+    effect_object_GetIids,
+    effect_object_GetRuntimeClassName,
+    effect_object_GetTrustLevel,
+    effect_object_get_Compositor,
+    effect_object_get_Dispatcher,
+    effect_object_get_Properties,
+    effect_object_StartAnimation,
+    effect_object_StopAnimation,
+};
+
+DEFINE_IINSPECTABLE( effect_factory, ICompositionEffectFactory, struct composition_effect, ICompositionObject_iface )
+DEFINE_IINSPECTABLE( effect_brush, ICompositionEffectBrush, struct composition_effect, ICompositionObject_iface )
+DEFINE_IINSPECTABLE( effect_composition_brush, ICompositionBrush, struct composition_effect, ICompositionObject_iface )
+DEFINE_IINSPECTABLE( effect_closable, IClosable, struct composition_effect, ICompositionObject_iface )
+
+static HRESULT WINAPI effect_closable_Close( IClosable *iface )
+{
+    struct composition_effect *impl = impl_from_IClosable( iface );
+    struct effect_source_binding *binding;
+    ICompositionBrush *source;
+
+    if (InterlockedExchange( &impl->closed, TRUE )) return S_OK;
+    for (binding = impl->bindings; binding; binding = binding->next)
+    {
+        EnterCriticalSection( &impl->lock );
+        source = binding->source;
+        binding->source = NULL;
+        LeaveCriticalSection( &impl->lock );
+        if (source) ICompositionBrush_Release( source );
+    }
+    return S_OK;
+}
+
+static const IClosableVtbl effect_closable_vtbl =
+{
+    effect_closable_QueryInterface, effect_closable_AddRef, effect_closable_Release,
+    effect_closable_GetIids, effect_closable_GetRuntimeClassName, effect_closable_GetTrustLevel,
+    effect_closable_Close,
+};
+
+static HRESULT WINAPI effect_brush_GetSourceParameter( ICompositionEffectBrush *iface,
+        HSTRING name, ICompositionBrush **result )
+{
+    struct composition_effect *impl = impl_from_ICompositionEffectBrush( iface );
+    struct effect_source_binding *binding;
+    HRESULT hr = S_OK;
+
+    if (!result) return E_POINTER;
+    *result = NULL;
+    EnterCriticalSection( &impl->lock );
+    if (impl->closed) hr = RO_E_CLOSED;
+    else if (!(binding = composition_effect_find_binding( impl, name ))) hr = E_INVALIDARG;
+    else if ((*result = binding->source)) ICompositionBrush_AddRef( *result );
+    LeaveCriticalSection( &impl->lock );
+    return hr;
+}
+
+static HRESULT WINAPI effect_brush_SetSourceParameter( ICompositionEffectBrush *iface,
+        HSTRING name, ICompositionBrush *source )
+{
+    struct composition_effect *impl = impl_from_ICompositionEffectBrush( iface );
+    struct effect_source_binding *binding;
+    ICompositionObject *object;
+    ICompositor *compositor;
+    ICompositionBrush *old = NULL;
+    HRESULT hr;
+
+    if (InterlockedCompareExchange( &impl->closed, 0, 0 )) return RO_E_CLOSED;
+    if (source)
+    {
+        if (source->lpVtbl != &composition_brush_vtbl && source->lpVtbl != &surface_composition_brush_vtbl &&
+                source->lpVtbl != &nine_grid_composition_brush_vtbl &&
+                source->lpVtbl != &effect_composition_brush_vtbl) return E_NOTIMPL;
+        if (composition_brush_contains( source, &impl->ICompositionBrush_iface, 0 )) return E_INVALIDARG;
+        if (FAILED(hr = ICompositionBrush_QueryInterface( source, &IID_ICompositionObject, (void **)&object ))) return hr;
+        hr = ICompositionObject_get_Compositor( object, &compositor );
+        ICompositionObject_Release( object );
+        if (FAILED(hr)) return hr;
+        if (compositor != impl->compositor) hr = E_INVALIDARG;
+        ICompositor_Release( compositor );
+        if (FAILED(hr)) return hr;
+        ICompositionBrush_AddRef( source );
+    }
+    EnterCriticalSection( &impl->lock );
+    if (impl->closed) hr = RO_E_CLOSED;
+    else if (!(binding = composition_effect_find_binding( impl, name ))) hr = E_INVALIDARG;
+    else
+    {
+        old = binding->source;
+        binding->source = source;
+        source = NULL;
+        hr = S_OK;
+    }
+    LeaveCriticalSection( &impl->lock );
+    if (source) ICompositionBrush_Release( source );
+    if (old) ICompositionBrush_Release( old );
+    return hr;
+}
+
+static const ICompositionEffectBrushVtbl effect_brush_vtbl =
+{
+    effect_brush_QueryInterface, effect_brush_AddRef, effect_brush_Release,
+    effect_brush_GetIids, effect_brush_GetRuntimeClassName, effect_brush_GetTrustLevel,
+    effect_brush_GetSourceParameter, effect_brush_SetSourceParameter,
+};
+
+static const ICompositionBrushVtbl effect_composition_brush_vtbl =
+{
+    effect_composition_brush_QueryInterface, effect_composition_brush_AddRef, effect_composition_brush_Release,
+    effect_composition_brush_GetIids, effect_composition_brush_GetRuntimeClassName,
+    effect_composition_brush_GetTrustLevel,
+};
+
+static HRESULT composition_effect_add_bindings( struct composition_effect *impl,
+        const struct composition_effect_node *node )
+{
+    struct effect_source_binding *binding;
+    HRESULT hr;
+
+    if (node->parameter)
+    {
+        if (composition_effect_find_binding( impl, node->source_name )) return S_OK;
+        if (!(binding = calloc( 1, sizeof(*binding) ))) return E_OUTOFMEMORY;
+        if (FAILED(hr = WindowsDuplicateString( node->source_name, &binding->name )))
+        {
+            free( binding );
+            return hr;
+        }
+        binding->next = impl->bindings;
+        impl->bindings = binding;
+        return S_OK;
+    }
+    if (FAILED(hr = composition_effect_add_bindings( impl, node->sources[0] ))) return hr;
+    return composition_effect_add_bindings( impl, node->sources[1] );
+}
+
+static HRESULT composition_effect_create( ICompositor *compositor, struct composition_effect_graph *graph,
+        BOOL factory, struct composition_effect **result );
+
+static HRESULT WINAPI effect_factory_CreateBrush( ICompositionEffectFactory *iface, ICompositionEffectBrush **result )
+{
+    struct composition_effect *impl = impl_from_ICompositionEffectFactory( iface ), *brush;
+    HRESULT hr;
+
+    if (!result) return E_POINTER;
+    *result = NULL;
+    if (InterlockedCompareExchange( &impl->closed, 0, 0 )) return RO_E_CLOSED;
+    if (FAILED(hr = composition_effect_create( impl->compositor, impl->graph, FALSE, &brush ))) return hr;
+    *result = &brush->ICompositionEffectBrush_iface;
+    return S_OK;
+}
+
+static HRESULT WINAPI effect_factory_get_ExtendedError( ICompositionEffectFactory *iface, HRESULT *value )
+{
+    if (!value) return E_POINTER;
+    if (InterlockedCompareExchange( &impl_from_ICompositionEffectFactory( iface )->closed, 0, 0 )) return RO_E_CLOSED;
+    *value = S_OK;
+    return S_OK;
+}
+
+static HRESULT WINAPI effect_factory_get_LoadStatus( ICompositionEffectFactory *iface,
+        enum CompositionEffectFactoryLoadStatus *value )
+{
+    if (!value) return E_POINTER;
+    if (InterlockedCompareExchange( &impl_from_ICompositionEffectFactory( iface )->closed, 0, 0 )) return RO_E_CLOSED;
+    *value = CompositionEffectFactoryLoadStatus_Success;
+    return S_OK;
+}
+
+static const ICompositionEffectFactoryVtbl effect_factory_vtbl =
+{
+    effect_factory_QueryInterface, effect_factory_AddRef, effect_factory_Release,
+    effect_factory_GetIids, effect_factory_GetRuntimeClassName, effect_factory_GetTrustLevel,
+    effect_factory_CreateBrush, effect_factory_get_ExtendedError, effect_factory_get_LoadStatus,
+};
+
+static HRESULT composition_effect_create( ICompositor *compositor, struct composition_effect_graph *graph,
+        BOOL factory, struct composition_effect **result )
+{
+    struct composition_effect *impl;
+    HRESULT hr;
+
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+    impl->ICompositionEffectFactory_iface.lpVtbl = &effect_factory_vtbl;
+    impl->ICompositionEffectBrush_iface.lpVtbl = &effect_brush_vtbl;
+    impl->ICompositionBrush_iface.lpVtbl = &effect_composition_brush_vtbl;
+    impl->ICompositionObject_iface.lpVtbl = &effect_object_vtbl;
+    impl->IClosable_iface.lpVtbl = &effect_closable_vtbl;
+    impl->factory = factory;
+    impl->ref = 1;
+    impl->compositor = compositor;
+    ICompositor_AddRef( compositor );
+    InitializeCriticalSection( &impl->lock );
+    impl->graph = graph;
+    composition_effect_graph_add_ref( graph );
+    hr = composition_property_set_create( compositor, &impl->properties );
+    if (SUCCEEDED(hr) && !factory) hr = composition_effect_graph_init_properties( graph, impl->properties );
+    if (SUCCEEDED(hr) && !factory) hr = composition_effect_add_bindings( impl, graph->root );
+    if (FAILED(hr))
+    {
+        ICompositionObject_Release( &impl->ICompositionObject_iface );
+        return hr;
+    }
+    *result = impl;
+    return S_OK;
+}
+
+static HRESULT composition_effect_factory_create( ICompositor *compositor, IGraphicsEffect *effect,
+        __FIIterable_1_HSTRING *properties, ICompositionEffectFactory **result )
+{
+    struct composition_effect_graph *graph;
+    struct composition_effect *factory;
+    HRESULT hr;
+
+    if (!result) return E_POINTER;
+    *result = NULL;
+    if (FAILED(hr = composition_effect_graph_compile_properties( effect, properties, &graph ))) return hr;
+    hr = composition_effect_create( compositor, graph, TRUE, &factory );
+    composition_effect_graph_release( graph );
+    if (SUCCEEDED(hr)) *result = &factory->ICompositionEffectFactory_iface;
+    return hr;
+}
+
 static HRESULT WINAPI compositor_CreateEffectFactory( ICompositor *iface, IGraphicsEffect *effect,
         ICompositionEffectFactory **result )
 {
-    FIXME( "iface %p, effect %p, result %p stub!\n", iface, effect, result );
-    if (!result) return E_POINTER;
-    *result = NULL;
-    return E_NOTIMPL;
+    return composition_effect_factory_create( iface, effect, NULL, result );
 }
 
 static HRESULT WINAPI compositor_CreateEffectFactoryWithProperties( ICompositor *iface,
         IGraphicsEffect *effect, __FIIterable_1_HSTRING *animatable, ICompositionEffectFactory **result )
 {
-    FIXME( "iface %p, effect %p, animatable %p, result %p stub!\n", iface, effect, animatable, result );
-    if (!result) return E_POINTER;
-    *result = NULL;
-    return E_NOTIMPL;
+    return composition_effect_factory_create( iface, effect, animatable, result );
 }
 
 static HRESULT WINAPI compositor_CreateExpressionAnimationWithExpression( ICompositor *iface,
@@ -6675,17 +7116,109 @@ static void draw_nine_grid_brush( ID2D1DeviceContext *context, struct nine_grid_
     ID2D1DeviceContext_PopAxisAlignedClip( context );
 }
 
-static void draw_composition_brush( ID2D1DeviceContext *context, ICompositionBrush *brush,
-        const D2D1_RECT_F *bounds, FLOAT opacity )
+static HRESULT draw_composition_brush( ID2D1DeviceContext *context, ICompositionBrush *brush,
+        const D2D1_RECT_F *bounds, FLOAT opacity, UINT depth );
+
+struct effect_render_sources
 {
+    struct composition_effect *effect;
+    ID2D1DeviceContext *context;
+    D2D1_SIZE_F size;
+    UINT depth;
+};
+
+static HRESULT effect_render_source( void *data, HSTRING name, ID2D1Image **image )
+{
+    struct effect_render_sources *sources = data;
+    D2D1_PIXEL_FORMAT format = {DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED};
+    D2D1_COLOR_F clear = {0.0f, 0.0f, 0.0f, 0.0f};
+    D2D1_RECT_F bounds = {0.0f, 0.0f, sources->size.width, sources->size.height};
+    ID2D1BitmapRenderTarget *target = NULL;
+    ID2D1DeviceContext *context = NULL;
+    ID2D1Bitmap *bitmap = NULL;
+    ICompositionBrush *brush = NULL;
+    HRESULT hr, end;
+
+    *image = NULL;
+    if (FAILED(hr = effect_brush_GetSourceParameter( &sources->effect->ICompositionEffectBrush_iface,
+            name, &brush ))) return hr;
+    if (!brush) return E_INVALIDARG;
+    if (FAILED(hr = ID2D1DeviceContext_CreateCompatibleRenderTarget( sources->context, &sources->size,
+            NULL, &format, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, &target ))) goto done;
+    if (FAILED(hr = ID2D1BitmapRenderTarget_QueryInterface( target, &IID_ID2D1DeviceContext,
+            (void **)&context ))) goto done;
+    ID2D1DeviceContext_BeginDraw( context );
+    ID2D1DeviceContext_Clear( context, &clear );
+    hr = draw_composition_brush( context, brush, &bounds, 1.0f, sources->depth + 1 );
+    end = ID2D1DeviceContext_EndDraw( context, NULL, NULL );
+    if (SUCCEEDED(hr)) hr = end;
+    if (FAILED(hr)) goto done;
+    if (SUCCEEDED(hr = ID2D1BitmapRenderTarget_GetBitmap( target, &bitmap )))
+    {
+        *image = (ID2D1Image *)bitmap;
+        bitmap = NULL;
+    }
+done:
+    if (bitmap) ID2D1Bitmap_Release( bitmap );
+    if (context) ID2D1DeviceContext_Release( context );
+    if (target) ID2D1BitmapRenderTarget_Release( target );
+    ICompositionBrush_Release( brush );
+    return hr;
+}
+
+static HRESULT draw_effect_brush( ID2D1DeviceContext *context, struct composition_effect *effect,
+        const D2D1_RECT_F *bounds, FLOAT opacity, UINT depth )
+{
+    D2D1_PIXEL_FORMAT format = {DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED};
+    D2D1_COLOR_F clear = {0.0f, 0.0f, 0.0f, 0.0f};
+    struct effect_render_sources sources = {effect, NULL,
+            {bounds->right - bounds->left, bounds->bottom - bounds->top}, depth};
+    ID2D1BitmapRenderTarget *target = NULL;
+    ID2D1DeviceContext *output = NULL;
+    ID2D1Bitmap *bitmap = NULL;
+    ID2D1Image *image = NULL;
+    HRESULT hr, end;
+
+    if (InterlockedCompareExchange( &effect->closed, 0, 0 )) return RO_E_CLOSED;
+    if (FAILED(hr = ID2D1DeviceContext_CreateCompatibleRenderTarget( context, &sources.size, NULL,
+            &format, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, &target ))) goto done;
+    if (FAILED(hr = ID2D1BitmapRenderTarget_QueryInterface( target, &IID_ID2D1DeviceContext,
+            (void **)&output ))) goto done;
+    sources.context = output;
+    hr = composition_effect_graph_create_image_properties( effect->graph, output, effect->properties,
+            effect_render_source, &sources, &image );
+    if (FAILED(hr)) goto done;
+    ID2D1DeviceContext_BeginDraw( output );
+    ID2D1DeviceContext_Clear( output, &clear );
+    ID2D1DeviceContext_DrawImage( output, image, NULL, NULL, D2D1_INTERPOLATION_MODE_LINEAR,
+            D2D1_COMPOSITE_MODE_SOURCE_OVER );
+    end = ID2D1DeviceContext_EndDraw( output, NULL, NULL );
+    if (FAILED(hr = end)) goto done;
+    if (FAILED(hr = ID2D1BitmapRenderTarget_GetBitmap( target, &bitmap ))) goto done;
+    ID2D1DeviceContext_DrawBitmap( context, bitmap, bounds, opacity,
+            D2D1_INTERPOLATION_MODE_LINEAR, NULL, NULL );
+done:
+    if (bitmap) ID2D1Bitmap_Release( bitmap );
+    if (image) ID2D1Image_Release( image );
+    if (output) ID2D1DeviceContext_Release( output );
+    if (target) ID2D1BitmapRenderTarget_Release( target );
+    return hr;
+}
+
+static HRESULT draw_composition_brush( ID2D1DeviceContext *context, ICompositionBrush *brush,
+        const D2D1_RECT_F *bounds, FLOAT opacity, UINT depth )
+{
+    if (depth > 64) return D2DERR_CYCLIC_GRAPH;
     if (brush->lpVtbl == &composition_brush_vtbl)
     {
         struct Color value = color_brush_from_ICompositionBrush( brush )->color;
         D2D1_COLOR_F color = {value.R / 255.0f, value.G / 255.0f,
                 value.B / 255.0f, opacity * value.A / 255.0f};
         ID2D1SolidColorBrush *solid;
+        HRESULT hr;
 
-        if (SUCCEEDED(ID2D1DeviceContext_CreateSolidColorBrush( context, &color, NULL, &solid )))
+        if (FAILED(hr = ID2D1DeviceContext_CreateSolidColorBrush( context, &color, NULL, &solid ))) return hr;
+        else
         {
             ID2D1DeviceContext_FillRectangle( context, bounds, (ID2D1Brush *)solid );
             ID2D1SolidColorBrush_Release( solid );
@@ -6695,9 +7228,13 @@ static void draw_composition_brush( ID2D1DeviceContext *context, ICompositionBru
         draw_surface_brush( context, surface_brush_from_ICompositionBrush( brush ), bounds, opacity );
     else if (brush->lpVtbl == &nine_grid_composition_brush_vtbl)
         draw_nine_grid_brush( context, nine_grid_brush_from_ICompositionBrush( brush ), bounds, opacity );
+    else if (brush->lpVtbl == &effect_composition_brush_vtbl)
+        return draw_effect_brush( context, effect_from_ICompositionBrush( brush ), bounds, opacity, depth );
+    else return E_NOTIMPL;
+    return S_OK;
 }
 
-static void draw_composition_visual( ID2D1DeviceContext *context, IVisual *visual,
+static HRESULT draw_composition_visual( ID2D1DeviceContext *context, IVisual *visual,
         FLOAT x, FLOAT y, FLOAT parent_width, FLOAT parent_height, FLOAT opacity, UINT depth )
 {
     struct sprite_visual *impl;
@@ -6706,10 +7243,12 @@ static void draw_composition_visual( ID2D1DeviceContext *context, IVisual *visua
     D2D1_RECT_F bounds, clip_bounds;
     FLOAT width, height;
     UINT i;
+    HRESULT hr = S_OK;
 
-    if (!visual || depth > 64) return;
+    if (!visual) return S_OK;
+    if (depth > 64) return E_INVALIDARG;
     impl = sprite_visual_from_IVisual( visual );
-    if (!impl->visible) return;
+    if (!impl->visible) return S_OK;
     children = impl_from_IVisualCollection( impl->children );
     width = impl->size.X + parent_width * impl->relative_size_adjustment.X;
     height = impl->size.Y + parent_height * impl->relative_size_adjustment.Y;
@@ -6729,15 +7268,50 @@ static void draw_composition_visual( ID2D1DeviceContext *context, IVisual *visua
         ID2D1DeviceContext_PushAxisAlignedClip( context, &clip_bounds, D2D1_ANTIALIAS_MODE_ALIASED );
     }
     if (impl->brush && bounds.right > bounds.left && bounds.bottom > bounds.top)
-        draw_composition_brush( context, impl->brush, &bounds, opacity );
-    for (i = 0; i < children->count; ++i)
-        draw_composition_visual( context, children->items[i], x, y, width, height,
+        hr = draw_composition_brush( context, impl->brush, &bounds, opacity, 0 );
+    for (i = 0; SUCCEEDED(hr) && i < children->count; ++i)
+        hr = draw_composition_visual( context, children->items[i], x, y, width, height,
                 opacity, depth + 1 );
     if (clip)
     {
         ID2D1DeviceContext_PopAxisAlignedClip( context );
         IInsetClip_Release( clip );
     }
+    return hr;
+}
+
+static struct composition_drawing_surface *find_brush_drawing_surface( ICompositionBrush *brush, UINT depth )
+{
+    struct composition_drawing_surface *surface;
+    struct composition_effect *effect;
+    struct effect_source_binding *binding;
+    ICompositionBrush *source;
+    UINT i;
+
+    if (!brush || depth > 64) return NULL;
+    if (brush->lpVtbl == &surface_composition_brush_vtbl)
+    {
+        surface = drawing_surface_from_surface_brush( surface_brush_from_ICompositionBrush( brush ) );
+        if (surface && (surface->committed_bitmap || !list_empty( &surface->tiles )))
+        {
+            ICompositionDrawingSurface_AddRef( &surface->ICompositionDrawingSurface_iface );
+            return surface;
+        }
+    }
+    else if (brush->lpVtbl == &nine_grid_composition_brush_vtbl)
+        return find_brush_drawing_surface( nine_grid_brush_from_ICompositionBrush( brush )->source, depth + 1 );
+    else if (brush->lpVtbl == &effect_composition_brush_vtbl)
+    {
+        effect = effect_from_ICompositionBrush( brush );
+        for (i = 0, binding = effect->bindings; binding; binding = binding->next, ++i)
+        {
+            if (!(source = composition_effect_get_binding( effect, i ))) continue;
+            surface = find_brush_drawing_surface( source, depth + 1 );
+            ICompositionBrush_Release( source );
+            if (surface) return surface;
+        }
+    }
+    return NULL;
 }
 
 static struct composition_drawing_surface *find_visual_drawing_surface( IVisual *visual, UINT depth )
@@ -6745,28 +7319,11 @@ static struct composition_drawing_surface *find_visual_drawing_surface( IVisual 
     struct sprite_visual *impl;
     struct visual_collection *children;
     struct composition_drawing_surface *surface;
-    struct surface_brush *surface_brush;
-    struct nine_grid_brush *nine_grid;
     UINT i;
 
     if (!visual || depth > 64) return NULL;
     impl = sprite_visual_from_IVisual( visual );
-    if (impl->brush && impl->brush->lpVtbl == &surface_composition_brush_vtbl)
-    {
-        surface_brush = surface_brush_from_ICompositionBrush( impl->brush );
-        if ((surface = drawing_surface_from_surface_brush( surface_brush )) && (surface->committed_bitmap || !list_empty( &surface->tiles )))
-            return surface;
-    }
-    else if (impl->brush && impl->brush->lpVtbl == &nine_grid_composition_brush_vtbl)
-    {
-        nine_grid = nine_grid_brush_from_ICompositionBrush( impl->brush );
-        if (nine_grid->source && nine_grid->source->lpVtbl == &surface_composition_brush_vtbl)
-        {
-            surface_brush = surface_brush_from_ICompositionBrush( nine_grid->source );
-            if ((surface = drawing_surface_from_surface_brush( surface_brush )) && (surface->committed_bitmap || !list_empty( &surface->tiles )))
-                return surface;
-        }
-    }
+    if ((surface = find_brush_drawing_surface( impl->brush, 0 ))) return surface;
     children = impl_from_IVisualCollection( impl->children );
     for (i = 0; i < children->count; ++i)
         if ((surface = find_visual_drawing_surface( children->items[i], depth + 1 ))) return surface;
@@ -6789,32 +7346,45 @@ static HRESULT desktop_window_target_render( struct desktop_window_target *targe
     RECT client;
     UINT width, height;
     const char *stage = "initialization";
-    HRESULT hr;
+    HRESULT hr, draw;
 
     if (!target->root || !IsWindow( target->hwnd )) return S_FALSE;
     source = find_visual_drawing_surface( target->root, 0 );
-    if (!source && !target->swapchain) return S_FALSE;
     GetClientRect( target->hwnd, &client );
     width = max( 1, client.right - client.left );
     height = max( 1, client.bottom - client.top );
-    if (source && ((target->width && (target->width != width || target->height != height)) ||
-            (target->render_device && target->render_device != source->device)))
+    if ((target->width && (target->width != width || target->height != height)) ||
+            (source && target->render_device && target->render_device != source->device))
         desktop_window_target_reset_renderer( target );
 
     if (!target->swapchain)
     {
-        source_bitmap = source->virtual ? source->bitmap : source->committed_bitmap;
-        if (!source_bitmap && !list_empty( &source->tiles ))
-            source_bitmap = LIST_ENTRY( list_head( &source->tiles ), struct composition_surface_tile, entry )->bitmap;
-        if (!source_bitmap) return S_FALSE;
-        stage = "get source surface";
-        if (FAILED(hr = ID2D1Bitmap1_GetSurface( source_bitmap, &surface ))) goto done;
-        stage = "get d3d device";
-        if (FAILED(hr = IDXGISurface_GetDevice( surface, &IID_ID3D11Device,
-                (void **)&d3d_device ))) goto done;
-        stage = "get dxgi device";
-        if (FAILED(hr = IDXGISurface_GetDevice( surface, &IID_IDXGIDevice,
-                (void **)&dxgi_device ))) goto done;
+        if (source)
+        {
+            source_bitmap = source->virtual ? source->bitmap : source->committed_bitmap;
+            if (!source_bitmap && !list_empty( &source->tiles ))
+                source_bitmap = LIST_ENTRY( list_head( &source->tiles ), struct composition_surface_tile, entry )->bitmap;
+            if (!source_bitmap) {hr = S_FALSE; goto done;}
+            stage = "get source surface";
+            if (FAILED(hr = ID2D1Bitmap1_GetSurface( source_bitmap, &surface ))) goto done;
+            stage = "get d3d device";
+            if (FAILED(hr = IDXGISurface_GetDevice( surface, &IID_ID3D11Device,
+                    (void **)&d3d_device ))) goto done;
+            stage = "get dxgi device";
+            if (FAILED(hr = IDXGISurface_GetDevice( surface, &IID_IDXGIDevice,
+                    (void **)&dxgi_device ))) goto done;
+        }
+        else
+        {
+            stage = "create d3d device";
+            if (FAILED(hr = D3D11CreateDevice( NULL, D3D_DRIVER_TYPE_HARDWARE, NULL,
+                    D3D11_CREATE_DEVICE_BGRA_SUPPORT, NULL, 0, D3D11_SDK_VERSION,
+                    &d3d_device, NULL, NULL ))) goto done;
+            if (FAILED(hr = ID3D11Device_QueryInterface( d3d_device, &IID_IDXGIDevice,
+                    (void **)&dxgi_device ))) goto done;
+            stage = "create d2d device";
+            if (FAILED(hr = D2D1CreateDevice( dxgi_device, NULL, &target->render_device ))) goto done;
+        }
         stage = "get adapter";
         if (FAILED(hr = IDXGIDevice_GetAdapter( dxgi_device, &adapter ))) goto done;
         stage = "get factory";
@@ -6837,11 +7407,14 @@ static HRESULT desktop_window_target_render( struct desktop_window_target *targe
     }
     if (!target->render_context)
     {
+        if (!target->render_device)
+        {
+            target->render_device = source->device;
+            ID2D1Device_AddRef( target->render_device );
+        }
         stage = "create render context";
-        if (FAILED(hr = ID2D1Device_CreateDeviceContext( source->device,
+        if (FAILED(hr = ID2D1Device_CreateDeviceContext( target->render_device,
                 D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &target->render_context ))) goto done;
-        target->render_device = source->device;
-        ID2D1Device_AddRef( target->render_device );
     }
     if (!target->render_bitmap)
     {
@@ -6861,14 +7434,17 @@ static HRESULT desktop_window_target_render( struct desktop_window_target *targe
     ID2D1DeviceContext_SetTransform( target->render_context, &identity );
     ID2D1DeviceContext_BeginDraw( target->render_context );
     ID2D1DeviceContext_Clear( target->render_context, &white );
-    draw_composition_visual( target->render_context, target->root, 0.0f, 0.0f,
+    draw = draw_composition_visual( target->render_context, target->root, 0.0f, 0.0f,
             width, height, 1.0f, 0 );
     stage = "end draw";
-    if (FAILED(hr = ID2D1DeviceContext_EndDraw( target->render_context, NULL, NULL ))) goto done;
+    hr = ID2D1DeviceContext_EndDraw( target->render_context, NULL, NULL );
+    if (SUCCEEDED(hr)) hr = draw;
+    if (FAILED(hr)) goto done;
     stage = "present";
     hr = IDXGISwapChain1_Present( target->swapchain, 0, 0 );
 
 done:
+    if (source) ICompositionDrawingSurface_Release( &source->ICompositionDrawingSurface_iface );
     if (factory) IDXGIFactory2_Release( factory );
     if (adapter) IDXGIAdapter_Release( adapter );
     if (dxgi_device) IDXGIDevice_Release( dxgi_device );
