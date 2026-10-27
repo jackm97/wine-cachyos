@@ -2102,6 +2102,264 @@ fail:
     return FALSE;
 }
 
+struct wined3d_shared_allocator_vk
+{
+    struct wined3d_vk_info vk_info;
+    VkPhysicalDevice physical_device;
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    VkDevice device;
+    VkQueue queue;
+    uint32_t family;
+    VkCommandPool pool;
+};
+
+struct wined3d_shared_image_vk
+{
+    struct wined3d_shared_allocator_vk *allocator;
+    VkImage image;
+    VkDeviceMemory memory;
+};
+
+void wined3d_shared_allocator_vk_destroy(struct wined3d_shared_allocator_vk *allocator)
+{
+    const struct wined3d_vk_info *vk_info;
+
+    if (!allocator) return;
+    vk_info = &allocator->vk_info;
+    if (allocator->device)
+    {
+        if (allocator->pool) VK_CALL(vkDestroyCommandPool(allocator->device, allocator->pool, NULL));
+        VK_CALL(vkDestroyDevice(allocator->device, NULL));
+    }
+    VK_CALL(vkDestroyInstance(vk_info->instance, NULL));
+    wined3d_unload_vulkan(&allocator->vk_info);
+    free(allocator);
+}
+
+struct wined3d_shared_allocator_vk *wined3d_shared_allocator_vk_create(const GUID *device_uuid, const GUID *driver_uuid)
+{
+    struct wined3d_shared_allocator_vk *allocator;
+    struct wined3d_vk_info *vk_info;
+    VkPhysicalDeviceIDProperties ids = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+    VkPhysicalDeviceProperties2 properties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &ids};
+    VkDeviceQueueCreateInfo queue_info = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+    VkDeviceCreateInfo device_info = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    VkCommandPoolCreateInfo pool_info = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    const char *extension = VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME;
+    VkQueueFamilyProperties *families = NULL;
+    VkPhysicalDevice *devices = NULL;
+    uint32_t count, i;
+    float priority = 1.0f;
+
+    if (!(allocator = calloc(1, sizeof(*allocator)))) return NULL;
+    vk_info = &allocator->vk_info;
+    if (!wined3d_init_vulkan(vk_info))
+    {
+        free(allocator);
+        return NULL;
+    }
+    if (vk_info->api_version < VK_API_VERSION_1_1 || !vk_info->vk_ops.vkGetPhysicalDeviceProperties2) goto fail;
+    if (VK_CALL(vkEnumeratePhysicalDevices(vk_info->instance, &count, NULL)) < 0 || !count) goto fail;
+    if (!(devices = calloc(count, sizeof(*devices)))) goto fail;
+    if (VK_CALL(vkEnumeratePhysicalDevices(vk_info->instance, &count, devices)) < 0) goto fail;
+    for (i = 0; i < count; ++i)
+    {
+        VK_CALL(vkGetPhysicalDeviceProperties2(devices[i], &properties));
+        if (!memcmp(device_uuid, ids.deviceUUID, sizeof(*device_uuid))
+                && !memcmp(driver_uuid, ids.driverUUID, sizeof(*driver_uuid)))
+        {
+            allocator->physical_device = devices[i];
+            break;
+        }
+    }
+    free(devices);
+    devices = NULL;
+    if (!allocator->physical_device) goto fail;
+    TRACE("Matched shared allocator device %s, driver %s.\n",
+            debugstr_guid(device_uuid), debugstr_guid(driver_uuid));
+    VK_CALL(vkGetPhysicalDeviceQueueFamilyProperties(allocator->physical_device, &count, NULL));
+    if (!(families = calloc(count, sizeof(*families)))) goto fail;
+    VK_CALL(vkGetPhysicalDeviceQueueFamilyProperties(allocator->physical_device, &count, families));
+    for (i = 0; i < count; ++i)
+        if (families[i].queueCount && (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) break;
+    free(families);
+    families = NULL;
+    if (i == count) goto fail;
+    allocator->family = i;
+    queue_info.queueFamilyIndex = i;
+    queue_info.queueCount = 1;
+    queue_info.pQueuePriorities = &priority;
+    device_info.queueCreateInfoCount = 1;
+    device_info.pQueueCreateInfos = &queue_info;
+    device_info.enabledExtensionCount = 1;
+    device_info.ppEnabledExtensionNames = &extension;
+    if (VK_CALL(vkCreateDevice(allocator->physical_device, &device_info, NULL, &allocator->device)) < 0)
+    {
+        allocator->device = VK_NULL_HANDLE;
+        goto fail;
+    }
+#define VK_DEVICE_PFN(name) \
+    if (!(vk_info->vk_ops.name = (void *)VK_CALL(vkGetDeviceProcAddr(allocator->device, #name)))) \
+    { \
+        WARN("Missing shared allocator device function " #name ".\n"); \
+        goto fail; \
+    }
+    VK_DEVICE_PFN(vkAllocateCommandBuffers)
+    VK_DEVICE_PFN(vkAllocateMemory)
+    VK_DEVICE_PFN(vkBeginCommandBuffer)
+    VK_DEVICE_PFN(vkBindImageMemory)
+    VK_DEVICE_PFN(vkCmdPipelineBarrier)
+    VK_DEVICE_PFN(vkCreateCommandPool)
+    VK_DEVICE_PFN(vkCreateImage)
+    VK_DEVICE_PFN(vkDestroyCommandPool)
+    VK_DEVICE_PFN(vkDestroyDevice)
+    VK_DEVICE_PFN(vkDestroyImage)
+    VK_DEVICE_PFN(vkEndCommandBuffer)
+    VK_DEVICE_PFN(vkFreeCommandBuffers)
+    VK_DEVICE_PFN(vkFreeMemory)
+    VK_DEVICE_PFN(vkGetDeviceQueue)
+    VK_DEVICE_PFN(vkGetImageMemoryRequirements)
+    VK_DEVICE_PFN(vkGetMemoryWin32HandleKHR)
+    VK_DEVICE_PFN(vkQueueSubmit)
+    VK_DEVICE_PFN(vkQueueWaitIdle)
+#undef VK_DEVICE_PFN
+    if (!vk_info->vk_ops.vkGetMemoryWin32HandleKHR)
+    {
+        WARN("Missing shared allocator Win32 memory export.\n");
+        goto fail;
+    }
+    VK_CALL(vkGetDeviceQueue(allocator->device, allocator->family, 0, &allocator->queue));
+    VK_CALL(vkGetPhysicalDeviceMemoryProperties(allocator->physical_device, &allocator->memory_properties));
+    pool_info.queueFamilyIndex = allocator->family;
+    if (VK_CALL(vkCreateCommandPool(allocator->device, &pool_info, NULL, &allocator->pool)) < 0) goto fail;
+    TRACE("Created shared allocator device %p.\n", allocator->device);
+    return allocator;
+
+fail:
+    WARN("Failed to initialize shared allocator.\n");
+    free(families);
+    free(devices);
+    wined3d_shared_allocator_vk_destroy(allocator);
+    return NULL;
+}
+
+void wined3d_shared_image_vk_destroy(struct wined3d_shared_image_vk *image)
+{
+    struct wined3d_shared_allocator_vk *allocator;
+    const struct wined3d_vk_info *vk_info;
+
+    if (!image) return;
+    allocator = image->allocator;
+    vk_info = &allocator->vk_info;
+    if (image->image) VK_CALL(vkDestroyImage(allocator->device, image->image, NULL));
+    if (image->memory) VK_CALL(vkFreeMemory(allocator->device, image->memory, NULL));
+    free(image);
+}
+
+struct wined3d_shared_image_vk *wined3d_shared_image_vk_create(struct wined3d_shared_allocator_vk *allocator,
+        unsigned int width, unsigned int height, enum wined3d_format_id format, HANDLE *handle)
+{
+    const struct wined3d_vk_info *vk_info = &allocator->vk_info;
+    VkExternalMemoryImageCreateInfo external = {VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
+    VkImageCreateInfo info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, &external};
+    VkPhysicalDeviceExternalImageFormatInfo external_info = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO};
+    VkPhysicalDeviceImageFormatInfo2 format_info = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, &external_info};
+    VkExternalImageFormatProperties external_properties = {VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
+    VkImageFormatProperties2 properties = {VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2, &external_properties};
+    PFN_vkGetPhysicalDeviceImageFormatProperties2 get_format;
+    VkMemoryDedicatedAllocateInfo dedicated = {VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+    VkExportMemoryAllocateInfo export = {VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO, &dedicated};
+    VkMemoryAllocateInfo allocation = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, &export};
+    VkMemoryGetWin32HandleInfoKHR handle_info = {VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
+    VkCommandBufferAllocateInfo command_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    VkCommandBufferBeginInfo begin = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    VkImageMemoryBarrier barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    VkSubmitInfo submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    struct wined3d_shared_image_vk *image;
+    VkMemoryRequirements requirements;
+    VkCommandBuffer command = VK_NULL_HANDLE;
+    unsigned int i;
+    VkResult vr;
+
+    *handle = NULL;
+    if (!(get_format = (void *)VK_CALL(vkGetInstanceProcAddr(vk_info->instance,
+            "vkGetPhysicalDeviceImageFormatProperties2")))) return NULL;
+    if (format != WINED3DFMT_R8G8B8A8_UNORM && format != WINED3DFMT_B8G8R8A8_UNORM) return NULL;
+    format_info.format = format == WINED3DFMT_B8G8R8A8_UNORM
+            ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
+    format_info.type = VK_IMAGE_TYPE_2D;
+    format_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    format_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+            | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    external_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_KMT_BIT;
+    vr = get_format(allocator->physical_device, &format_info, &properties);
+    if (vr < 0 || !(external_properties.externalMemoryProperties.externalMemoryFeatures
+            & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT))
+    {
+        WARN("Shared image format query failed, vr %s, features %#x.\n", wined3d_debug_vkresult(vr),
+                external_properties.externalMemoryProperties.externalMemoryFeatures);
+        return NULL;
+    }
+    if (!(image = calloc(1, sizeof(*image)))) return NULL;
+    image->allocator = allocator;
+    external.handleTypes = external_info.handleType;
+    info.imageType = format_info.type;
+    info.format = format_info.format;
+    info.extent.width = width;
+    info.extent.height = height;
+    info.extent.depth = 1;
+    info.mipLevels = info.arrayLayers = 1;
+    info.samples = VK_SAMPLE_COUNT_1_BIT;
+    info.tiling = format_info.tiling;
+    info.usage = format_info.usage;
+    if (VK_CALL(vkCreateImage(allocator->device, &info, NULL, &image->image)) < 0) goto fail;
+    VK_CALL(vkGetImageMemoryRequirements(allocator->device, image->image, &requirements));
+    for (i = 0; i < allocator->memory_properties.memoryTypeCount; ++i)
+        if ((requirements.memoryTypeBits & (1u << i))
+                && (allocator->memory_properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) break;
+    if (i == allocator->memory_properties.memoryTypeCount) goto fail;
+    dedicated.image = image->image;
+    export.handleTypes = external.handleTypes;
+    allocation.allocationSize = requirements.size;
+    allocation.memoryTypeIndex = i;
+    if (VK_CALL(vkAllocateMemory(allocator->device, &allocation, NULL, &image->memory)) < 0
+            || VK_CALL(vkBindImageMemory(allocator->device, image->image, image->memory, 0)) < 0) goto fail;
+    command_info.commandPool = allocator->pool;
+    command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    command_info.commandBufferCount = 1;
+    if (VK_CALL(vkAllocateCommandBuffers(allocator->device, &command_info, &command)) < 0) goto fail;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (VK_CALL(vkBeginCommandBuffer(command, &begin)) < 0) goto fail;
+    barrier.image = image->image;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = barrier.subresourceRange.layerCount = 1;
+    VK_CALL(vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            0, 0, NULL, 0, NULL, 1, &barrier));
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcQueueFamilyIndex = allocator->family;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+    VK_CALL(vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            0, 0, NULL, 0, NULL, 1, &barrier));
+    if (VK_CALL(vkEndCommandBuffer(command)) < 0) goto fail;
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &command;
+    if (VK_CALL(vkQueueSubmit(allocator->queue, 1, &submit, VK_NULL_HANDLE)) < 0
+            || VK_CALL(vkQueueWaitIdle(allocator->queue)) < 0) goto fail;
+    VK_CALL(vkFreeCommandBuffers(allocator->device, allocator->pool, 1, &command));
+    command = VK_NULL_HANDLE;
+    handle_info.memory = image->memory;
+    handle_info.handleType = external.handleTypes;
+    if (VK_CALL(vkGetMemoryWin32HandleKHR(allocator->device, &handle_info, handle)) < 0) goto fail;
+    return image;
+
+fail:
+    if (command) VK_CALL(vkFreeCommandBuffers(allocator->device, allocator->pool, 1, &command));
+    wined3d_shared_image_vk_destroy(image);
+    return NULL;
+}
+
 static VkPhysicalDevice get_vulkan_physical_device(struct wined3d_vk_info *vk_info)
 {
     VkPhysicalDevice physical_devices[1];
@@ -2448,6 +2706,7 @@ static bool wined3d_adapter_vk_init_device_extensions(struct wined3d_adapter_vk 
         {VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME,        WINED3D_VK_EXT_SHADER_STENCIL_EXPORT},
         {VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME,           WINED3D_VK_EXT_TRANSFORM_FEEDBACK},
         {VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,     WINED3D_VK_EXT_VERTEX_ATTRIBUTE_DIVISOR},
+        {VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,        WINED3D_VK_KHR_EXTERNAL_MEMORY_WIN32},
         {VK_KHR_MAINTENANCE2_EXTENSION_NAME,                 WINED3D_VK_KHR_MAINTENANCE2},
         {VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME, WINED3D_VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE},
         {VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME,     WINED3D_VK_KHR_SAMPLER_YCBCR_CONVERSION},

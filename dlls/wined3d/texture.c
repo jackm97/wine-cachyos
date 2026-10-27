@@ -1463,6 +1463,7 @@ HRESULT wined3d_texture_init(struct wined3d_texture *texture, const struct wined
     wined3d_resource_update_draw_binding(&texture->resource);
 
     texture->texture_ops = texture_ops;
+    texture->shared = !!(flags & WINED3D_TEXTURE_CREATE_SHARED);
 
     texture->layer_count = layer_count;
     texture->level_count = level_count;
@@ -1797,6 +1798,204 @@ HRESULT CDECL wined3d_texture_get_sub_resource_desc(const struct wined3d_texture
     desc->size = texture->sub_resources[sub_resource_idx].size;
 
     return WINED3D_OK;
+}
+
+enum wined3d_keyed_mutex_operation
+{
+    WINED3D_KEYED_MUTEX_ACQUIRE,
+    WINED3D_KEYED_MUTEX_RELEASE,
+    WINED3D_KEYED_MUTEX_DESTROY,
+};
+
+struct wined3d_keyed_mutex_query
+{
+    struct wined3d_texture *texture;
+    D3DKMT_HANDLE mutex, shared_mutex;
+    UINT64 key;
+    DWORD timeout;
+    enum wined3d_keyed_mutex_operation operation;
+    HRESULT hr;
+};
+
+static struct wined3d_texture *wined3d_cs_find_keyed_mutex_owner(struct wined3d_cs *cs,
+        D3DKMT_HANDLE shared_mutex)
+{
+    struct wined3d_texture *texture;
+
+    LIST_FOR_EACH_ENTRY(texture, &cs->keyed_mutexes, struct wined3d_texture, keyed_mutex_entry)
+    {
+        if (texture->shared_keyed_mutex == shared_mutex) return texture;
+    }
+    return NULL;
+}
+
+static void wined3d_texture_keyed_mutex_cs(void *object)
+{
+    struct wined3d_keyed_mutex_query *query = object;
+    struct wined3d_texture *texture = query->texture;
+    struct wined3d_cs *cs = texture->resource.device->cs;
+    D3DKMT_ACQUIREKEYEDMUTEX acquire = {0};
+    D3DKMT_RELEASEKEYEDMUTEX release = {0};
+    struct wined3d_context *context;
+    LARGE_INTEGER timeout;
+    NTSTATUS status;
+    HANDLE handle;
+    unsigned int i;
+
+    if (query->operation == WINED3D_KEYED_MUTEX_DESTROY)
+    {
+        D3DKMT_DESTROYKEYEDMUTEX destroy = {0};
+
+        if (texture->keyed_mutex_owned) list_remove(&texture->keyed_mutex_entry);
+        destroy.hKeyedMutex = query->mutex;
+        D3DKMTDestroyKeyedMutex(&destroy);
+        texture->keyed_mutex_owned = false;
+        query->hr = S_OK;
+        return;
+    }
+    if (!texture->resource.device->cs->thread || !texture->shared
+            || !texture->texture_ops->texture_get_shared_handle)
+    {
+        query->hr = E_NOTIMPL;
+        return;
+    }
+    release.hKeyedMutex = acquire.hKeyedMutex = query->mutex;
+    release.Key = acquire.Key = query->key;
+    if (query->operation == WINED3D_KEYED_MUTEX_ACQUIRE)
+    {
+        if (wined3d_cs_find_keyed_mutex_owner(cs, query->shared_mutex))
+        {
+            query->hr = E_FAIL;
+            return;
+        }
+        timeout.QuadPart = -(LONGLONG)query->timeout * 10000;
+        acquire.pTimeout = query->timeout == INFINITE ? NULL : &timeout;
+        status = D3DKMTAcquireKeyedMutex(&acquire);
+        if (status)
+        {
+            query->hr = status == STATUS_TIMEOUT ? WAIT_TIMEOUT
+                    : status == STATUS_ABANDONED ? WAIT_ABANDONED : E_FAIL;
+            return;
+        }
+        context = context_acquire(texture->resource.device, NULL, 0);
+        if (!wined3d_texture_load_location(texture, 0, context, WINED3D_LOCATION_TEXTURE_RGB)
+                || !texture->texture_ops->texture_prepare_location(texture, 0, context, WINED3D_LOCATION_TEXTURE_RGB)
+                || (texture->texture_ops->texture_acquire_shared
+                && !texture->texture_ops->texture_acquire_shared(texture, context)))
+        {
+            context_release(context);
+            D3DKMTReleaseKeyedMutex(&release);
+            query->hr = E_FAIL;
+            return;
+        }
+        for (i = 0; i < texture->level_count * texture->layer_count; ++i)
+        {
+            wined3d_texture_validate_location(texture, i, WINED3D_LOCATION_TEXTURE_RGB);
+            wined3d_texture_invalidate_location(texture, i, ~WINED3D_LOCATION_TEXTURE_RGB);
+        }
+        context_release(context);
+        texture->keyed_mutex = query->mutex;
+        texture->shared_keyed_mutex = query->shared_mutex;
+        texture->keyed_mutex_owned = true;
+        list_add_tail(&cs->keyed_mutexes, &texture->keyed_mutex_entry);
+        query->hr = S_OK;
+    }
+    else
+    {
+        if (!(texture = wined3d_cs_find_keyed_mutex_owner(cs, query->shared_mutex)))
+        {
+            query->hr = E_FAIL;
+            return;
+        }
+        if (FAILED(query->hr = texture->texture_ops->texture_get_shared_handle(texture, &handle))) return;
+        release.hKeyedMutex = texture->keyed_mutex;
+        status = D3DKMTReleaseKeyedMutex(&release);
+        query->hr = status ? E_FAIL : S_OK;
+        if (!status)
+        {
+            list_remove(&texture->keyed_mutex_entry);
+            texture->keyed_mutex_owned = false;
+        }
+    }
+}
+
+HRESULT CDECL wined3d_texture_acquire_keyed_mutex(struct wined3d_texture *texture,
+        unsigned int mutex, unsigned int shared_mutex, UINT64 key, DWORD timeout)
+{
+    struct wined3d_keyed_mutex_query query = {texture, mutex, shared_mutex, key, timeout, WINED3D_KEYED_MUTEX_ACQUIRE, E_FAIL};
+    struct wined3d_cs *cs = texture->resource.device->cs;
+
+    wined3d_cs_init_object(cs, wined3d_texture_keyed_mutex_cs, &query);
+    wined3d_cs_finish(cs, WINED3D_CS_QUEUE_DEFAULT);
+    return query.hr;
+}
+
+HRESULT CDECL wined3d_texture_release_keyed_mutex(struct wined3d_texture *texture,
+        unsigned int mutex, unsigned int shared_mutex, UINT64 key)
+{
+    struct wined3d_keyed_mutex_query query = {texture, mutex, shared_mutex, key, 0, WINED3D_KEYED_MUTEX_RELEASE, E_FAIL};
+    struct wined3d_cs *cs = texture->resource.device->cs;
+
+    wined3d_cs_init_object(cs, wined3d_texture_keyed_mutex_cs, &query);
+    wined3d_cs_finish(cs, WINED3D_CS_QUEUE_DEFAULT);
+    return query.hr;
+}
+
+void CDECL wined3d_texture_destroy_keyed_mutex(struct wined3d_texture *texture, unsigned int mutex)
+{
+    struct wined3d_keyed_mutex_query query = {texture, mutex, 0, 0, 0, WINED3D_KEYED_MUTEX_DESTROY, E_FAIL};
+    struct wined3d_cs *cs = texture->resource.device->cs;
+
+    wined3d_cs_init_object(cs, wined3d_texture_keyed_mutex_cs, &query);
+    wined3d_cs_finish(cs, WINED3D_CS_QUEUE_DEFAULT);
+}
+
+struct wined3d_shared_handle_query
+{
+    struct wined3d_texture *texture;
+    HANDLE handle;
+    HRESULT hr;
+};
+
+static void wined3d_texture_query_shared_handle(void *object)
+{
+    struct wined3d_shared_handle_query *query = object;
+
+    query->hr = query->texture->texture_ops->texture_get_shared_handle(query->texture, &query->handle);
+}
+
+static void wined3d_texture_import_shared_handle(void *object)
+{
+    struct wined3d_shared_handle_query *query = object;
+
+    query->hr = query->texture->texture_ops->texture_open_shared_handle(query->texture, query->handle);
+}
+
+HRESULT CDECL wined3d_texture_open_shared_handle(struct wined3d_texture *texture, HANDLE handle)
+{
+    struct wined3d_shared_handle_query query = {texture, handle, E_NOTIMPL};
+    struct wined3d_cs *cs = texture->resource.device->cs;
+
+    if (!handle || !texture->shared) return WINED3DERR_INVALIDCALL;
+    if (!texture->texture_ops->texture_open_shared_handle) return E_NOTIMPL;
+    wined3d_cs_init_object(cs, wined3d_texture_import_shared_handle, &query);
+    wined3d_cs_finish(cs, WINED3D_CS_QUEUE_DEFAULT);
+    return query.hr;
+}
+
+HRESULT CDECL wined3d_texture_get_shared_handle(struct wined3d_texture *texture, HANDLE *handle)
+{
+    struct wined3d_shared_handle_query query = {texture, NULL, E_NOTIMPL};
+    struct wined3d_cs *cs = texture->resource.device->cs;
+
+    if (!handle) return E_INVALIDARG;
+    *handle = NULL;
+    if (!texture->shared) return WINED3DERR_INVALIDCALL;
+    if (!texture->texture_ops->texture_get_shared_handle) return E_NOTIMPL;
+    wined3d_cs_init_object(cs, wined3d_texture_query_shared_handle, &query);
+    wined3d_cs_finish(cs, WINED3D_CS_QUEUE_DEFAULT);
+    if (SUCCEEDED(query.hr)) *handle = query.handle;
+    return query.hr;
 }
 
 HRESULT CDECL wined3d_texture_create(struct wined3d_device *device, const struct wined3d_resource_desc *desc,
@@ -2231,6 +2430,9 @@ static void wined3d_texture_no3d_unload_location(struct wined3d_texture *texture
 
 static const struct wined3d_texture_ops wined3d_texture_no3d_ops =
 {
+    NULL,
+    NULL,
+    NULL,
     wined3d_texture_no3d_prepare_location,
     wined3d_texture_no3d_load_location,
     wined3d_texture_no3d_unload_location,

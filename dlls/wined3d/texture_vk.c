@@ -24,6 +24,10 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 WINE_DECLARE_DEBUG_CHANNEL(d3d_perf);
+WINE_DECLARE_DEBUG_CHANNEL(d3d_shared);
+
+static void wined3d_texture_vk_shared_barrier(struct wined3d_texture_vk *texture_vk,
+        struct wined3d_context_vk *context_vk, bool acquire);
 
 void wined3d_vk_swizzle_from_color_fixup(VkComponentMapping *mapping, struct color_fixup_desc fixup)
 {
@@ -318,6 +322,9 @@ static void wined3d_texture_vk_upload_data(struct wined3d_context *context,
         return;
     }
 
+    if (wined3d_texture_vk(dst_texture)->externally_owned)
+        wined3d_texture_vk_shared_barrier(wined3d_texture_vk(dst_texture), wined3d_context_vk(context), true);
+
     aspect_mask = vk_aspect_mask_from_format(dst_texture->resource.format);
     if (wined3d_popcount(aspect_mask) > 1)
     {
@@ -574,6 +581,8 @@ static void wined3d_texture_vk_download_data(struct wined3d_context *context,
         return;
     }
 
+    if (wined3d_texture_vk(src_texture)->externally_owned)
+        wined3d_texture_vk_shared_barrier(wined3d_texture_vk(src_texture), wined3d_context_vk(context), true);
     src_level = src_sub_resource_idx % src_texture->level_count;
     src_width = wined3d_texture_get_level_width(src_texture, src_level);
     src_height = wined3d_texture_get_level_height(src_texture, src_level);
@@ -682,6 +691,9 @@ static bool wined3d_texture_vk_clear(struct wined3d_texture_vk *texture_vk,
         return false;
     }
 
+    if (texture_vk->externally_owned)
+        wined3d_texture_vk_shared_barrier(texture_vk, context_vk, true);
+
     aspect_mask = vk_aspect_mask_from_format(format);
 
     vk_range.aspectMask = aspect_mask;
@@ -782,6 +794,33 @@ static BOOL wined3d_texture_vk_load_sysmem(struct wined3d_texture_vk *texture_vk
     return TRUE;
 }
 
+static void wined3d_texture_vk_shared_barrier(struct wined3d_texture_vk *texture_vk,
+        struct wined3d_context_vk *context_vk, bool acquire)
+{
+    const struct wined3d_vk_info *vk_info = context_vk->vk_info;
+    struct wined3d_device_vk *device_vk = wined3d_device_vk(context_vk->c.device);
+    VkImageMemoryBarrier barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    VkCommandBuffer command_buffer;
+
+    command_buffer = wined3d_context_vk_get_command_buffer(context_vk);
+    wined3d_context_vk_end_current_render_pass(context_vk);
+    barrier.image = texture_vk->image.vk_image;
+    barrier.oldLayout = texture_vk->layout;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcQueueFamilyIndex = acquire ? VK_QUEUE_FAMILY_EXTERNAL : device_vk->graphics_queue.vk_queue_family_index;
+    barrier.dstQueueFamilyIndex = acquire ? device_vk->graphics_queue.vk_queue_family_index : VK_QUEUE_FAMILY_EXTERNAL;
+    barrier.srcAccessMask = acquire ? 0 : VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier.dstAccessMask = acquire ? VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT : 0;
+    barrier.subresourceRange.aspectMask = vk_aspect_mask_from_format(texture_vk->t.resource.format);
+    barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+    VK_CALL(vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, 1, &barrier));
+    texture_vk->layout = VK_IMAGE_LAYOUT_GENERAL;
+    texture_vk->externally_owned = !acquire;
+    TRACE_(d3d_shared)("texture %p, acquire %u.\n", texture_vk, acquire);
+}
+
 BOOL wined3d_texture_vk_prepare_texture(struct wined3d_texture_vk *texture_vk,
         struct wined3d_context_vk *context_vk)
 {
@@ -793,9 +832,13 @@ BOOL wined3d_texture_vk_prepare_texture(struct wined3d_texture_vk *texture_vk,
     VkImageType vk_image_type;
     VkImageCreateInfo desc;
     unsigned int flags = 0;
+    VkExternalMemoryImageCreateInfo external = {VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
 
     if (texture_vk->t.flags & WINED3D_TEXTURE_RGB_ALLOCATED)
         return TRUE;
+    if (texture_vk->t.shared && !context_vk->vk_info->supported[WINED3D_VK_KHR_EXTERNAL_MEMORY_WIN32])
+        return FALSE;
+    external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_KMT_BIT;
 
     if (!(vk_command_buffer = wined3d_context_vk_get_command_buffer(context_vk)))
     {
@@ -868,7 +911,8 @@ BOOL wined3d_texture_vk_prepare_texture(struct wined3d_texture_vk *texture_vk,
     desc.samples = max(1, wined3d_resource_get_sample_count(resource));
     desc.mipLevels = texture_vk->t.level_count;
     desc.arrayLayers = texture_vk->t.layer_count;
-    if (!wined3d_context_vk_create_image(context_vk, &desc, &texture_vk->image))
+    desc.pNext = texture_vk->t.shared ? &external : NULL;
+    if (!wined3d_context_vk_create_image(context_vk, &desc, texture_vk->import_handle, &texture_vk->image))
         return FALSE;
 
     /* We can't use a zero src access mask without synchronization2. Set the last-used bind mask to something
@@ -882,11 +926,19 @@ BOOL wined3d_texture_vk_prepare_texture(struct wined3d_texture_vk *texture_vk,
     vk_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
     wined3d_context_vk_reference_texture(context_vk, texture_vk);
-    wined3d_context_vk_image_barrier(context_vk, vk_command_buffer,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-            0, 0,
-            VK_IMAGE_LAYOUT_UNDEFINED, texture_vk->layout,
-            texture_vk->image.vk_image, &vk_range);
+    if (texture_vk->import_handle)
+    {
+        texture_vk->layout = VK_IMAGE_LAYOUT_GENERAL;
+        texture_vk->externally_owned = true;
+    }
+    else
+    {
+        wined3d_context_vk_image_barrier(context_vk, vk_command_buffer,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                0, 0,
+                VK_IMAGE_LAYOUT_UNDEFINED, texture_vk->layout,
+                texture_vk->image.vk_image, &vk_range);
+    }
 
     texture_vk->t.flags |= WINED3D_TEXTURE_RGB_ALLOCATED;
 
@@ -988,7 +1040,11 @@ static void wined3d_texture_vk_unload_location(struct wined3d_texture *texture,
             }
 
             if (texture_vk->image.vk_image)
+            {
                 wined3d_context_vk_destroy_image(context_vk, &texture_vk->image);
+                texture_vk->shared_handle = NULL;
+                texture_vk->externally_owned = false;
+            }
             break;
 
         case WINED3D_LOCATION_BUFFER:
@@ -1019,8 +1075,75 @@ static void wined3d_texture_vk_unload_location(struct wined3d_texture *texture,
     }
 }
 
+static HRESULT wined3d_texture_vk_get_shared_handle(struct wined3d_texture *texture, HANDLE *handle)
+{
+    struct wined3d_texture_vk *texture_vk = wined3d_texture_vk(texture);
+    struct wined3d_device_vk *device_vk = wined3d_device_vk(texture->resource.device);
+    struct wined3d_context_vk *context_vk = &device_vk->context_vk;
+    const struct wined3d_vk_info *vk_info = &device_vk->vk_info;
+    VkMemoryGetWin32HandleInfoKHR info = {VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
+    VkResult vr;
+
+    TRACE("texture %p, handle %p, export function %p.\n", texture, handle, vk_info->vk_ops.vkGetMemoryWin32HandleKHR);
+
+    if (!vk_info->vk_ops.vkGetMemoryWin32HandleKHR) return E_NOTIMPL;
+    if (!wined3d_texture_load_location(texture, 0, &context_vk->c, WINED3D_LOCATION_TEXTURE_RGB)) return E_FAIL;
+    if (!texture_vk->externally_owned)
+    {
+        wined3d_texture_vk_shared_barrier(texture_vk, context_vk, false);
+        wined3d_context_vk_submit_command_buffer(context_vk, 0, NULL, NULL, 0, NULL);
+        if ((vr = VK_CALL(vkQueueWaitIdle(device_vk->graphics_queue.vk_queue))) < 0) return E_FAIL;
+    }
+    if (!texture_vk->shared_handle)
+    {
+        info.memory = texture_vk->image.vk_memory;
+        info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_KMT_BIT;
+        if ((vr = VK_CALL(vkGetMemoryWin32HandleKHR(device_vk->vk_device, &info, &texture_vk->shared_handle))) < 0)
+            return E_FAIL;
+    }
+    wined3d_texture_validate_location(texture, 0, WINED3D_LOCATION_TEXTURE_RGB);
+    wined3d_texture_invalidate_location(texture, 0, ~WINED3D_LOCATION_TEXTURE_RGB);
+    *handle = texture_vk->shared_handle;
+    return S_OK;
+}
+
+static HRESULT wined3d_texture_vk_open_shared_handle(struct wined3d_texture *texture, HANDLE handle)
+{
+    struct wined3d_texture_vk *texture_vk = wined3d_texture_vk(texture);
+    struct wined3d_device_vk *device_vk = wined3d_device_vk(texture->resource.device);
+    struct wined3d_context_vk *context_vk = &device_vk->context_vk;
+    unsigned int i;
+
+    if (texture_vk->image.vk_image) return WINED3DERR_INVALIDCALL;
+    texture_vk->import_handle = handle;
+    if (!wined3d_texture_vk_prepare_texture(texture_vk, context_vk))
+    {
+        texture_vk->import_handle = NULL;
+        return E_FAIL;
+    }
+    texture_vk->shared_handle = handle;
+    for (i = 0; i < texture->level_count * texture->layer_count; ++i)
+    {
+        wined3d_texture_validate_location(texture, i, WINED3D_LOCATION_TEXTURE_RGB);
+        wined3d_texture_invalidate_location(texture, i, ~WINED3D_LOCATION_TEXTURE_RGB);
+    }
+    return S_OK;
+}
+
+static BOOL wined3d_texture_vk_acquire_shared(struct wined3d_texture *texture, struct wined3d_context *context)
+{
+    struct wined3d_texture_vk *texture_vk = wined3d_texture_vk(texture);
+
+    if (texture_vk->externally_owned)
+        wined3d_texture_vk_shared_barrier(texture_vk, wined3d_context_vk(context), true);
+    return TRUE;
+}
+
 static const struct wined3d_texture_ops wined3d_texture_vk_ops =
 {
+    wined3d_texture_vk_get_shared_handle,
+    wined3d_texture_vk_open_shared_handle,
+    wined3d_texture_vk_acquire_shared,
     wined3d_texture_vk_prepare_location,
     wined3d_texture_vk_load_location,
     wined3d_texture_vk_unload_location,
@@ -1077,6 +1200,7 @@ void wined3d_texture_vk_barrier(struct wined3d_texture_vk *texture_vk,
     TRACE("texture_vk %p, context_vk %p, bind_mask %s.\n",
             texture_vk, context_vk, wined3d_debug_bind_flags(bind_mask));
 
+    if (texture_vk->externally_owned) wined3d_texture_vk_shared_barrier(texture_vk, context_vk, true);
     new_layout = wined3d_layout_from_bind_mask(texture_vk, bind_mask);
 
     /* A layout transition is potentially a read-write operation, so even if we
@@ -1655,6 +1779,11 @@ static DWORD vk_blitter_blit(struct wined3d_blitter *blitter, enum wined3d_blit_
         goto next;
     }
 
+    if (src_texture_vk->externally_owned)
+        wined3d_texture_vk_shared_barrier(src_texture_vk, context_vk, true);
+    if (dst_texture_vk->externally_owned)
+        wined3d_texture_vk_shared_barrier(dst_texture_vk, context_vk, true);
+
     if (src_texture_vk->layout == VK_IMAGE_LAYOUT_GENERAL)
         src_layout = VK_IMAGE_LAYOUT_GENERAL;
     else
@@ -1742,7 +1871,7 @@ static DWORD vk_blitter_blit(struct wined3d_blitter *blitter, enum wined3d_blit_
             wined3d_init_vk_image_info(&image_desc, vk_image_type, usage, vk_format,
                     resolve_region.extent.width, resolve_region.extent.height, 1);
             image_desc.samples = src_sample_count;
-            if (!wined3d_context_vk_create_image(context_vk, &image_desc, &src_image))
+            if (!wined3d_context_vk_create_image(context_vk, &image_desc, NULL, &src_image))
                 goto barrier_next;
 
             wined3d_context_vk_reference_image(context_vk, &src_image);
@@ -1814,7 +1943,7 @@ static DWORD vk_blitter_blit(struct wined3d_blitter *blitter, enum wined3d_blit_
 
             wined3d_init_vk_image_info(&image_desc, vk_image_type, usage, vk_format,
                     resolve_region.extent.width, resolve_region.extent.height, 1);
-            if (!wined3d_context_vk_create_image(context_vk, &image_desc, &dst_image))
+            if (!wined3d_context_vk_create_image(context_vk, &image_desc, NULL, &dst_image))
                 goto barrier_next;
 
             wined3d_context_vk_reference_image(context_vk, &dst_image);

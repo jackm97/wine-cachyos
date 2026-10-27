@@ -3371,6 +3371,9 @@ const char *wined3d_debug_location(uint32_t location);
 
 struct wined3d_texture_ops
 {
+    HRESULT (*texture_get_shared_handle)(struct wined3d_texture *texture, HANDLE *handle);
+    HRESULT (*texture_open_shared_handle)(struct wined3d_texture *texture, HANDLE handle);
+    BOOL (*texture_acquire_shared)(struct wined3d_texture *texture, struct wined3d_context *context);
     BOOL (*texture_prepare_location)(struct wined3d_texture *texture, unsigned int sub_resource_idx,
             struct wined3d_context *context, unsigned int location);
     BOOL (*texture_load_location)(struct wined3d_texture *texture, unsigned int sub_resource_idx,
@@ -3407,6 +3410,10 @@ struct wined3d_texture
 {
     struct wined3d_resource resource;
     const struct wined3d_texture_ops *texture_ops;
+    bool shared;
+    bool keyed_mutex_owned;
+    D3DKMT_HANDLE keyed_mutex, shared_keyed_mutex;
+    struct list keyed_mutex_entry;
     struct wined3d_swapchain *swapchain;
     UINT layer_count;
     unsigned int level_count;
@@ -3711,6 +3718,7 @@ struct wined3d_cs
     size_t data_size, start, end;
     void *data;
     struct list query_poll_list;
+    struct list keyed_mutexes;
     BOOL queries_flushed;
 
     HANDLE event;
@@ -5115,5 +5123,13 @@ static inline bool wined3d_map_persistent(void)
 #define WINED3D_OPENGL_WINDOW_CLASS_NAME "WineD3D_OpenGL"
 
 extern CRITICAL_SECTION wined3d_command_cs;
+
+struct wined3d_shared_allocator_vk;
+struct wined3d_shared_image_vk;
+struct wined3d_shared_allocator_vk *wined3d_shared_allocator_vk_create(const GUID *device_uuid, const GUID *driver_uuid);
+void wined3d_shared_allocator_vk_destroy(struct wined3d_shared_allocator_vk *allocator);
+struct wined3d_shared_image_vk *wined3d_shared_image_vk_create(struct wined3d_shared_allocator_vk *allocator,
+        unsigned int width, unsigned int height, enum wined3d_format_id format, HANDLE *handle);
+void wined3d_shared_image_vk_destroy(struct wined3d_shared_image_vk *image);
 
 #endif

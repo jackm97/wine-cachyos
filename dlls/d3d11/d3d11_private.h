@@ -62,7 +62,7 @@ DWORD wined3d_map_flags_from_d3d10_map_type(D3D10_MAP map_type);
 DWORD wined3d_clear_flags_from_d3d11_clear_flags(UINT clear_flags);
 unsigned int wined3d_access_from_d3d11(D3D11_USAGE usage, UINT cpu_access);
 HRESULT d3d_device_create_dxgi_resource(IUnknown *device, struct wined3d_resource *wined3d_resource,
-        IUnknown *outer, BOOL needs_surface, IUnknown **dxgi_resource);
+        IUnknown *outer, BOOL needs_surface, const DXGI_SHARED_RESOURCE *shared_resource, IUnknown **dxgi_resource);
 
 enum D3D11_USAGE d3d11_usage_from_d3d10_usage(enum D3D10_USAGE usage);
 enum D3D10_USAGE d3d10_usage_from_d3d11_usage(enum D3D11_USAGE usage);
@@ -152,7 +152,7 @@ static inline struct d3d_texture2d *impl_from_ID3D11Texture2D(ID3D11Texture2D *i
 
 HRESULT d3d_texture2d_create(struct d3d_device *device, const D3D11_TEXTURE2D_DESC *desc,
         struct wined3d_texture *wined3d_texture,
-        const D3D11_SUBRESOURCE_DATA *data, struct d3d_texture2d **out);
+        const D3D11_SUBRESOURCE_DATA *data, const DXGI_SHARED_RESOURCE *shared_resource, struct d3d_texture2d **out);
 struct d3d_texture2d *unsafe_impl_from_ID3D11Texture2D(ID3D11Texture2D *iface);
 struct d3d_texture2d *unsafe_impl_from_ID3D10Texture2D(ID3D10Texture2D *iface);
 

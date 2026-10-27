@@ -2391,6 +2391,9 @@ void wined3d_unordered_access_view_vk_clear(struct wined3d_unordered_access_view
     vk_command_buffer = wined3d_context_vk_get_command_buffer(context_vk);
     wined3d_context_vk_end_current_render_pass(context_vk);
 
+    if (texture_vk && texture_vk->externally_owned)
+        wined3d_resource_vk_barrier(resource, context_vk, WINED3D_BIND_UNORDERED_ACCESS);
+
     wined3d_context_vk_reference_unordered_access_view(context_vk, view_vk);
     wined3d_context_vk_reference_bo(context_vk, &constants_bo);
     wined3d_context_vk_destroy_bo(context_vk, &constants_bo);

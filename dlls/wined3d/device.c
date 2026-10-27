@@ -810,7 +810,7 @@ static bool wined3d_null_image_vk_init(struct wined3d_image_vk *image, struct wi
     desc.arrayLayers = layer_count;
     if (type == VK_IMAGE_TYPE_2D && layer_count >= 6)
         desc.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-    if (!wined3d_context_vk_create_image(context_vk, &desc, image))
+    if (!wined3d_context_vk_create_image(context_vk, &desc, NULL, image))
         return false;
 
     wined3d_context_vk_reference_image(context_vk, image);

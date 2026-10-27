@@ -389,7 +389,7 @@ static bool wined3d_decoder_vk_create_image(struct wined3d_decoder_vk *decoder_v
             decoder_vk->d.width, decoder_vk->d.height, 1);
     image_desc.arrayLayers = decoder_vk->layered_dpb ? ARRAY_SIZE(decoder_vk->images) : 1;
     image_desc.pNext = &profile_list;
-    if (!wined3d_context_vk_create_image(context_vk, &image_desc, image))
+    if (!wined3d_context_vk_create_image(context_vk, &image_desc, NULL, image))
     {
         ERR("Failed to create output image.\n");
         return false;

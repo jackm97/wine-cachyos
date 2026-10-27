@@ -18,6 +18,7 @@
  */
 
 #include "dxgi_private.h"
+#include "wine/dxgi_shared.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dxgi);
 
@@ -34,6 +35,13 @@ static HRESULT STDMETHODCALLTYPE dxgi_resource_inner_QueryInterface(IUnknown *if
     bool is_subresource = !!resource->parent_resource;
 
     TRACE("iface %p, riid %s, out %p.\n", iface, debugstr_guid(riid), out);
+
+    if (IsEqualGUID(riid, &IID_IDXGIKeyedMutex) && resource->keyed_mutex)
+    {
+        *out = &resource->IDXGIKeyedMutex_iface;
+        IDXGIKeyedMutex_AddRef(&resource->IDXGIKeyedMutex_iface);
+        return S_OK;
+    }
 
     if ((IsEqualGUID(riid, &IID_IDXGISurface2)
             || IsEqualGUID(riid, &IID_IDXGISurface1)
@@ -81,6 +89,9 @@ static ULONG STDMETHODCALLTYPE dxgi_resource_inner_Release(IUnknown *iface)
     {
         if (resource->parent_resource)
             IDXGIResource1_Release(resource->parent_resource);
+        if (resource->keyed_mutex)
+            wined3d_texture_destroy_keyed_mutex(wined3d_texture_from_resource(resource->wined3d_resource),
+                    resource->keyed_mutex);
         wined3d_private_store_cleanup(&resource->private_store);
         free(resource);
     }
@@ -383,11 +394,98 @@ static HRESULT STDMETHODCALLTYPE dxgi_resource_GetDevice(IDXGIResource1 *iface, 
 }
 
 /* IDXGIResource methods */
+static HRESULT dxgi_resource_publish_shared_texture(struct dxgi_resource *resource, HANDLE handle)
+{
+    struct dxgi_shared_texture_metadata metadata = {0}, observed = {0};
+    D3DKMT_OPENADAPTERFROMLUID open_adapter = {0};
+    D3DKMT_CREATEDEVICE create_device = {{0}};
+    D3DKMT_QUERYRESOURCEINFO query = {0};
+    D3DKMT_OPENRESOURCE open = {0};
+    D3DDDI_OPENALLOCATIONINFO allocation = {0};
+    D3DKMT_DESTROYALLOCATION destroy = {0};
+    D3DKMT_DESTROYDEVICE destroy_device = {0};
+    D3DKMT_CLOSEADAPTER close_adapter = {0};
+    D3DKMT_ESCAPE escape = {0};
+    ID3D11Texture2D *texture;
+    DXGI_ADAPTER_DESC adapter_desc;
+    IDXGIAdapter *adapter;
+    HRESULT hr;
+    NTSTATUS status;
+
+    if (FAILED(hr = IUnknown_QueryInterface(resource->outer_unknown, &IID_ID3D11Texture2D, (void **)&texture)))
+        return hr;
+    ID3D11Texture2D_GetDesc(texture, &metadata.texture);
+    ID3D11Texture2D_Release(texture);
+    metadata.size = sizeof(metadata);
+    metadata.version = 1;
+    metadata.width = metadata.texture.Width;
+    metadata.height = metadata.texture.Height;
+    metadata.format = metadata.texture.Format;
+    metadata.dimension = D3D11_RESOURCE_DIMENSION_TEXTURE2D;
+    metadata.keyed_mutex = !!resource->keyed_mutex;
+    metadata.mutex_handle = resource->shared_keyed_mutex;
+
+    if (FAILED(hr = IDXGIDevice_GetAdapter(resource->device, &adapter))) return hr;
+    hr = IDXGIAdapter_GetDesc(adapter, &adapter_desc);
+    IDXGIAdapter_Release(adapter);
+    if (FAILED(hr)) return hr;
+    open_adapter.AdapterLuid = adapter_desc.AdapterLuid;
+    hr = E_FAIL;
+    if ((status = D3DKMTOpenAdapterFromLuid(&open_adapter))) goto done;
+    close_adapter.hAdapter = open_adapter.hAdapter;
+    create_device.hAdapter = open_adapter.hAdapter;
+    if ((status = D3DKMTCreateDevice(&create_device))) goto done;
+    destroy_device.hDevice = create_device.hDevice;
+    query.hDevice = create_device.hDevice;
+    query.hGlobalShare = (D3DKMT_HANDLE)(ULONG_PTR)handle;
+    if ((status = D3DKMTQueryResourceInfo(&query))) goto done;
+    if (query.PrivateRuntimeDataSize && query.PrivateRuntimeDataSize != sizeof(metadata)) goto done;
+    open.hDevice = create_device.hDevice;
+    open.hGlobalShare = query.hGlobalShare;
+    open.NumAllocations = 1;
+    open.pOpenAllocationInfo = &allocation;
+    open.pPrivateRuntimeData = &observed;
+    open.PrivateRuntimeDataSize = query.PrivateRuntimeDataSize;
+    if ((status = D3DKMTOpenResource(&open))) goto done;
+    destroy.hDevice = create_device.hDevice;
+    destroy.hResource = open.hResource;
+    if (query.PrivateRuntimeDataSize)
+    {
+        if (!memcmp(&metadata, &observed, sizeof(metadata))) hr = S_OK;
+        goto done;
+    }
+    escape.hAdapter = open_adapter.hAdapter;
+    escape.hDevice = create_device.hDevice;
+    escape.hContext = open.hResource;
+    escape.Type = D3DKMT_ESCAPE_UPDATE_RESOURCE_WINE;
+    escape.pPrivateDriverData = &metadata;
+    escape.PrivateDriverDataSize = sizeof(metadata);
+    if (!(status = D3DKMTEscape(&escape))) hr = S_OK;
+done:
+    if (destroy.hResource) D3DKMTDestroyAllocation(&destroy);
+    if (destroy_device.hDevice) D3DKMTDestroyDevice(&destroy_device);
+    if (close_adapter.hAdapter) D3DKMTCloseAdapter(&close_adapter);
+    if (FAILED(hr)) WARN("Failed to publish shared texture descriptor, status %#lx.\n", status);
+    return hr;
+}
+
 static HRESULT STDMETHODCALLTYPE dxgi_resource_GetSharedHandle(IDXGIResource1 *iface, HANDLE *shared_handle)
 {
-    FIXME("iface %p, shared_handle %p stub!\n", iface, shared_handle);
+    struct dxgi_resource *resource = impl_from_IDXGIResource1(iface);
+    struct wined3d_resource_desc desc;
+    HANDLE handle;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    if (!shared_handle) return E_INVALIDARG;
+    *shared_handle = NULL;
+    wined3d_mutex_lock();
+    wined3d_resource_get_desc(resource->wined3d_resource, &desc);
+    if (desc.resource_type != WINED3D_RTYPE_TEXTURE_2D) hr = DXGI_ERROR_INVALID_CALL;
+    else hr = wined3d_texture_get_shared_handle(wined3d_texture_from_resource(resource->wined3d_resource), &handle);
+    wined3d_mutex_unlock();
+    if (SUCCEEDED(hr) && SUCCEEDED(hr = dxgi_resource_publish_shared_texture(resource, handle)))
+        *shared_handle = handle;
+    return hr == WINED3DERR_INVALIDCALL ? DXGI_ERROR_INVALID_CALL : hr;
 }
 
 static HRESULT STDMETHODCALLTYPE dxgi_resource_GetUsage(IDXGIResource1 *iface, DXGI_USAGE *usage)
@@ -464,7 +562,7 @@ static HRESULT STDMETHODCALLTYPE dxgi_resource_CreateSubresourceSurface(IDXGIRes
     }
 
     if (FAILED(hr = dxgi_resource_init(subresource, resource->device, NULL, TRUE,
-            resource->wined3d_resource, iface, index)))
+            resource->wined3d_resource, iface, index, NULL)))
     {
         WARN("Failed to initialise resource, hr %#lx.\n", hr);
         free(subresource);
@@ -515,9 +613,148 @@ static const struct IUnknownVtbl dxgi_resource_inner_unknown_vtbl =
     dxgi_resource_inner_Release,
 };
 
+static inline struct dxgi_resource *impl_from_IDXGIKeyedMutex(IDXGIKeyedMutex *iface)
+{
+    return CONTAINING_RECORD(iface, struct dxgi_resource, IDXGIKeyedMutex_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_keyed_mutex_QueryInterface(IDXGIKeyedMutex *iface, REFIID iid, void **out)
+{
+    return IDXGIResource1_QueryInterface(&impl_from_IDXGIKeyedMutex(iface)->IDXGIResource1_iface, iid, out);
+}
+
+static ULONG STDMETHODCALLTYPE dxgi_keyed_mutex_AddRef(IDXGIKeyedMutex *iface)
+{
+    return IDXGIResource1_AddRef(&impl_from_IDXGIKeyedMutex(iface)->IDXGIResource1_iface);
+}
+
+static ULONG STDMETHODCALLTYPE dxgi_keyed_mutex_Release(IDXGIKeyedMutex *iface)
+{
+    return IDXGIResource1_Release(&impl_from_IDXGIKeyedMutex(iface)->IDXGIResource1_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_keyed_mutex_SetPrivateData(IDXGIKeyedMutex *iface,
+        REFGUID guid, UINT size, const void *data)
+{
+    return IDXGIResource1_SetPrivateData(&impl_from_IDXGIKeyedMutex(iface)->IDXGIResource1_iface, guid, size, data);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_keyed_mutex_SetPrivateDataInterface(IDXGIKeyedMutex *iface,
+        REFGUID guid, const IUnknown *object)
+{
+    return IDXGIResource1_SetPrivateDataInterface(&impl_from_IDXGIKeyedMutex(iface)->IDXGIResource1_iface, guid, object);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_keyed_mutex_GetPrivateData(IDXGIKeyedMutex *iface,
+        REFGUID guid, UINT *size, void *data)
+{
+    return IDXGIResource1_GetPrivateData(&impl_from_IDXGIKeyedMutex(iface)->IDXGIResource1_iface, guid, size, data);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_keyed_mutex_GetParent(IDXGIKeyedMutex *iface, REFIID iid, void **parent)
+{
+    return IDXGIResource1_GetParent(&impl_from_IDXGIKeyedMutex(iface)->IDXGIResource1_iface, iid, parent);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_keyed_mutex_GetDevice(IDXGIKeyedMutex *iface, REFIID iid, void **device)
+{
+    return IDXGIResource1_GetDevice(&impl_from_IDXGIKeyedMutex(iface)->IDXGIResource1_iface, iid, device);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_keyed_mutex_AcquireSync(IDXGIKeyedMutex *iface, UINT64 key, DWORD timeout)
+{
+    struct dxgi_resource *resource = impl_from_IDXGIKeyedMutex(iface);
+
+    return wined3d_texture_acquire_keyed_mutex(wined3d_texture_from_resource(resource->wined3d_resource),
+            resource->keyed_mutex, resource->shared_keyed_mutex, key, timeout);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_keyed_mutex_ReleaseSync(IDXGIKeyedMutex *iface, UINT64 key)
+{
+    struct dxgi_resource *resource = impl_from_IDXGIKeyedMutex(iface);
+
+    return wined3d_texture_release_keyed_mutex(wined3d_texture_from_resource(resource->wined3d_resource),
+            resource->keyed_mutex, resource->shared_keyed_mutex, key);
+}
+
+static const struct IDXGIKeyedMutexVtbl dxgi_keyed_mutex_vtbl =
+{
+    dxgi_keyed_mutex_QueryInterface,
+    dxgi_keyed_mutex_AddRef,
+    dxgi_keyed_mutex_Release,
+    dxgi_keyed_mutex_SetPrivateData,
+    dxgi_keyed_mutex_SetPrivateDataInterface,
+    dxgi_keyed_mutex_GetPrivateData,
+    dxgi_keyed_mutex_GetParent,
+    dxgi_keyed_mutex_GetDevice,
+    dxgi_keyed_mutex_AcquireSync,
+    dxgi_keyed_mutex_ReleaseSync,
+};
+
+static HRESULT dxgi_resource_init_keyed_mutex(struct dxgi_resource *resource, HANDLE shared_handle)
+{
+    D3DKMT_CREATEKEYEDMUTEX create = {0};
+    D3DKMT_OPENKEYEDMUTEX open_mutex = {0};
+    D3DKMT_OPENADAPTERFROMLUID adapter = {0};
+    D3DKMT_CREATEDEVICE device = {{0}};
+    D3DKMT_CLOSEADAPTER close_adapter = {0};
+    D3DKMT_DESTROYDEVICE destroy_device = {0};
+    D3DKMT_DESTROYALLOCATION destroy = {0};
+    D3DKMT_QUERYRESOURCEINFO query = {0};
+    D3DKMT_OPENRESOURCE open = {0};
+    D3DDDI_OPENALLOCATIONINFO allocation = {0};
+    struct dxgi_shared_texture_metadata metadata;
+    IDXGIAdapter *dxgi_adapter;
+    DXGI_ADAPTER_DESC desc;
+    HRESULT hr = E_FAIL;
+
+    if (!shared_handle)
+    {
+        if (D3DKMTCreateKeyedMutex(&create)) return E_FAIL;
+        resource->keyed_mutex = create.hKeyedMutex;
+        resource->shared_keyed_mutex = create.hSharedHandle;
+        return S_OK;
+    }
+    if (FAILED(IDXGIDevice_GetAdapter(resource->device, &dxgi_adapter))) return E_FAIL;
+    hr = IDXGIAdapter_GetDesc(dxgi_adapter, &desc);
+    IDXGIAdapter_Release(dxgi_adapter);
+    if (FAILED(hr)) return hr;
+    hr = E_FAIL;
+    adapter.AdapterLuid = desc.AdapterLuid;
+    if (D3DKMTOpenAdapterFromLuid(&adapter)) goto done;
+    close_adapter.hAdapter = adapter.hAdapter;
+    device.hAdapter = adapter.hAdapter;
+    if (D3DKMTCreateDevice(&device)) goto done;
+    destroy_device.hDevice = device.hDevice;
+    query.hDevice = device.hDevice;
+    query.hGlobalShare = (D3DKMT_HANDLE)(ULONG_PTR)shared_handle;
+    if (D3DKMTQueryResourceInfo(&query) || query.PrivateRuntimeDataSize != sizeof(metadata)) goto done;
+    open.hDevice = device.hDevice;
+    open.hGlobalShare = query.hGlobalShare;
+    open.NumAllocations = 1;
+    open.pOpenAllocationInfo = &allocation;
+    open.pPrivateRuntimeData = &metadata;
+    open.PrivateRuntimeDataSize = sizeof(metadata);
+    if (D3DKMTOpenResource(&open)) goto done;
+    destroy.hDevice = device.hDevice;
+    destroy.hResource = open.hResource;
+    if (metadata.size != sizeof(metadata) || metadata.version != 1 || !metadata.keyed_mutex
+            || !metadata.mutex_handle || metadata.nt_shared) goto done;
+    open_mutex.hSharedHandle = metadata.mutex_handle;
+    if (D3DKMTOpenKeyedMutex(&open_mutex)) goto done;
+    resource->keyed_mutex = open_mutex.hKeyedMutex;
+    resource->shared_keyed_mutex = metadata.mutex_handle;
+    hr = S_OK;
+done:
+    if (destroy.hResource) D3DKMTDestroyAllocation(&destroy);
+    if (destroy_device.hDevice) D3DKMTDestroyDevice(&destroy_device);
+    if (close_adapter.hAdapter) D3DKMTCloseAdapter(&close_adapter);
+    return hr;
+}
+
 HRESULT dxgi_resource_init(struct dxgi_resource *resource, IDXGIDevice *device,
         IUnknown *outer, BOOL needs_surface, struct wined3d_resource *wined3d_resource,
-        IDXGIResource1 *parent_resource, unsigned int subresource_index)
+        IDXGIResource1 *parent_resource, unsigned int subresource_index, const DXGI_SHARED_RESOURCE *shared_resource)
 {
     struct wined3d_resource_desc desc;
     bool is_subresource;
@@ -551,5 +788,24 @@ HRESULT dxgi_resource_init(struct dxgi_resource *resource, IDXGIDevice *device,
         resource->subresource_idx = 0;
     }
 
+    resource->IDXGIKeyedMutex_iface.lpVtbl = &dxgi_keyed_mutex_vtbl;
+    resource->keyed_mutex = resource->shared_keyed_mutex = 0;
+    if (!is_subresource && outer && desc.resource_type == WINED3D_RTYPE_TEXTURE_2D)
+    {
+        ID3D11Texture2D *texture;
+        D3D11_TEXTURE2D_DESC texture_desc;
+        HRESULT hr;
+
+        if (SUCCEEDED(IUnknown_QueryInterface(outer, &IID_ID3D11Texture2D, (void **)&texture)))
+        {
+            ID3D11Texture2D_GetDesc(texture, &texture_desc);
+            ID3D11Texture2D_Release(texture);
+            if (texture_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX)
+            {
+                if (FAILED(hr = dxgi_resource_init_keyed_mutex(resource,
+                        shared_resource ? shared_resource->Handle : NULL))) return hr;
+            }
+        }
+    }
     return S_OK;
 }

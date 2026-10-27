@@ -1126,6 +1126,7 @@ SOURCES = \
 	wine/dcetypes.idl \
 	wine/debug.h \
 	wine/dplaysp.h \
+	wine/dxgi_shared.h \
 	wine/epm.idl \
 	wine/exception.h \
 	wine/fil_data.idl \

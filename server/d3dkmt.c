@@ -70,7 +70,7 @@ static const struct fd_ops d3dkmt_fd_ops =
 struct keyed_wait
 {
     struct list     entry;
-    int             key;
+    unsigned __int64 key;
     int             waiters;
     struct object  *sync;
 };
@@ -78,7 +78,7 @@ struct keyed_wait
 struct d3dkmt_mutex
 {
     struct d3dkmt_object base;
-    unsigned int         key_value;      /* last released key value */
+    unsigned __int64     key_value;      /* last released key value */
     unsigned __int64     fence_value;    /* last released fence value */
     bool                 abandoned;      /* mutex has been abandonned */
     struct thread       *owner;          /* current owner thread */
@@ -364,7 +364,7 @@ static void d3dkmt_mutex_destroy( struct object *obj )
     free( mutex->base.runtime );
 }
 
-static struct d3dkmt_object *d3dkmt_mutex_create( unsigned int key_value, data_size_t runtime_size, const void *runtime )
+static struct d3dkmt_object *d3dkmt_mutex_create( unsigned __int64 key_value, data_size_t runtime_size, const void *runtime )
 {
     struct d3dkmt_mutex *object;
 
@@ -389,7 +389,7 @@ static struct d3dkmt_object *d3dkmt_mutex_create( unsigned int key_value, data_s
     return &object->base;
 }
 
-static struct object *keyed_wait_grab( struct d3dkmt_mutex *mutex, int key )
+static struct object *keyed_wait_grab( struct d3dkmt_mutex *mutex, unsigned __int64 key )
 {
     struct keyed_wait *wait;
 
@@ -413,7 +413,7 @@ static struct object *keyed_wait_grab( struct d3dkmt_mutex *mutex, int key )
     return grab_object( wait->sync );
 }
 
-static void keyed_wait_release( struct d3dkmt_mutex *mutex, int key )
+static void keyed_wait_release( struct d3dkmt_mutex *mutex, unsigned __int64 key )
 {
     struct keyed_wait *wait;
 

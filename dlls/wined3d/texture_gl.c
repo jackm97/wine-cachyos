@@ -482,6 +482,11 @@ static bool gl_formats_compatible(struct wined3d_texture *src_texture, DWORD src
     GLuint src_internal, dst_internal;
     bool src_ds, dst_ds;
 
+    /* Shared BGRA storage has a different GL internal format than ordinary RGBA storage. */
+    if ((src_texture->shared && src_texture->resource.format->id == WINED3DFMT_B8G8R8A8_UNORM)
+            != (dst_texture->shared && dst_texture->resource.format->id == WINED3DFMT_B8G8R8A8_UNORM))
+        return false;
+
     src_ds = src_texture->resource.format->depth_size || src_texture->resource.format->stencil_size;
     dst_ds = dst_texture->resource.format->depth_size || dst_texture->resource.format->stencil_size;
     if (src_ds == dst_ds)
@@ -2262,6 +2267,71 @@ static bool wined3d_texture_use_immutable_storage(const struct wined3d_texture *
             && !(texture->resource.format_attrs & WINED3D_FORMAT_ATTR_HEIGHT_SCALE);
 }
 
+static bool wined3d_texture_gl_retain_shared_resource(struct wined3d_texture_gl *texture_gl)
+{
+    struct wined3d_device_gl *device_gl = wined3d_device_gl(texture_gl->t.resource.device);
+    D3DDDI_OPENALLOCATIONINFO allocation = {0};
+    D3DKMT_CREATEDEVICE device = {0};
+    D3DKMT_QUERYRESOURCEINFO query = {0};
+    D3DKMT_OPENRESOURCE open = {0};
+    void *metadata = NULL;
+    NTSTATUS status;
+
+    if (texture_gl->shared_kmt_resource) return true;
+    if (!device_gl->shared_kmt_device)
+    {
+        device.hAdapter = texture_gl->t.resource.device->adapter->kmt_adapter;
+        if ((status = D3DKMTCreateDevice(&device))) return false;
+        device_gl->shared_kmt_device = device.hDevice;
+    }
+    query.hDevice = device_gl->shared_kmt_device;
+    query.hGlobalShare = (D3DKMT_HANDLE)(ULONG_PTR)texture_gl->shared_handle;
+    if ((status = D3DKMTQueryResourceInfo(&query))) return false;
+    if (query.PrivateRuntimeDataSize && !(metadata = malloc(query.PrivateRuntimeDataSize))) return false;
+    open.hDevice = query.hDevice;
+    open.hGlobalShare = query.hGlobalShare;
+    open.NumAllocations = 1;
+    open.pOpenAllocationInfo = &allocation;
+    open.pPrivateRuntimeData = metadata;
+    open.PrivateRuntimeDataSize = query.PrivateRuntimeDataSize;
+    status = D3DKMTOpenResource(&open);
+    free(metadata);
+    if (status) return false;
+    texture_gl->shared_kmt_resource = open.hResource;
+    return true;
+}
+
+static bool wined3d_texture_gl_allocate_shared_storage(struct wined3d_texture_gl *texture_gl,
+        GLenum internal, const struct wined3d_gl_info *gl_info)
+{
+    struct wined3d_texture *texture = &texture_gl->t;
+    GLuint memory = 0;
+    GLint dedicated = GL_TRUE;
+    GLenum error;
+
+    if (texture->resource.format->id == WINED3DFMT_B8G8R8A8_UNORM)
+    {
+        if (internal != GL_RGBA8) return false;
+        internal = GL_BGRA8_EXT;
+    }
+    if (!wined3d_texture_gl_retain_shared_resource(texture_gl)) return false;
+    GL_EXTCALL(glCreateMemoryObjectsEXT(1, &memory));
+    if (!memory) return false;
+    GL_EXTCALL(glMemoryObjectParameterivEXT(memory, GL_DEDICATED_MEMORY_OBJECT_EXT, &dedicated));
+    GL_EXTCALL(glImportMemoryWin32HandleEXT(memory, 0, GL_HANDLE_TYPE_D3D11_IMAGE_KMT_EXT,
+            texture_gl->shared_handle));
+    if ((error = gl_info->gl_ops.gl.p_glGetError()) == GL_NO_ERROR)
+    {
+        gl_info->gl_ops.gl.p_glTexParameteri(texture_gl->target, GL_TEXTURE_TILING_EXT, GL_OPTIMAL_TILING_EXT);
+        GL_EXTCALL(glTexStorageMem2DEXT(texture_gl->target, texture->level_count, internal,
+                texture->resource.width, texture->resource.height, memory, 0));
+        error = gl_info->gl_ops.gl.p_glGetError();
+    }
+    GL_EXTCALL(glDeleteMemoryObjectsEXT(1, &memory));
+    if (error != GL_NO_ERROR) WARN("Failed to import shared texture storage, GL error %#x.\n", error);
+    return error == GL_NO_ERROR;
+}
+
 void wined3d_texture_gl_prepare_texture(struct wined3d_texture_gl *texture_gl,
         struct wined3d_context_gl *context_gl, bool srgb)
 {
@@ -2290,6 +2360,21 @@ void wined3d_texture_gl_prepare_texture(struct wined3d_texture_gl *texture_gl,
     }
     format_gl = wined3d_format_gl(format);
 
+    if (texture_gl->t.shared && !texture_gl->shared_handle)
+    {
+        struct wined3d_device_gl *device_gl = wined3d_device_gl(resource->device);
+        const struct wined3d_adapter *adapter = resource->device->adapter;
+
+        if (!gl_info->supported[EXT_MEMORY_OBJECT] || !gl_info->supported[EXT_MEMORY_OBJECT_WIN32]
+                || texture_gl->target != GL_TEXTURE_2D || texture_gl->t.layer_count != 1
+                || texture_gl->t.level_count != 1
+                || (format->id != WINED3DFMT_R8G8B8A8_UNORM && format->id != WINED3DFMT_B8G8R8A8_UNORM)) return;
+        if (!device_gl->shared_allocator
+                && !(device_gl->shared_allocator = wined3d_shared_allocator_vk_create(
+                &adapter->device_uuid, &adapter->driver_uuid))) return;
+        if (!(texture_gl->shared_image = wined3d_shared_image_vk_create(device_gl->shared_allocator,
+                resource->width, resource->height, format->id, &texture_gl->shared_handle))) return;
+    }
     wined3d_texture_gl_bind_and_dirtify(texture_gl, context_gl, srgb);
 
     internal = wined3d_gl_get_internal_format(resource, format_gl, srgb);
@@ -2298,7 +2383,11 @@ void wined3d_texture_gl_prepare_texture(struct wined3d_texture_gl *texture_gl,
 
     TRACE("internal %#x, format %#x, type %#x.\n", internal, format_gl->format, format_gl->type);
 
-    if (wined3d_texture_use_immutable_storage(&texture_gl->t, gl_info))
+    if (texture_gl->shared_handle)
+    {
+        if (!wined3d_texture_gl_allocate_shared_storage(texture_gl, internal, gl_info)) return;
+    }
+    else if (wined3d_texture_use_immutable_storage(&texture_gl->t, gl_info))
         wined3d_texture_gl_allocate_immutable_storage(texture_gl, internal, gl_info);
     else
         wined3d_texture_gl_allocate_mutable_storage(texture_gl, internal, format_gl, gl_info);
@@ -2356,11 +2445,11 @@ static BOOL wined3d_texture_gl_prepare_location(struct wined3d_texture *texture,
 
         case WINED3D_LOCATION_TEXTURE_RGB:
             wined3d_texture_gl_prepare_texture(texture_gl, context_gl, false);
-            return TRUE;
+            return !texture->shared || !!(texture->flags & WINED3D_TEXTURE_RGB_ALLOCATED);
 
         case WINED3D_LOCATION_TEXTURE_SRGB:
             wined3d_texture_gl_prepare_texture(texture_gl, context_gl, true);
-            return TRUE;
+            return !texture->shared || !!(texture->flags & WINED3D_TEXTURE_SRGB_ALLOCATED);
 
         case WINED3D_LOCATION_DRAWABLE:
             if (!texture->swapchain)
@@ -2610,8 +2699,70 @@ static void wined3d_texture_gl_unload_location(struct wined3d_texture *texture,
     }
 }
 
+static HRESULT wined3d_texture_gl_get_shared_handle(struct wined3d_texture *texture, HANDLE *handle)
+{
+    struct wined3d_texture_gl *texture_gl = wined3d_texture_gl(texture);
+    struct wined3d_context *context;
+    HRESULT hr = E_FAIL;
+
+    if (!texture->shared) return E_NOTIMPL;
+    context = context_acquire(texture->resource.device, NULL, 0);
+    if (wined3d_texture_load_location(texture, 0, context, WINED3D_LOCATION_TEXTURE_RGB)
+            && texture_gl->shared_handle)
+    {
+        wined3d_context_gl(context)->gl_info->gl_ops.gl.p_glFinish();
+        wined3d_texture_validate_location(texture, 0, WINED3D_LOCATION_TEXTURE_RGB);
+        wined3d_texture_invalidate_location(texture, 0, ~WINED3D_LOCATION_TEXTURE_RGB);
+        *handle = texture_gl->shared_handle;
+        hr = S_OK;
+    }
+    context_release(context);
+    return hr;
+}
+
+static HRESULT wined3d_texture_gl_open_shared_handle(struct wined3d_texture *texture, HANDLE handle)
+{
+    struct wined3d_texture_gl *texture_gl = wined3d_texture_gl(texture);
+    const struct wined3d_gl_info *gl_info = &wined3d_adapter_gl(texture->resource.device->adapter)->gl_info;
+    struct wined3d_context *context;
+    HRESULT hr = E_FAIL;
+
+    if (!gl_info->supported[EXT_MEMORY_OBJECT] || !gl_info->supported[EXT_MEMORY_OBJECT_WIN32]
+            || texture_gl->target != GL_TEXTURE_2D || texture->layer_count != 1 || texture->level_count != 1
+            || (texture->resource.format->id != WINED3DFMT_R8G8B8A8_UNORM
+            && texture->resource.format->id != WINED3DFMT_B8G8R8A8_UNORM))
+        return E_NOTIMPL;
+    if (texture_gl->texture_rgb.name || texture_gl->texture_srgb.name) return WINED3DERR_INVALIDCALL;
+    context = context_acquire(texture->resource.device, NULL, 0);
+    texture_gl->shared_handle = handle;
+    if (wined3d_texture_gl_prepare_location(texture, 0, context, WINED3D_LOCATION_TEXTURE_RGB))
+    {
+        wined3d_texture_validate_location(texture, 0, WINED3D_LOCATION_TEXTURE_RGB);
+        wined3d_texture_invalidate_location(texture, 0, ~WINED3D_LOCATION_TEXTURE_RGB);
+        hr = S_OK;
+    }
+    else
+    {
+        texture_gl->shared_handle = NULL;
+    }
+    context_release(context);
+    return hr;
+}
+
+static BOOL wined3d_texture_gl_acquire_shared(struct wined3d_texture *texture, struct wined3d_context *context)
+{
+    const struct wined3d_gl_info *gl_info = wined3d_context_gl(context)->gl_info;
+
+    if (!gl_info->gl_ops.ext.p_glMemoryBarrier) return FALSE;
+    GL_EXTCALL(glMemoryBarrier(GL_ALL_BARRIER_BITS));
+    return gl_info->gl_ops.gl.p_glGetError() == GL_NO_ERROR;
+}
+
 static const struct wined3d_texture_ops texture_gl_ops =
 {
+    wined3d_texture_gl_get_shared_handle,
+    wined3d_texture_gl_open_shared_handle,
+    wined3d_texture_gl_acquire_shared,
     wined3d_texture_gl_prepare_location,
     wined3d_texture_gl_load_location,
     wined3d_texture_gl_unload_location,

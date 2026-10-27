@@ -3718,6 +3718,7 @@ struct wined3d_cs *wined3d_cs_create(struct wined3d_device *device,
 
     cs->c.ops = &wined3d_cs_st_ops;
     cs->c.device = device;
+    list_init(&cs->keyed_mutexes);
     cs->serialize_commands = TRACE_ON(d3d_sync) || wined3d_settings.cs_multithreaded & WINED3D_CSMT_SERIALIZE;
 
     if (cs->serialize_commands)

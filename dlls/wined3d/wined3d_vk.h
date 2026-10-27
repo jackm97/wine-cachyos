@@ -216,6 +216,9 @@ struct wined3d_device_vk;
     VK_DEVICE_PFN(vkDestroySwapchainKHR) \
     VK_DEVICE_PFN(vkGetSwapchainImagesKHR) \
     VK_DEVICE_PFN(vkQueuePresentKHR) \
+    /* VK_KHR_external_memory_win32 */ \
+    VK_DEVICE_EXT_PFN(vkGetMemoryWin32HandleKHR) \
+    VK_DEVICE_EXT_PFN(vkGetMemoryWin32HandlePropertiesKHR) \
     /* VK_KHR_video_decode_queue */ \
     VK_DEVICE_EXT_PFN(vkCmdDecodeVideoKHR) \
     /* VK_KHR_video_queue */ \
@@ -260,6 +263,7 @@ enum wined3d_vk_extension
     WINED3D_VK_EXT_SHADER_STENCIL_EXPORT,
     WINED3D_VK_EXT_TRANSFORM_FEEDBACK,
     WINED3D_VK_EXT_VERTEX_ATTRIBUTE_DIVISOR,
+    WINED3D_VK_KHR_EXTERNAL_MEMORY_WIN32,
     WINED3D_VK_KHR_MAINTENANCE2,
     WINED3D_VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE,
     WINED3D_VK_KHR_SAMPLER_YCBCR_CONVERSION,
@@ -773,7 +777,7 @@ void wined3d_context_vk_cleanup(struct wined3d_context_vk *context_vk);
 BOOL wined3d_context_vk_create_bo(struct wined3d_context_vk *context_vk, VkDeviceSize size,
         VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_type, struct wined3d_bo_vk *bo);
 bool wined3d_context_vk_create_image(struct wined3d_context_vk *context_vk,
-        const VkImageCreateInfo *desc, struct wined3d_image_vk *image);
+        const VkImageCreateInfo *desc, HANDLE shared_handle, struct wined3d_image_vk *image);
 void wined3d_context_vk_destroy_allocator_block(struct wined3d_context_vk *context_vk,
         struct wined3d_allocator_block *block, uint64_t command_buffer_id);
 void wined3d_context_vk_destroy_bo(struct wined3d_context_vk *context_vk,
@@ -986,6 +990,9 @@ struct wined3d_texture_vk
     struct wined3d_texture t;
 
     struct wined3d_image_vk image;
+    HANDLE shared_handle;
+    HANDLE import_handle;
+    bool externally_owned;
     enum VkImageLayout layout;
     uint32_t bind_mask;
 

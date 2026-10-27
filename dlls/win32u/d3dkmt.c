@@ -295,7 +295,7 @@ static NTSTATUS d3dkmt_object_alloc( UINT size, enum d3dkmt_type type, void **ob
 }
 
 /* create a global generic D3DKMT object, with optional NT sharing, use type-specific helpers below instead */
-static NTSTATUS d3dkmt_object_create( struct d3dkmt_object *object, int fd, UINT value, BOOL shared,
+static NTSTATUS d3dkmt_object_create( struct d3dkmt_object *object, int fd, UINT64 value, BOOL shared,
                                       const void *runtime, UINT runtime_size )
 {
     NTSTATUS status;
@@ -470,7 +470,7 @@ static void d3dkmt_mutex_free( struct d3dkmt_mutex *mutex )
     if (mutex) d3dkmt_object_free( &mutex->obj );
 }
 
-static NTSTATUS d3dkmt_mutex_create( UINT value, BOOL shared, const void *runtime, UINT runtime_size, struct d3dkmt_mutex **ret )
+static NTSTATUS d3dkmt_mutex_create( UINT64 value, BOOL shared, const void *runtime, UINT runtime_size, struct d3dkmt_mutex **ret )
 {
     struct d3dkmt_mutex *mutex;
     NTSTATUS status;

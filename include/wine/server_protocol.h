@@ -6208,7 +6208,8 @@ struct d3dkmt_object_create_request
     struct request_header __header;
     unsigned int        type;
     int                 fd;
-    unsigned int        value;
+    char __pad_20[4];
+    unsigned __int64    value;
     /* VARARG(runtime,bytes); */
 };
 struct d3dkmt_object_create_reply
@@ -6312,10 +6313,9 @@ struct d3dkmt_mutex_acquire_request
 {
     struct request_header __header;
     d3dkmt_handle_t     mutex;
-    unsigned int        key_value;
+    unsigned __int64    key_value;
     obj_handle_t        wait_handle;
     unsigned int        wait_status;
-    char __pad_28[4];
 };
 struct d3dkmt_mutex_acquire_reply
 {
@@ -6333,11 +6333,12 @@ struct d3dkmt_mutex_release_request
     struct request_header __header;
     d3dkmt_handle_t     mutex;
     int                 abandon;
-    unsigned int        key_value;
+    char __pad_20[4];
+    unsigned __int64    key_value;
     unsigned __int64    fence_value;
     data_size_t         runtime_size;
     /* VARARG(runtime,bytes); */
-    char __pad_36[4];
+    char __pad_44[4];
 };
 struct d3dkmt_mutex_release_reply
 {
@@ -7346,6 +7347,6 @@ union generic_reply
     struct alpc_create_port_reply alpc_create_port_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 933
+#define SERVER_PROTOCOL_VERSION 934
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */
