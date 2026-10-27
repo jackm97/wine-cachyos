@@ -1766,16 +1766,27 @@ static BOOL CALLBACK init_c2r_outlook_mapi(INIT_ONCE *once, void *param, void **
     return TRUE;
 }
 
-static HRESULT get_c2r_outlook_mapi_class_object(REFCLSID rclsid, REFIID riid, void **obj)
+static HRESULT get_c2r_outlook_mapi_class_object(struct apartment *apt, REFCLSID rclsid, REFIID riid, void **obj)
 {
+    static const WCHAR mime_name[] = L"OUTLMIME.DLL";
     HRESULT (WINAPI *get_class_object)(REFCLSID, REFIID, void **);
-    HRESULT hr;
+    WCHAR path[MAX_PATH], *name;
     HMODULE module;
+    HRESULT hr;
+    DWORD len;
 
     if (GetModuleHandleExW(0, L"OLMAPI32.DLL", &module))
     {
         get_class_object = (void *)GetProcAddress(module, "DllGetClassObject");
         hr = get_class_object ? get_class_object(rclsid, riid, obj) : CLASS_E_CLASSNOTAVAILABLE;
+        if (hr == CLASS_E_CLASSNOTAVAILABLE &&
+                (len = GetModuleFileNameW(module, path, ARRAY_SIZE(path))) && len < ARRAY_SIZE(path) &&
+                (name = wcsrchr(path, '\\')) && name - path + ARRAY_SIZE(mime_name) < ARRAY_SIZE(path))
+        {
+            memcpy(name + 1, mime_name, sizeof(mime_name));
+            if (GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES)
+                hr = apartment_getclassobject(apt, path, FALSE, rclsid, riid, obj);
+        }
         FreeLibrary(module);
         if (hr != CLASS_E_CLASSNOTAVAILABLE) return hr;
     }
@@ -1930,7 +1941,7 @@ static HRESULT com_get_class_object(REFCLSID rclsid, DWORD clscontext,
 
     if ((clscontext & CLSCTX_INPROC_SERVER) && hr == REGDB_E_CLASSNOTREG)
     {
-        hr = get_c2r_outlook_mapi_class_object(rclsid, riid, obj);
+        hr = get_c2r_outlook_mapi_class_object(apt, rclsid, riid, obj);
         if (SUCCEEDED(hr))
         {
             apartment_release(apt);

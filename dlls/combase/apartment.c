@@ -757,7 +757,7 @@ static BOOL get_object_dll_path(const struct class_reg_data *regdata, WCHAR *dst
 
 /* gets the specified class object by loading the appropriate DLL, if
  * necessary and calls the DllGetClassObject function for the DLL */
-static HRESULT apartment_getclassobject(struct apartment *apt, LPCWSTR dllpath,
+HRESULT apartment_getclassobject(struct apartment *apt, LPCWSTR dllpath,
                                         BOOL apartment_threaded,
                                         REFCLSID rclsid, REFIID riid, void **ppv)
 {
