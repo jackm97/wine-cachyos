@@ -181,6 +181,44 @@ static void reapply_cursor_clipping(void)
     NtUserSetThreadDpiAwarenessContext(context);
 }
 
+/* Clears the role of every popup owned by the window of surface, deepest
+ * first, so each xdg_popup is destroyed before the xdg_surface it is a child
+ * of. Called with win_data_mutex held. Recursion is bounded by a depth guard:
+ * past depth 32 the walk stops with a WARN instead of recursing, so a cyclic
+ * owner chain cannot overflow the stack. Popups past that point are not
+ * cleared by this walk. */
+static void reparent_popups_depth(struct wayland_surface *surface, int depth)
+{
+    HWND hwnd = surface->hwnd;
+    struct wayland_win_data *entry;
+    struct wayland_surface *entry_surface;
+
+    if (depth > 32)
+    {
+        WARN("owner chain too deep at hwnd %p\n", hwnd);
+        return;
+    }
+    if (!hwnd) return;
+
+    RB_FOR_EACH_ENTRY(entry, &win_data_rb, struct wayland_win_data, entry)
+    {
+        if (entry->hwnd == hwnd) continue;
+        if (!(entry_surface = entry->wayland_surface)) continue;
+        if (entry_surface->owner_hwnd != hwnd) continue;
+        if (!wayland_surface_is_popup(entry_surface)) continue;
+
+        /* deepest first: clear the popups this popup owns before this popup */
+        reparent_popups_depth(entry_surface, depth + 1);
+        wayland_surface_clear_role(entry_surface);
+        NtUserPostMessage(entry_surface->hwnd, WM_WINE_UPDATEWINDOWSTATE, 0, 0);
+    }
+}
+
+static void wayland_surface_reparent_popups(struct wayland_surface *surface)
+{
+    reparent_popups_depth(surface, 0);
+}
+
 static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *data, struct wayland_surface *owner_surface)
 {
     struct wayland_surface *surface;
@@ -208,6 +246,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
          */
         data->wayland_surface = NULL;
         update_client_surfaces(data->hwnd);
+        wayland_surface_reparent_popups(surface);
         wayland_surface_destroy(surface);
     }
 
@@ -443,6 +482,7 @@ void WAYLAND_DestroyWindow(HWND hwnd)
     TRACE("%p\n", hwnd);
 
     if (!(data = wayland_win_data_get(hwnd))) return;
+    if (data->wayland_surface) wayland_surface_reparent_popups(data->wayland_surface);
     wayland_win_data_destroy(data);
 }
 
@@ -496,6 +536,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
 
     if (!surface && data->wayland_surface)
     {
+        wayland_surface_reparent_popups(data->wayland_surface);
         wayland_surface_destroy(data->wayland_surface);
         data->wayland_surface = NULL;
     }

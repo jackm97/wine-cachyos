@@ -686,13 +686,6 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
             surface->xdg_popup = NULL;
         }
 
-        if (surface->xdg_surface)
-        {
-            xdg_surface_destroy(surface->xdg_surface);
-            surface->xdg_surface = NULL;
-        }
-
-        surface->owner_hwnd = NULL;
         break;
 
     case WAYLAND_SURFACE_ROLE_TOPLEVEL:
@@ -711,15 +704,17 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
             surface->xdg_toplevel = NULL;
         }
 
-        if (surface->xdg_surface)
-        {
-            xdg_surface_destroy(surface->xdg_surface);
-            surface->xdg_surface = NULL;
-        }
-
         surface->requested_output = NULL;
         break;
     }
+
+    if (surface->xdg_surface)
+    {
+        xdg_surface_destroy(surface->xdg_surface);
+        surface->xdg_surface = NULL;
+    }
+
+    surface->owner_hwnd = NULL;
 
     memset(&surface->pending, 0, sizeof(surface->pending));
     memset(&surface->requested, 0, sizeof(surface->requested));

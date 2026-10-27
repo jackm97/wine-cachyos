@@ -325,6 +325,7 @@ struct wayland_surface
     enum wayland_surface_role role;
 
     struct xdg_surface *xdg_surface;
+    HWND owner_hwnd;
 
     union
     {
@@ -337,7 +338,6 @@ struct wayland_surface
         struct
         {
             struct xdg_popup *xdg_popup;
-            HWND owner_hwnd;
         };
     };
     struct wp_alpha_modifier_surface_v1 *wp_alpha_modifier_surface_v1;
