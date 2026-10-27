@@ -1040,9 +1040,13 @@ static HRESULT WINAPI interaction_tracker_get_Position( IInteractionTracker *ifa
 {
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
     HRESULT hr;
+    BOOL evaluating;
 
     if (!value) return E_POINTER;
-    if (FAILED(hr = interaction_tracker_evaluate_bounds( impl ))) return hr;
+    EnterCriticalSection( &impl->animation_cs );
+    evaluating = impl->evaluation_thread == GetCurrentThreadId();
+    LeaveCriticalSection( &impl->animation_cs );
+    if (!evaluating && FAILED(hr = interaction_tracker_evaluate_bounds( impl ))) return hr;
     EnterCriticalSection( &impl->animation_cs );
     *value = impl->position;
     LeaveCriticalSection( &impl->animation_cs );
