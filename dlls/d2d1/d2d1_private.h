@@ -144,6 +144,7 @@ struct d2d_vs_cb
 struct d2d_device_context_ops
 {
     HRESULT (*device_context_present)(IUnknown *outer_unknown);
+    HRESULT (*device_context_flush)(IUnknown *outer_unknown);
 };
 
 enum d2d_device_context_sampler_limits
