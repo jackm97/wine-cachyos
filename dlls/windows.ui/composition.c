@@ -6943,6 +6943,8 @@ static HRESULT WINAPI composition_drawing_surface_interop_BeginDraw( ICompositio
     impl->update_rect = update_rect ? *update_rect : (RECT){0, 0, size.width, size.height};
     if (impl->virtual)
         impl->bitmap_offset = (POINT){update_rect->left, update_rect->top};
+    else
+        *update_offset = (POINT){impl->update_rect.left, impl->update_rect.top};
     return S_OK;
 }
 
