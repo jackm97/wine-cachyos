@@ -519,10 +519,15 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface)
     TRACE("surface=%p\n", surface);
 
     assert(!surface->role || surface->role == WAYLAND_SURFACE_ROLE_TOPLEVEL);
-    if (surface->xdg_surface && surface->xdg_toplevel) return;
+    if (surface->xdg_surface && surface->xdg_toplevel)
+    {
+        surface->owner_hwnd = NtUserGetWindowRelative(surface->hwnd, GW_OWNER);
+        return;
+    }
 
     wayland_surface_clear_role(surface);
     surface->role = WAYLAND_SURFACE_ROLE_TOPLEVEL;
+    surface->owner_hwnd = NtUserGetWindowRelative(surface->hwnd, GW_OWNER);
 
     surface->xdg_surface =
         xdg_wm_base_get_xdg_surface(process_wayland.xdg_wm_base, surface->wl_surface);
@@ -851,6 +856,30 @@ static void wayland_surface_get_rect_in_monitor(struct wayland_surface *surface,
     OffsetRect(rect, -surface->window.rect.left, -surface->window.rect.top);
 }
 
+void wayland_surface_update_toplevel_parent(struct wayland_surface *surface)
+{
+    struct wayland_win_data *owner_data;
+    struct wayland_surface *owner_surface = NULL;
+    struct xdg_toplevel *owner_xdg_toplevel = NULL;
+
+    if (!wayland_surface_is_toplevel(surface)) return;
+
+    surface->owner_hwnd = NtUserGetWindowRelative(surface->hwnd, GW_OWNER);
+
+    TRACE("hwnd=%p owner=%p\n", surface->hwnd, surface->owner_hwnd);
+
+    if (surface->owner_hwnd && (owner_data = wayland_win_data_get(surface->owner_hwnd)))
+    {
+        if ((owner_surface = owner_data->wayland_surface) &&
+            wayland_surface_is_toplevel(owner_surface))
+            owner_xdg_toplevel = owner_surface->xdg_toplevel;
+
+        wayland_win_data_release(owner_data);
+    }
+
+    xdg_toplevel_set_parent(surface->xdg_toplevel, owner_xdg_toplevel);
+}
+
 /**********************************************************************
  *          wayland_surface_reconfigure_geometry
  *
@@ -910,6 +939,8 @@ static void wayland_surface_reconfigure_geometry(struct wayland_surface *surface
             xdg_toplevel_set_min_size(surface->xdg_toplevel, width, height);
             xdg_toplevel_set_max_size(surface->xdg_toplevel, width, height);
         }
+
+        wayland_surface_update_toplevel_parent(surface);
     }
 }
 
