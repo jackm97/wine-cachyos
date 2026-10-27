@@ -2264,6 +2264,9 @@ static BOOL window_clip_client_surfaces( HWND hwnd )
     win_rect = win->rects.window;
     release_win_ptr( win );
 
+    /* a driver that cannot draw on windows directly needs the window surface
+     * to paint the non-client area and the child windows */
+    if (ret && !user_driver->dc_funcs.pCreateDC) return FALSE;
     if (ret) return !force_present_to_surface( &win_rect );
 
     return ret;
