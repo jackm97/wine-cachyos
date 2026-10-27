@@ -1586,7 +1586,7 @@ static NTSTATUS lnxev_device_create(struct udev_device *dev, int fd, const char 
     if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(info.key)), info.key) == -1) memset(info.key, 0, sizeof(info.key));
     if (ioctl(fd, EVIOCGBIT(EV_FF, sizeof(info.ff)), info.ff) == -1) memset(info.ff, 0, sizeof(info.ff));
 
-    if (sscanf(info.name, "Microsoft X-Box 360 pad %u", &desc.input) != 1) desc.input = -1;
+    if (sscanf(info.name, "Microsoft X-Box 360 pad %u", &desc.interface) != 1) desc.interface = -1;
     if (!desc.vid) desc.vid = info.id.vendor;
     if (!desc.pid) desc.pid = info.id.product;
     if (!desc.version) desc.version = info.id.version;
@@ -1597,7 +1597,7 @@ static NTSTATUS lnxev_device_create(struct udev_device *dev, int fd, const char 
     /* CW-Bug-Id: #23185 Emulate Steam Input native hooks for native SDL:
      * keep version fixed as 0 so we can hardcode it in ntdll rawinput pipe redirection
      */
-    if (desc.input != -1) desc.version = 0;
+    if (desc.interface != -1) desc.version = 0;
 
     if (!(impl = hid_device_create(&lnxev_device_vtbl, sizeof(struct lnxev_device))))
         return STATUS_NO_MEMORY;
