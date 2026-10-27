@@ -65,6 +65,13 @@ extern IActivationFactory *app_capability_factory;
 extern IActivationFactory *json_array_factory;
 extern IActivationFactory *json_object_factory;
 extern IActivationFactory *json_value_factory;
+extern IActivationFactory *http_media_value_factory;
+extern IActivationFactory *http_name_value_factory;
+struct vector_iids
+{
+    const GUID *vector, *view, *iterable, *iterator;
+};
+HRESULT vector_create( const struct vector_iids *iids, void **out );
 extern IActivationFactory *http_cookie_factory;
 extern IActivationFactory *http_client_factory;
 extern IActivationFactory *http_method_factory;
