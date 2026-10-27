@@ -1551,12 +1551,48 @@ static HKEY open_fonts_key(void)
     return hkey;
 }
 
+/* Returns a DOS drive path for a file in Wine's data dir, or NULL. WPF turns a \\?\unix\ path
+ * into an invalid file:// URI, so the path handed out must be a regular DOS path. */
+static WCHAR *get_data_font_dos_path(const WCHAR *data_dir, const WCHAR *filename)
+{
+    WCHAR * (CDECL *p_get_dos_file_name)(const char *);
+    static const WCHAR unix_prefix[] = L"\\??\\unix";
+    WCHAR *dos = NULL, *unix_w;
+    char *unix_a;
+    int len;
+
+    if (wcsncmp(data_dir, unix_prefix, wcslen(unix_prefix))) return NULL;
+    if (!(p_get_dos_file_name = (void *)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "wine_get_dos_file_name")))
+        return NULL;
+
+    if (!(unix_w = malloc((wcslen(data_dir) + wcslen(filename) + 8) * sizeof(WCHAR)))) return NULL;
+    wcscpy(unix_w, data_dir + wcslen(unix_prefix));
+    wcscat(unix_w, L"/fonts/");
+    wcscat(unix_w, filename);
+
+    len = WideCharToMultiByte(CP_UTF8, 0, unix_w, -1, NULL, 0, NULL, NULL);
+    if (len > 0 && (unix_a = malloc(len)))
+    {
+        WideCharToMultiByte(CP_UTF8, 0, unix_w, -1, unix_a, len, NULL, NULL);
+        dos = p_get_dos_file_name(unix_a);
+        free(unix_a);
+    }
+    free(unix_w);
+
+    if (dos && GetFileAttributesW(dos) == INVALID_FILE_ATTRIBUTES)
+    {
+        HeapFree(GetProcessHeap(), 0, dos);
+        dos = NULL;
+    }
+    return dos;
+}
+
 /* A font registered without a path lives in the Windows fonts directory, or for
  * the fonts shipped with Wine in its data directory, the same order gdi32 uses. */
 static WCHAR *get_system_font_path(const WCHAR *filename)
 {
     const WCHAR *data_dir;
-    WCHAR *path;
+    WCHAR *path, *dos;
 
     if (!(path = malloc((MAX_PATH + wcslen(filename)) * sizeof(WCHAR))))
         return NULL;
@@ -1568,15 +1604,12 @@ static WCHAR *get_system_font_path(const WCHAR *filename)
     if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES && (data_dir = _wgetenv(L"WINEDATADIR")) &&
             wcslen(data_dir) < MAX_PATH - 8)
     {
-        wcscpy(path, data_dir);
-        path[1] = '\\';  /* change \??\ to \\?\ */
-        wcscat(path, L"\\fonts\\");
-        wcscat(path, filename);
-        if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
+        if ((dos = get_data_font_dos_path(data_dir, filename)))
         {
-            GetWindowsDirectoryW(path, MAX_PATH);
-            wcscat(path, L"\\fonts\\");
-            wcscat(path, filename);
+            free(path);
+            if (!(path = malloc((wcslen(dos) + 1) * sizeof(WCHAR)))) path = NULL;
+            else wcscpy(path, dos);
+            HeapFree(GetProcessHeap(), 0, dos);
         }
     }
 
