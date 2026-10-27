@@ -189,8 +189,7 @@ static const builtin_info_t Enumerator_info = {
 static const builtin_info_t EnumeratorInst_info = {
     .class       = JSCLASS_ENUMERATOR,
     .destructor  = Enumerator_destructor,
-    .gc_traverse = Enumerator_gc_traverse,
-    .cc_traverse = Enumerator_cc_traverse
+    .gc_traverse = Enumerator_gc_traverse
 };
 
 static HRESULT alloc_enumerator(script_ctx_t *ctx, jsdisp_t *object_prototype, EnumeratorInstance **ret)

@@ -74,8 +74,6 @@ interface IWineCCParticipant
 interface IWineJSDispatch : IDispatchEx
 {
     void Free();
-    void Traverse(nsCycleCollectionTraversalCallback *cb);
-    void Unlink();
     HRESULT GetPropertyFlags(DISPID id, UINT32 *ret);
     HRESULT DefineProperty(const WCHAR *name, unsigned int flags, VARIANT *v);
     HRESULT UpdateProperty(struct property_info *desc);
