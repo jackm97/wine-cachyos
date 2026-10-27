@@ -717,6 +717,7 @@ struct x11drv_win_data
     UINT        is_resizable : 1; /* window is allowed to be resized by the window manager */
     UINT        net_wm_state_hack : 1; /* hacking around KWin sticky fullscreen windows */
     UINT        force_below_hack : 1; /* hacking fullscreen black window which is supposed to be order after another window */
+    UINT        reveal_on_surface_flush : 1; /* reveal an Office popup after its contents are painted */
     Window      embedder;       /* window id of embedder */
     Pixmap         icon_pixmap;
     Pixmap         icon_mask;
@@ -745,6 +746,8 @@ extern Window X11DRV_get_whole_window( HWND hwnd );
 extern Window get_dummy_parent(void);
 
 extern void set_surface_window_rects( struct window_surface *window_surface, const struct window_rects *rects );
+extern BOOL prepare_window_surface_flush( HWND hwnd, Window window, XImage *image, const RECT *dirty );
+extern void reveal_window_after_surface_flush( HWND hwnd, Window window );
 extern BOOL window_is_reparenting( HWND hwnd );
 extern BOOL window_should_take_focus( HWND hwnd, Time time );
 extern BOOL window_has_pending_wm_state( HWND hwnd, UINT state );

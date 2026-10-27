@@ -505,6 +505,7 @@ static void set_input_focus( struct x11drv_win_data *data )
     DWORD timestamp;
 
     if (!data->whole_window) return;
+    if (data->reveal_on_surface_flush) return;
 
     if (EVENT_x11_time_to_win32_time(0))
         /* ICCCM says don't use CurrentTime, so try to use last message time if possible */
@@ -1711,7 +1712,6 @@ static void handle_xdnd_leave_event( HWND hwnd, XClientMessageEvent *event )
 {
     drag_drop_leave();
 }
-
 
 struct client_message_handler
 {

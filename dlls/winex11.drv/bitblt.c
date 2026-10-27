@@ -1805,6 +1805,7 @@ static BOOL x11drv_surface_flush( struct window_surface *window_surface, const R
 {
     UINT alpha_mask = window_surface->alpha_mask, alpha_bits = window_surface->alpha_bits;
     struct x11drv_window_surface *surface = get_x11_surface( window_surface );
+    BOOL reveal;
     XImage *ximage = surface->image->ximage;
     const unsigned char *src = color_bits;
     unsigned char *dst = (unsigned char *)ximage->data;
@@ -1866,11 +1867,13 @@ static BOOL x11drv_surface_flush( struct window_surface *window_surface, const R
 #endif /* HAVE_LIBXSHAPE */
     }
 
+    reveal = prepare_window_surface_flush( window_surface->hwnd, surface->window, ximage, dirty );
     if (!put_shm_image( ximage, &surface->image->shminfo, surface->window, surface->gc, &rect, dirty ))
         XPutImage( gdi_display, surface->window, surface->gc, ximage, dirty->left,
                    dirty->top, rect.left + dirty->left, rect.top + dirty->top,
                    dirty->right - dirty->left, dirty->bottom - dirty->top );
 
+    if (reveal) reveal_window_after_surface_flush( window_surface->hwnd, surface->window );
     XFlush( gdi_display );
 
     return TRUE;

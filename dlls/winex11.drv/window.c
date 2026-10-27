@@ -455,6 +455,17 @@ static BOOL thickframe_managed( DWORD style )
     return cached;
 }
 
+static BOOL is_office_popup( HWND hwnd )
+{
+    static const WCHAR office_popup[] = u"Net UI Tool Window";
+    WCHAR class_name[64];
+    UNICODE_STRING name = {.Buffer = class_name, .MaximumLength = sizeof(class_name)};
+
+    return NtUserGetClassName( hwnd, FALSE, &name ) == ARRAY_SIZE(office_popup) - 1 &&
+           !wcsncmp( class_name, office_popup, ARRAY_SIZE(office_popup) - 1 ) &&
+           !(NtUserGetWindowLongW( hwnd, GWL_STYLE ) & WS_CAPTION) &&
+           !NtUserInternalGetWindowText( hwnd, class_name, ARRAY_SIZE(class_name) );
+}
 
 /***********************************************************************
  *		is_window_managed
@@ -466,6 +477,7 @@ static BOOL is_window_managed( HWND hwnd, UINT swp_flags, BOOL fullscreen )
     DWORD style, ex_style;
 
     if (!managed_mode) return FALSE;
+    if (is_office_popup( hwnd )) return FALSE;
 
     /* child windows are not managed */
     style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
@@ -1628,7 +1640,7 @@ static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL abo
         changes.stack_mode = Below;
         mask |= CWStackMode;
     }
-    else if (above)
+    else if (above && !data->reveal_on_surface_flush)
     {
         changes.stack_mode = Above;
         mask |= CWStackMode;
@@ -1919,6 +1931,58 @@ static void window_set_wm_state( struct x11drv_win_data *data, UINT new_state, B
      * mostly only lack response for transitions to Withdrawn and shouldn't wait for it.
      */
     if (x11drv_thread_data()->ignore_focus_hack && new_state == WithdrawnState) data->wm_state_serial = 0;
+}
+
+static BOOL surface_image_has_content( XImage *image, const RECT *dirty )
+{
+    unsigned long colors[32];
+    unsigned long color_mask = image->red_mask | image->green_mask | image->blue_mask;
+    unsigned int color_count = 0;
+    int x, y, i;
+
+    if (dirty->left >= dirty->right || dirty->top >= dirty->bottom) return FALSE;
+    for (y = dirty->top; y < dirty->bottom; y++)
+        for (x = dirty->left; x < dirty->right; x++)
+        {
+            unsigned long color = XGetPixel( image, x, y ) & color_mask;
+
+            for (i = 0; i < color_count; i++) if (colors[i] == color) break;
+            if (i == color_count)
+            {
+                colors[color_count++] = color;
+                if (color_count == ARRAY_SIZE(colors)) return TRUE;
+            }
+        }
+    return FALSE;
+}
+
+BOOL prepare_window_surface_flush( HWND hwnd, Window window, XImage *image, const RECT *dirty )
+{
+    struct x11drv_win_data *data;
+    BOOL reveal = FALSE;
+
+    if (!(data = get_win_data( hwnd ))) return FALSE;
+    if (data->whole_window == window && data->reveal_on_surface_flush)
+    {
+        XLowerWindow( gdi_display, window );
+        reveal = surface_image_has_content( image, dirty );
+    }
+    release_win_data( data );
+    return reveal;
+}
+
+void reveal_window_after_surface_flush( HWND hwnd, Window window )
+{
+    struct x11drv_win_data *data;
+
+    XSync( gdi_display, False );
+    if (!(data = get_win_data( hwnd ))) return;
+    if (data->whole_window == window && data->reveal_on_surface_flush)
+    {
+        data->reveal_on_surface_flush = FALSE;
+        XRaiseWindow( gdi_display, window );
+    }
+    release_win_data( data );
 }
 
 static void window_set_managed( struct x11drv_win_data *data, BOOL new_managed )
@@ -3670,8 +3734,11 @@ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
 {
     struct x11drv_win_data *data;
     UINT ex_style = NtUserGetWindowLongW( hwnd, GWL_EXSTYLE ), new_style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
+    UINT desired_state;
     struct window_rects old_rects;
-    BOOL is_managed, was_fullscreen, activate = !(swp_flags & SWP_NOACTIVATE), fullscreen = !!(swp_flags & WINE_SWP_FULLSCREEN);
+    BOOL is_managed, was_fullscreen, stage_office_popup = FALSE;
+    BOOL activate = !(swp_flags & SWP_NOACTIVATE);
+    BOOL fullscreen = !!(swp_flags & WINE_SWP_FULLSCREEN);
 
     if ((is_managed = is_window_managed( hwnd, swp_flags, fullscreen ))) make_owner_managed( hwnd );
     set_surface_window_rects( surface, new_rects );
@@ -3769,7 +3836,27 @@ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
 #endif
     }
 
-    window_set_wm_state( data, get_desired_wm_state( new_style, new_rects ), activate );
+    desired_state = get_desired_wm_state( new_style, new_rects );
+    if (data->pending_state.wm_state == WithdrawnState && surface && desired_state == NormalState &&
+        is_office_popup( hwnd ) && (new_style & WS_POPUP) && (ex_style & WS_EX_TOOLWINDOW) &&
+        !(ex_style & WS_EX_LAYERED) &&
+        new_rects->window.right - new_rects->window.left < 800 &&
+        new_rects->window.bottom - new_rects->window.top < 500)
+    {
+        data->reveal_on_surface_flush = TRUE;
+        stage_office_popup = TRUE;
+    }
+    else if (desired_state != NormalState && data->reveal_on_surface_flush)
+    {
+        data->reveal_on_surface_flush = FALSE;
+    }
+    window_set_wm_state( data, desired_state, activate );
+    if (stage_office_popup)
+    {
+        XLowerWindow( data->display, data->whole_window );
+        XSync( data->display, False );
+    }
+
     if (!data->wm_state_serial && data->pending_state.wm_state != WithdrawnState)
     {
         if (swp_flags & (SWP_FRAMECHANGED | SWP_STATECHANGED)) set_wm_hints( data );
