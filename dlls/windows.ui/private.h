@@ -40,9 +40,9 @@
 #include "windows.graphics.effects.h"
 #define WIDL_using_Windows_UI
 #include "windows.ui.h"
+#define WIDL_using_Windows_UI_Input
 #define WIDL_using_Windows_UI_Core
 #include "windows.ui.core.h"
-#define WIDL_using_Windows_UI_Input
 #define WIDL_using_Windows_UI_Composition
 #include "windows.ui.composition.h"
 #define WIDL_using_Windows_UI_Composition_Core

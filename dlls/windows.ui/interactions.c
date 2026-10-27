@@ -3193,6 +3193,8 @@ static const IClosableVtbl tracker_closable_vtbl =
     tracker_closable_Close,
 };
 
+static const IInteractionTracker4Vtbl interaction_tracker4_vtbl;
+
 static HRESULT interaction_tracker_create( ICompositor *compositor, IInteractionTrackerOwner *owner,
         IInteractionTracker **result )
 {
