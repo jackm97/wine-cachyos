@@ -20,6 +20,7 @@
 #pragma winrt ns_prefix
 
 import "inspectable.idl";
+import "windows.devices.haptics.idl";
 import "asyncinfo.idl";
 import "eventtoken.idl";
 import "windowscontracts.idl";
@@ -34,6 +35,9 @@ import "windows.ui.viewmanagement.idl";
 import "windows.applicationmodel.core.idl";
 import "windows.applicationmodel.datatransfer.idl";
 
+namespace Windows.Devices.Haptics {
+    runtimeclass KnownSimpleHapticsControllerWaveforms;
+}
 namespace Windows.Security.ExchangeActiveSyncProvisioning {
     runtimeclass EasClientDeviceInformation;
 }
