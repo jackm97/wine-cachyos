@@ -2522,8 +2522,6 @@ static VkResult init_compute_state( struct vulkan_device *device, struct swapcha
 
         /* create imageviews */
         for (i = 0; i < swapchain->n_images; ++i)
-    if (!(semaphore = calloc( 1, sizeof(*semaphore) ))) return VK_ERROR_OUT_OF_HOST_MEMORY;
-
         {
             struct fs_hack_image *hack = &swapchain->fs_hack_images[i];
 
