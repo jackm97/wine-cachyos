@@ -984,7 +984,15 @@ static NTSTATUS save_registry_branch( char **data )
     }
     sprintf( tmp, "%s/%s", config_dir, temp_fn );
 
-    if ((fd = open( tmp, O_CREAT | O_EXCL | O_WRONLY, 0666 )) == -1)
+    if ((fd = open( tmp, O_CREAT | O_EXCL | O_WRONLY, 0666 )) == -1 && errno == EEXIST)
+    {
+        /* savers hold the flush mutex, so an existing file is left over from an
+         * interrupted save and would otherwise make every later save fail */
+        WARN( "removing stale %s\n", debugstr_a(tmp) );
+        unlink( tmp );
+        fd = open( tmp, O_CREAT | O_EXCL | O_WRONLY, 0666 );
+    }
+    if (fd == -1)
     {
         ret = errno_to_status( errno );
         goto done;
