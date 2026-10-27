@@ -273,6 +273,7 @@ struct client_surface
     LONG                               updated;        /* has been moved / resized / reparented */
     HWND                               toplevel;       /* toplevel window of the surface */
     LONG                               offscreen;      /* client window is offscreen */
+    BOOL                               host_scaled;    /* host surface applies DPI scaling */
     RECT                               virtual_rect;   /* virtual size and position in the toplevel ancestor, relative to its visible rect */
     RECT                               monitor_rect;   /* raw physical size and position in the toplevel ancestor, relative to its visible rect */
     BOOL                               raw;            /* use the raw physical position and size for the host client surface */

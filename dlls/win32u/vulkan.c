@@ -2808,7 +2808,7 @@ static UINT surface_get_fshack_dpi( struct surface *surface )
 
     get_win_monitor_dpi( surface->hwnd, &raw_dpi );
     raw = round_dpi( raw_dpi );
-    return emulate_modeset && fshack_enabled && round_dpi( dpi ) != raw ? raw : 0;
+    return emulate_modeset && fshack_enabled && !surface->client->host_scaled && round_dpi( dpi ) != raw ? raw : 0;
 }
 
 static VkSurfaceFormatKHR *get_physical_device_surface_formats( struct vulkan_physical_device *physical_device,
