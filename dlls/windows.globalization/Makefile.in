@@ -1,7 +1,9 @@
 MODULE = windows.globalization.dll
-IMPORTS = combase uuid
+IMPORTS = combase uuid user32
 
 SOURCES = \
 	classes.idl \
 	geographic_region.c \
-	main.c
+	main.c \
+	vector.c \
+	words_segmenter.c

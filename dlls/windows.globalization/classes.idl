@@ -27,9 +27,13 @@ import "eventtoken.idl";
 import "windowscontracts.idl";
 import "windows.foundation.idl";
 import "windows.system.idl";
+import "windows.data.text.idl";
 import "windows.globalization.idl";
 import "windows.system.userprofile.idl";
 
+namespace Windows.Data.Text {
+    runtimeclass WordsSegmenter;
+}
 namespace Windows.System.UserProfile {
     runtimeclass GlobalizationPreferences;
 }
