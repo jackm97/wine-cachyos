@@ -1103,6 +1103,32 @@ NTSTATUS WINAPI NtLoadKey2( const OBJECT_ATTRIBUTES *attr, OBJECT_ATTRIBUTES *fi
     return NtLoadKeyEx( attr, file, flags, 0, 0, 0, NULL, NULL );
 }
 
+static NTSTATUS load_app_hive( OBJECT_ATTRIBUTES *file, ULONG flags, ACCESS_MASK access, HANDLE *root )
+{
+    IO_STATUS_BLOCK io;
+    HANDLE handle;
+    NTSTATUS status;
+    ULONG sharing = flags & REG_PROCESS_PRIVATE ? 0 : FILE_SHARE_READ | FILE_SHARE_WRITE;
+
+    if (!root || !file) return STATUS_INVALID_PARAMETER;
+    status = NtCreateFile( &handle, GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE, file, &io,
+                          NULL, 0, sharing, FILE_OPEN_IF,
+                          FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0 );
+    if (status) return status;
+    SERVER_START_REQ( load_app_hive )
+    {
+        req->file = wine_server_obj_handle( handle );
+        req->flags = flags & REG_PROCESS_PRIVATE;
+        req->access = access;
+        req->created = io.Information == FILE_CREATED;
+        status = wine_server_call( req );
+        if (!status) *root = wine_server_ptr_handle( reply->hkey );
+    }
+    SERVER_END_REQ;
+    NtClose( handle );
+    return status;
+}
+
 /******************************************************************************
  *              NtLoadKeyEx  (NTDLL.@)
  */
@@ -1115,10 +1141,24 @@ NTSTATUS WINAPI NtLoadKeyEx( const OBJECT_ATTRIBUTES *attr, OBJECT_ATTRIBUTES *f
     struct object_attributes *objattr;
     char *unix_name;
     UNICODE_STRING nt_name;
-    OBJECT_ATTRIBUTES new_attr = *file;
+    OBJECT_ATTRIBUTES new_attr;
 
     TRACE( "(%p,%p,0x%x,%p,%p,0x%x,%p,%p)\n",
            attr, file, flags, trustkey, event, access, roothandle, iostatus );
+
+    if (flags & REG_APP_HIVE)
+    {
+        if ((flags & ~(REG_APP_HIVE | REG_PROCESS_PRIVATE)) || trustkey || event)
+            return STATUS_INVALID_PARAMETER;
+        ret = load_app_hive( file, flags, access, roothandle );
+        if (iostatus)
+        {
+            iostatus->Status = ret;
+            iostatus->Information = 0;
+        }
+        return ret;
+    }
+    new_attr = *file;
 
     if (flags) FIXME( "flags %x not handled\n", flags );
     if (trustkey) FIXME("trustkey parameter not supported\n");

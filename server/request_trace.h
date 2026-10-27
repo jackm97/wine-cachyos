@@ -3606,6 +3606,19 @@ static void dump_fsync_free_shm_idx_request( const struct fsync_free_shm_idx_req
     fprintf( stderr, " shm_idx=%08x", req->shm_idx );
 }
 
+static void dump_load_app_hive_request( const struct load_app_hive_request *req )
+{
+    fprintf( stderr, " file=%04x", req->file );
+    fprintf( stderr, ", flags=%08x", req->flags );
+    fprintf( stderr, ", access=%08x", req->access );
+    fprintf( stderr, ", created=%08x", req->created );
+}
+
+static void dump_load_app_hive_reply( const struct load_app_hive_reply *req )
+{
+    fprintf( stderr, " hkey=%04x", req->hkey );
+}
+
 static void dump_alpc_create_port_request( const struct alpc_create_port_request *req )
 {
     fprintf( stderr, " flags=%08x", req->flags );
@@ -3936,6 +3949,7 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] =
     (dump_func)dump_d3dkmt_mutex_acquire_request,
     (dump_func)dump_d3dkmt_mutex_release_request,
     (dump_func)dump_fsync_free_shm_idx_request,
+    (dump_func)dump_load_app_hive_request,
     (dump_func)dump_alpc_create_port_request,
 };
 
@@ -4255,6 +4269,7 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] =
     (dump_func)dump_d3dkmt_mutex_acquire_reply,
     NULL,
     NULL,
+    (dump_func)dump_load_app_hive_reply,
     (dump_func)dump_alpc_create_port_reply,
 };
 
@@ -4574,6 +4589,7 @@ static const char * const req_names[REQ_NB_REQUESTS] =
     "d3dkmt_mutex_acquire",
     "d3dkmt_mutex_release",
     "fsync_free_shm_idx",
+    "load_app_hive",
     "alpc_create_port",
 };
 
@@ -4710,6 +4726,8 @@ static const struct
     { "PROCESS_IS_TERMINATING",      STATUS_PROCESS_IS_TERMINATING },
     { "PROCESS_NOT_IN_JOB",          STATUS_PROCESS_NOT_IN_JOB },
     { "RANGE_NOT_LOCKED",            STATUS_RANGE_NOT_LOCKED },
+    { "REGISTRY_CORRUPT",            STATUS_REGISTRY_CORRUPT },
+    { "REGISTRY_IO_FAILED",          STATUS_REGISTRY_IO_FAILED },
     { "REPARSE_POINT_NOT_RESOLVED",  STATUS_REPARSE_POINT_NOT_RESOLVED },
     { "SECTION_TOO_BIG",             STATUS_SECTION_TOO_BIG },
     { "SEMAPHORE_LIMIT_EXCEEDED",    STATUS_SEMAPHORE_LIMIT_EXCEEDED },

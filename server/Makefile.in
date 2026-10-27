@@ -33,6 +33,7 @@ SOURCES = \
 	queue.c \
 	region.c \
 	registry.c \
+	registry_hive.c \
 	request.c \
 	security.h \
 	semaphore.c \
