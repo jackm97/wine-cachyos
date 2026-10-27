@@ -317,6 +317,12 @@ bool media_converter_init(void)
     GST_DEBUG_CATEGORY_INIT(media_converter_debug,
             "protonmediaconverter", GST_DEBUG_FG_YELLOW, "Proton media converter");
 
+    if (!getenv("MEDIACONV_VIDEO_DUMP_FILE") && !getenv("MEDIACONV_AUDIO_DUMP_FILE"))
+    {
+        GST_INFO("Media converter environment is not configured.");
+        return true;
+    }
+
     if (proton_video_convert && !strcmp(proton_video_convert, "1"))
     {
     if (!GST_ELEMENT_REGISTER(protonvideoconverter, NULL))
