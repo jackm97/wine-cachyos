@@ -3821,14 +3821,6 @@ msgstr "Кодек IYUV"
 msgid "Intel Indeo IYUV codec"
 msgstr "Кодек Intel Indeo IYUV"
 
-#: dlls/iyuv_32/iyuv_32.rc:28
-msgid "IYUV codec"
-msgstr ""
-
-#: dlls/iyuv_32/iyuv_32.rc:29
-msgid "Intel Indeo IYUV codec"
-msgstr ""
-
 #: dlls/joy.cpl/joy.rc:37
 msgid "Joysticks"
 msgstr "Джойстики"
