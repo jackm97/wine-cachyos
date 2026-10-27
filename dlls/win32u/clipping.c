@@ -215,7 +215,7 @@ INT WINAPI NtGdiExtSelectClipRgn( HDC hdc, HRGN rgn, INT mode )
  *           set_visible_region
  */
 void set_visible_region( HDC hdc, HRGN hrgn, const RECT *vis_rect, const RECT *device_rect,
-                         struct window_surface *surface, UINT dpi_from, UINT dpi_to )
+                         struct window_surface *surface, struct ratio dpi_from, struct ratio dpi_to )
 {
     DC * dc;
 
