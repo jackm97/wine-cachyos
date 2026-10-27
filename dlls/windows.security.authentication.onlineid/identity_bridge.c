@@ -47,6 +47,7 @@
 #define FIELD_ERROR 20
 #define FIELD_POLICY 21
 #define FIELD_ACCOUNTS 22
+#define FIELD_PROMPT 23
 
 #pragma pack(push, 1)
 struct bridge_header
@@ -171,7 +172,7 @@ static HRESULT utf8_to_hstring( const BYTE *value, UINT32 size, HSTRING *out )
 }
 
 static HRESULT device_authorize_client( HSTRING client_id, HSTRING scopes, HSTRING authority,
-                                       HSTRING account_id, HSTRING login_hint, BOOL silent, HANDLE cancel,
+                                       HSTRING account_id, HSTRING login_hint, BOOL silent, BOOL force, HANDLE cancel,
                                        struct identity_reply *reply )
 {
     const WCHAR *value;
@@ -188,7 +189,7 @@ static HRESULT device_authorize_client( HSTRING client_id, HSTRING scopes, HSTRI
     guid_string[38] = 0;
     if (FAILED(hr = CLSIDFromString( guid_string, &application_id ))) return hr;
     if (silent) return identity_device_get_token( &application_id, scopes, authority, account_id, login_hint, cancel, reply );
-    return identity_device_authorize( &application_id, scopes, authority, login_hint, cancel, reply );
+    return identity_device_authorize( &application_id, scopes, authority, login_hint, force, cancel, reply );
 }
 
 HRESULT identity_native_credentials( UINT operation, const char *client_id, HSTRING authority,
@@ -388,7 +389,7 @@ done:
 }
 
 HRESULT identity_bridge_authorize_client( HSTRING client_id, HSTRING scopes, HSTRING authority,
-                                          HSTRING login_hint, HSTRING policy, HANDLE cancel,
+                                          HSTRING login_hint, HSTRING policy, BOOL force, HANDLE cancel,
                                           struct identity_reply *reply )
 {
     struct message_builder builder = {0};
@@ -400,7 +401,7 @@ HRESULT identity_bridge_authorize_client( HSTRING client_id, HSTRING scopes, HST
     if (!client_id || !reply) return E_POINTER;
     memset( reply, 0, sizeof(*reply) );
     if (!GetEnvironmentVariableW( L"SODA_IDENTITY_BRIDGE_SOCKET", NULL, 0 ))
-        return device_authorize_client( client_id, scopes, authority, NULL, login_hint, FALSE, cancel, reply );
+        return device_authorize_client( client_id, scopes, authority, NULL, login_hint, FALSE, force, cancel, reply );
     if (FAILED(hr = hstring_to_utf8( client_id, &client_utf8, &client_size )) ||
         FAILED(hr = hstring_to_utf8( scopes, &scopes_utf8, &scopes_size )) ||
         FAILED(hr = hstring_to_utf8( authority, &authority_utf8, &authority_size )) ||
@@ -410,7 +411,8 @@ HRESULT identity_bridge_authorize_client( HSTRING client_id, HSTRING scopes, HST
         FAILED(hr = builder_add( &builder, FIELD_SCOPES, scopes_utf8, scopes_size )) ||
         FAILED(hr = builder_add( &builder, FIELD_AUTHORITY, authority_utf8, authority_size )) ||
         FAILED(hr = builder_add( &builder, FIELD_LOGIN_HINT, login_hint_utf8, login_hint_size )) ||
-        FAILED(hr = builder_add( &builder, FIELD_POLICY, policy_utf8, policy_size )))
+        FAILED(hr = builder_add( &builder, FIELD_POLICY, policy_utf8, policy_size )) ||
+        (force && FAILED(hr = builder_add( &builder, FIELD_PROMPT, "login", 5 ))))
         goto done;
     hr = bridge_exchange( OP_AUTHORIZE, &builder, cancel, reply );
 
@@ -436,7 +438,7 @@ HRESULT identity_bridge_get_token( HSTRING client_id, HSTRING scopes, HSTRING au
     if (!client_id || !reply) return E_POINTER;
     memset( reply, 0, sizeof(*reply) );
     if (!GetEnvironmentVariableW( L"SODA_IDENTITY_BRIDGE_SOCKET", NULL, 0 ))
-        return device_authorize_client( client_id, scopes, authority, account_id, NULL, TRUE, cancel, reply );
+        return device_authorize_client( client_id, scopes, authority, account_id, NULL, TRUE, FALSE, cancel, reply );
     if (FAILED(hr = hstring_to_utf8( client_id, &client_utf8, &client_size )) ||
         FAILED(hr = hstring_to_utf8( scopes, &scopes_utf8, &scopes_size )) ||
         FAILED(hr = hstring_to_utf8( authority, &authority_utf8, &authority_size )) ||
@@ -472,7 +474,7 @@ HRESULT identity_bridge_authorize( const GUID *application_id, HSTRING service, 
     if (!application_id || !reply) return E_POINTER;
     memset( reply, 0, sizeof(*reply) );
     if (!GetEnvironmentVariableW( L"SODA_IDENTITY_BRIDGE_SOCKET", NULL, 0 ))
-        return identity_device_authorize( application_id, service, NULL, NULL, cancel, reply );
+        return identity_device_authorize( application_id, service, NULL, NULL, FALSE, cancel, reply );
     if (StringFromGUID2( application_id, caller_buffer, ARRAY_SIZE(caller_buffer) ) != ARRAY_SIZE(caller_buffer))
         return E_INVALIDARG;
     if (FAILED(hr = WindowsCreateString( caller_buffer + 1, 36, &caller_id )) ||

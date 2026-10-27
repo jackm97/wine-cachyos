@@ -69,11 +69,11 @@ struct identity_reply
 extern HRESULT identity_bridge_authorize( const GUID *application_id, HSTRING service, HSTRING policy,
                                           HANDLE cancel, struct identity_reply *reply );
 extern HRESULT identity_bridge_authorize_client( HSTRING client_id, HSTRING scopes, HSTRING authority,
-                                                 HSTRING login_hint, HSTRING policy, HANDLE cancel, struct identity_reply *reply );
+                                                 HSTRING login_hint, HSTRING policy, BOOL force, HANDLE cancel, struct identity_reply *reply );
 extern HRESULT identity_bridge_get_token( HSTRING client_id, HSTRING scopes, HSTRING authority,
                                           HSTRING account_id, HANDLE cancel, struct identity_reply *reply );
 extern HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, HSTRING authority, HSTRING login_hint,
-                                          HANDLE cancel, struct identity_reply *reply );
+                                          BOOL force, HANDLE cancel, struct identity_reply *reply );
 extern HRESULT identity_device_get_token( const GUID *application_id, HSTRING service, HSTRING authority,
                                           HSTRING account_id, HSTRING login_hint, HANDLE cancel, struct identity_reply *reply );
 extern HRESULT identity_native_credentials( UINT operation, const char *client_id, HSTRING authority,

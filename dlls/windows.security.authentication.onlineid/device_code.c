@@ -934,7 +934,7 @@ done:
 }
 
 HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, HSTRING authority, HSTRING login_hint,
-                                   HANDLE cancel, struct identity_reply *reply )
+                                   BOOL force, HANDLE cancel, struct identity_reply *reply )
 {
     char client_id[37], *scopes = NULL, *encoded_scopes = NULL, *body = NULL, *response = NULL;
     char *device_code = NULL, *encoded_code = NULL, *user_code = NULL, *verification_uri = NULL;
@@ -942,12 +942,13 @@ HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, 
     UINT32 expires = 900, interval = 5, elapsed = 0;
     DWORD status;
     SIZE_T size;
-    HRESULT hr;
+    HRESULT hr = E_FAIL;
     WCHAR device_path[80], token_path[80];
 
     if (!application_id || !reply) return E_POINTER;
     memset( reply, 0, sizeof(*reply) );
-    hr = identity_device_get_token( application_id, service, authority, NULL, login_hint, cancel, reply );
+    if (!force)
+        hr = identity_device_get_token( application_id, service, authority, NULL, login_hint, cancel, reply );
     if (SUCCEEDED(hr)) return S_OK;
     if (hr == HRESULT_FROM_WIN32( ERROR_SERVICE_NOT_ACTIVE ))
     {

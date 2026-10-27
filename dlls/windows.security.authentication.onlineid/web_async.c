@@ -401,15 +401,27 @@ static HRESULT token_worker( struct web_async_operation *impl, IInspectable **re
     IWebTokenRequestResult *token_result = NULL;
     HSTRING client_id = NULL, scopes = NULL, authority = NULL, login_hint = NULL;
     HSTRING account_id = NULL, policy = NULL;
+    WebTokenRequestPromptType prompt;
     HRESULT hr;
 
-    if (FAILED(hr = IWebTokenRequest_get_ClientId( impl->u.token.request, &client_id )) ||
+    if (FAILED(hr = IWebTokenRequest_get_PromptType( impl->u.token.request, &prompt )) ||
+        FAILED(hr = IWebTokenRequest_get_ClientId( impl->u.token.request, &client_id )) ||
         FAILED(hr = IWebTokenRequest_get_Scope( impl->u.token.request, &scopes )) ||
         FAILED(hr = IWebTokenRequest_get_WebAccountProvider( impl->u.token.request, &provider )) ||
         FAILED(hr = IWebAccountProvider_QueryInterface( provider, &IID_IWebAccountProvider2, (void **)&provider2 )) ||
         FAILED(hr = IWebAccountProvider2_get_Authority( provider2, &authority )) ||
         FAILED(hr = WindowsCreateString( L"", 0, &policy )))
         goto done;
+    if (prompt != WebTokenRequestPromptType_Default && prompt != WebTokenRequestPromptType_ForceAuthentication)
+    {
+        hr = E_INVALIDARG;
+        goto done;
+    }
+    if (impl->u.token.silent && prompt == WebTokenRequestPromptType_ForceAuthentication)
+    {
+        hr = web_token_result_create( provider, NULL, WebTokenRequestStatus_UserInteractionRequired, &token_result );
+        goto done;
+    }
     if (impl->u.token.account && impl->u.token.silent)
     {
         if (FAILED(hr = IWebAccount_QueryInterface( impl->u.token.account, &IID_IWebAccount2,
@@ -428,7 +440,7 @@ static HRESULT token_worker( struct web_async_operation *impl, IInspectable **re
         hr = identity_bridge_get_token( client_id, scopes, authority, account_id, impl->cancel, &reply );
     }
     else
-        hr = identity_bridge_authorize_client( client_id, scopes, authority, login_hint, policy, impl->cancel, &reply );
+        hr = identity_bridge_authorize_client( client_id, scopes, authority, login_hint, policy, prompt == WebTokenRequestPromptType_ForceAuthentication, impl->cancel, &reply );
     if (SUCCEEDED(hr))
         hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_Success, &token_result );
     else if (hr == HRESULT_FROM_WIN32( ERROR_CANCELLED ))
