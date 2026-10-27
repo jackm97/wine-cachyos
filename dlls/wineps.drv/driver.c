@@ -125,7 +125,8 @@ void PSDRV_MergeDevmodes( PSDRV_DEVMODE *dm1, const DEVMODEW *dm2, PRINTERINFO *
 	    dm1->dmPublic.dmPaperSize = dm2->dmPaperSize;
 	    dm1->dmPublic.dmPaperWidth  = paper_size_from_points( page->PaperDimension->x );
 	    dm1->dmPublic.dmPaperLength = paper_size_from_points( page->PaperDimension->y );
-	    dm1->dmPublic.dmFields |= DM_PAPERSIZE | DM_PAPERWIDTH | DM_PAPERLENGTH;
+	    dm1->dmPublic.dmFields &= ~(DM_PAPERWIDTH | DM_PAPERLENGTH);
+	    dm1->dmPublic.dmFields |= DM_PAPERSIZE;
 	    TRACE("Changing page to %s %d x %d\n", debugstr_w(page->FullName),
 		  dm1->dmPublic.dmPaperWidth,
 		  dm1->dmPublic.dmPaperLength );
@@ -369,12 +370,11 @@ static INT_PTR CALLBACK PSDRV_PaperDlgProc(HWND hwnd, UINT msg,
         TRACE("Setting pagesize to item %d, WinPage %d (%s), PaperSize %.2fx%.2f\n", Cursel,
               ps->WinPage, debugstr_w(ps->FullName), ps->PaperDimension->x, ps->PaperDimension->y);
         di->dlgdm->dmPublic.dmPaperSize = ps->WinPage;
+        di->dlgdm->dmPublic.dmFields &= ~(DM_PAPERLENGTH | DM_PAPERWIDTH);
         di->dlgdm->dmPublic.dmFields |= DM_PAPERSIZE;
 
         di->dlgdm->dmPublic.dmPaperWidth  = paper_size_from_points(ps->PaperDimension->x);
         di->dlgdm->dmPublic.dmPaperLength = paper_size_from_points(ps->PaperDimension->y);
-        di->dlgdm->dmPublic.dmFields |= DM_PAPERLENGTH | DM_PAPERWIDTH;
-
         if (di->dlgdm->dmPublic.dmSize >= FIELD_OFFSET(DEVMODEW, dmFormName) + CCHFORMNAME * sizeof(WCHAR))
         {
             lstrcpynW(di->dlgdm->dmPublic.dmFormName, ps->FullName, CCHFORMNAME);
