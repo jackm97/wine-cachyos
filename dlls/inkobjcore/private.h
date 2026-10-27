@@ -28,15 +28,68 @@
 #include "objbase.h"
 #include "winstring.h"
 #define WIDL_using_Windows_Foundation
+#define WIDL_using_Windows_Foundation_Collections
 #define WIDL_using_Windows_Foundation_Numerics
 #define WIDL_using_Windows_UI
 #define WIDL_using_Windows_UI_Input_Inking
+#define WIDL_using_Windows_UI_Core
+#define WIDL_using_Windows_UI_Composition
+#define WIDL_using_Windows_UI_Input_Inking_Core
 #include "windows.ui.input.inking.h"
+#include "windows.ui.input.inking.core.h"
+#include "activation.h"
+
+#include "wine/list.h"
+
+struct ink_events
+{
+    CRITICAL_SECTION lock;
+    struct list handlers;
+    LONGLONG next_token;
+    BOOL closed;
+};
+
+typedef HRESULT (*ink_event_callback)(IUnknown *handler, void *sender, void *args);
+enum ink_pointer_event
+{
+    INK_STROKE_STARTED = 16,
+    INK_STROKE_CONTINUED,
+    INK_STROKE_ENDED,
+    INK_STROKE_CANCELED,
+    INK_POINTER_ENTERED = 32,
+    INK_POINTER_HOVERED,
+    INK_POINTER_EXITED,
+    INK_POINTER_PRESSED,
+    INK_POINTER_MOVED,
+    INK_POINTER_RELEASED,
+    INK_POINTER_LOST
+};
+void ink_events_init(struct ink_events *events);
+void ink_events_clear(struct ink_events *events);
+HRESULT ink_event_add(struct ink_events *events, UINT id, IUnknown *handler, EventRegistrationToken *token);
+HRESULT ink_event_remove(struct ink_events *events, UINT id, EventRegistrationToken token);
+HRESULT ink_event_notify(struct ink_events *events, UINT id, void *sender, void *args, ink_event_callback invoke);
+
+struct ink_pending_stroke
+{
+    struct list entry;
+    IInkStroke *stroke;
+};
+
+HRESULT ink_stroke_view_take(struct list *strokes, IVectorView_InkStroke **out);
+HRESULT ink_synchronizer_create(IInkSynchronizer **out);
+HRESULT ink_synchronizer_queue(IInkSynchronizer *iface, IInkStroke *stroke);
 
 extern LONG ink_object_count, ink_factory_refs;
 HRESULT ink_point_create(struct Point position, float pressure, float tilt_x, float tilt_y,
         UINT64 timestamp, IInkPoint **out);
 HRESULT ink_drawing_attributes_create(IInkDrawingAttributes **out);
+HRESULT ink_drawing_attributes_clone(IInkDrawingAttributes *source, IInkDrawingAttributes **out);
+HRESULT ink_input_configuration_create(IInkInputProcessingConfiguration **out);
+HRESULT ink_presenter_create(IInkPresenter **out);
+HRESULT ink_presenter_notify_pointer(IInkPresenter *iface, enum ink_pointer_event id, IPointerEventArgs *args);
+HRESULT ink_core_host_create(IInspectable **out);
+HRESULT ink_source_get_factory(BOOL wet, IActivationFactory **out);
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \
