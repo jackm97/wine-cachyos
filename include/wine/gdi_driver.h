@@ -330,6 +330,8 @@ W32KAPI struct window_surface *window_surface_create( const struct window_surfac
                                                       const RECT *rect, BITMAPINFO *info, HBITMAP bitmap );
 W32KAPI void window_surface_add_ref( struct window_surface *surface );
 W32KAPI void window_surface_release( struct window_surface *surface );
+W32KAPI void window_surface_lock( struct window_surface *surface );
+W32KAPI void window_surface_unlock( struct window_surface *surface );
 W32KAPI void window_surface_set_shape( struct window_surface *surface, HRGN shape_region );
 W32KAPI struct window_surface *window_surface_get( HWND hwnd );
 

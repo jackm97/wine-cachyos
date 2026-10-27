@@ -617,13 +617,13 @@ W32KAPI struct window_surface *window_surface_get( HWND hwnd )
     return surface;
 }
 
-void window_surface_lock( struct window_surface *surface )
+W32KAPI void window_surface_lock( struct window_surface *surface )
 {
     if (surface == &dummy_surface) return;
     pthread_mutex_lock( &surface->mutex );
 }
 
-void window_surface_unlock( struct window_surface *surface )
+W32KAPI void window_surface_unlock( struct window_surface *surface )
 {
     if (surface == &dummy_surface) return;
     pthread_mutex_unlock( &surface->mutex );
