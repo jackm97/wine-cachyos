@@ -742,17 +742,17 @@ HRESULT update_media_type(IMFMediaType *dst_type, IMFMediaType *src_type, BOOL a
 
     /* block alignment and byte rate may be inherited from the compressed upstream type;
      * for pcm / float recompute them from the decoded format instead */
-    if (SUCCEEDED(hr) && SUCCEEDED(IMFMediaType_GetGUID(media_type, &MF_MT_SUBTYPE, &subtype))
+    if (SUCCEEDED(hr) && SUCCEEDED(IMFMediaType_GetGUID(dst_type, &MF_MT_SUBTYPE, &subtype))
             && (IsEqualGUID(&subtype, &MFAudioFormat_PCM) || IsEqualGUID(&subtype, &MFAudioFormat_Float))
-            && SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_AUDIO_BITS_PER_SAMPLE, &bits_per_sample))
-            && SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_AUDIO_NUM_CHANNELS, &channels))
-            && SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &samples_per_second)))
+            && SUCCEEDED(IMFMediaType_GetUINT32(dst_type, &MF_MT_AUDIO_BITS_PER_SAMPLE, &bits_per_sample))
+            && SUCCEEDED(IMFMediaType_GetUINT32(dst_type, &MF_MT_AUDIO_NUM_CHANNELS, &channels))
+            && SUCCEEDED(IMFMediaType_GetUINT32(dst_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &samples_per_second)))
     {
         UINT32 block_alignment = bits_per_sample * channels / 8;
 
-        hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment);
+        hr = IMFMediaType_SetUINT32(dst_type, &MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment);
         if (SUCCEEDED(hr))
-            hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND, block_alignment * samples_per_second);
+            hr = IMFMediaType_SetUINT32(dst_type, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND, block_alignment * samples_per_second);
     }
 
     return hr;
