@@ -1078,7 +1078,7 @@ HRESULT d2d_command_list_replay(ID2D1CommandList *iface, struct d2d_device_conte
                     const struct d2d_command_push_layer *c = data;
                     struct d2d_layer_frame *previous = target->layers;
 
-                    ID2D1DeviceContext_PushLayer(context, &c->params, c->layer);
+                    ID2D1DeviceContext_PushLayer(context, &c->params, NULL);
                     if (target->layers != previous) scopes[scope_count++] = TRUE;
                     if (FAILED(hr = target->error.code)) goto done;
                 }
