@@ -70,6 +70,11 @@ struct wm_reader
     WORD stream_count;
 };
 
+static bool is_kirikiri_media_reader(void)
+{
+    return GetModuleHandleW(L"krmovie.dll") != NULL;
+}
+
 static struct wm_stream *get_stream_by_output_number(struct wm_reader *reader, DWORD output)
 {
     if (output < reader->stream_count)
@@ -557,6 +562,31 @@ static HRESULT WINAPI stream_props_GetMediaType(IWMMediaProps *iface, WM_MEDIA_T
 
     wg_parser_stream_get_codec_format(config->stream->wg_stream, &codec_format);
     format = (codec_format.major_type != WG_MAJOR_TYPE_UNKNOWN && config->stream->demux_compressed) ? &codec_format : &config->stream->format;
+
+    if (is_kirikiri_media_reader())
+    {
+        if (format->major_type == WG_MAJOR_TYPE_VIDEO
+                && codec_format.major_type == WG_MAJOR_TYPE_VIDEO_WMV)
+        {
+            enum wg_video_format video_format = codec_format.u.video.format;
+
+            codec_format = config->stream->format;
+            codec_format.major_type = WG_MAJOR_TYPE_VIDEO_WMV;
+            codec_format.u.video.format = video_format;
+            codec_format.u.video.height = abs(codec_format.u.video.height);
+            format = &codec_format;
+        }
+        else if (format->major_type == WG_MAJOR_TYPE_AUDIO
+                && codec_format.major_type == WG_MAJOR_TYPE_AUDIO_WMA)
+        {
+            unsigned int version = codec_format.u.audio.version;
+
+            codec_format = config->stream->format;
+            codec_format.major_type = WG_MAJOR_TYPE_AUDIO_WMA;
+            codec_format.u.audio.version = version;
+            format = &codec_format;
+        }
+    }
 
 {
     const char *sgi = getenv("SteamGameId");
@@ -1623,14 +1653,14 @@ static HRESULT init_stream(struct wm_reader *reader)
     enable_opengl = enable_opengl && !is_new_wow64();
 {
     const char *sgi = getenv("SteamGameId");
-    if (sgi && (0
+    if (is_kirikiri_media_reader() || (sgi && (0
         || !strcmp(sgi, "802870")
         || !strcmp(sgi, "1083650")
         || !strcmp(sgi, "1097880")
         || !strcmp(sgi, "1230140")
         || !strcmp(sgi, "2515070")
         || !strcmp(sgi, "3625380")
-    ))
+    )))
     enable_opengl = FALSE;
 }
     FIXME("Enabling opengl parser context: %s\n", enable_opengl ? "True" : "False");
@@ -1768,14 +1798,14 @@ static HRESULT reinit_stream(struct wm_reader *reader, bool read_compressed)
     enable_opengl = enable_opengl && !is_new_wow64();
 {
     const char *sgi = getenv("SteamGameId");
-    if (sgi && (0
+    if (is_kirikiri_media_reader() || (sgi && (0
         || !strcmp(sgi, "802870")
         || !strcmp(sgi, "1083650")
         || !strcmp(sgi, "1097880")
         || !strcmp(sgi, "1230140")
         || !strcmp(sgi, "2515070")
         || !strcmp(sgi, "3625380")
-    ))
+    )))
     enable_opengl = FALSE;
 }
     FIXME("Enabling opengl parser context: %s\n", enable_opengl ? "True" : "False");
@@ -2800,7 +2830,7 @@ static HRESULT WINAPI reader_SetReadStreamSamples(IWMSyncReader2 *iface, WORD st
 
     {
         const char *sgi = getenv("SteamGameId");
-        if (sgi && (0
+        if (is_kirikiri_media_reader() || (sgi && (0
             || !strcmp(sgi, "638160")
             || !strcmp(sgi, "802870")
             || !strcmp(sgi, "1083650")
@@ -2808,7 +2838,7 @@ static HRESULT WINAPI reader_SetReadStreamSamples(IWMSyncReader2 *iface, WORD st
             || !strcmp(sgi, "1230140")
             || !strcmp(sgi, "2515070")
             || !strcmp(sgi, "3625380")
-            ))
+            )))
             compressed = FALSE;
     }
 
