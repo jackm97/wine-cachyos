@@ -150,6 +150,9 @@ struct surface
     HWND hwnd;
 };
 
+static const WCHAR wine_dcomp_target_window_propW[] = {'_','_','w','i','n','e','_','d','c','o','m','p','_','t','a','r','g','e','t','_','w','i','n','d','o','w',0};
+static const WCHAR dxvk_dummy_window_classW[] = {'D','X','V','K','D','U','M','M','Y','W','N','D','C','L','A','S','S',0};
+
 static struct surface *surface_from_handle( VkSurfaceKHR handle )
 {
     struct vulkan_surface *obj = vulkan_surface_from_handle( handle );
@@ -1755,6 +1758,8 @@ static VkResult win32u_vkCreateWin32SurfaceKHR( VkInstance client_instance, cons
     struct vulkan_instance *instance = vulkan_instance_from_handle( client_instance );
     VkSurfaceKHR host_surface;
     struct surface *surface;
+    DWORD process_id, target_process_id;
+    HWND target;
     HWND dummy = NULL;
     VkResult res;
 
@@ -1764,7 +1769,17 @@ static VkResult win32u_vkCreateWin32SurfaceKHR( VkInstance client_instance, cons
     if (!(surface = calloc( 1, sizeof(*surface) ))) return VK_ERROR_OUT_OF_HOST_MEMORY;
 
     /* Windows allows surfaces to be created with no HWND, they return VK_ERROR_SURFACE_LOST_KHR later */
-    if (!(surface->hwnd = create_info->hwnd))
+    surface->hwnd = create_info->hwnd;
+    if (surface->hwnd
+            && (target = (HWND)NtUserGetProp( surface->hwnd, wine_dcomp_target_window_propW ))
+            && get_window_thread( surface->hwnd, &process_id )
+            && get_window_thread( target, &target_process_id )
+            && process_id == target_process_id)
+    {
+        TRACE( "Redirecting composition surface from %p to %p.\n", surface->hwnd, target );
+        surface->hwnd = target;
+    }
+    if (!surface->hwnd)
     {
         static const WCHAR staticW[] = {'s','t','a','t','i','c',0};
         UNICODE_STRING static_us = RTL_CONSTANT_STRING( staticW );
@@ -2799,6 +2814,55 @@ static VkResult win32u_vkSetLatencySleepModeNV(VkDevice device, VkSwapchainKHR s
     return vk_device->p_vkSetLatencySleepModeNV(vk_device->host.device, vk_swapchain->obj.host.swapchain, &sleep_mode_info_host);
 }
 
+static VkResult retarget_composition_surface( struct vulkan_instance *instance, struct surface *surface )
+{
+    struct client_surface *client;
+    VkSurfaceKHR host_surface;
+    DWORD process_id, target_process_id;
+    HWND target;
+    VkResult res;
+
+    if (surface->swapchain)
+    {
+        TRACE( "surface %p already has swapchain %p, not retargeting.\n", surface, surface->swapchain );
+        return VK_SUCCESS;
+    }
+
+    if (!(target = (HWND)NtUserGetProp( surface->hwnd, wine_dcomp_target_window_propW ))
+            || !get_window_thread( surface->hwnd, &process_id )
+            || !get_window_thread( target, &target_process_id )
+            || process_id != target_process_id)
+        return VK_SUCCESS;
+
+    if (!(client = get_unused_client_surface( target, 0, emulate_modeset ))) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    res = driver_funcs->p_vulkan_surface_create( client, instance, &host_surface );
+    use_window_client_surface( client, !res );
+    if (res)
+    {
+        client_surface_release( client );
+        return res;
+    }
+    set_window_pixel_format( target, -1, TRUE );
+    instance->p_vkDestroySurfaceKHR( instance->host.instance, surface->obj.host.surface, NULL );
+    use_window_client_surface( surface->client, FALSE );
+    client_surface_release( surface->client );
+
+    TRACE( "Redirecting composition surface from %p to %p.\n", surface->hwnd, target );
+    surface->obj.host.surface = host_surface;
+    surface->client = client;
+    surface->hwnd = target;
+    return VK_SUCCESS;
+}
+
+static BOOL is_dxvk_composition_surface( struct surface *surface )
+{
+    WCHAR buffer[ARRAY_SIZE(dxvk_dummy_window_classW)] = {0};
+    UNICODE_STRING name = {0, sizeof(buffer), buffer};
+
+    return NtUserGetClassName( surface->hwnd, FALSE, &name )
+            && !wcscmp( buffer, dxvk_dummy_window_classW );
+}
+
 /* The fork scaler is the path used when modeset emulation is active (decision F4); it applies when the
  * window DPI differs from the raw monitor DPI and returns the raw DPI, or 0 when the scaler is not used. */
 static UINT surface_get_fshack_dpi( struct surface *surface )
@@ -2860,6 +2924,14 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
     VkResult res;
     BOOL lite;
     float sharpness;
+
+    if (!surface->swapchain && is_dxvk_composition_surface( surface )
+            && !NtUserGetProp( surface->hwnd, wine_dcomp_target_window_propW ))
+    {
+        TRACE( "Deferring composition swapchain for surface window %p.\n", surface->hwnd );
+        return VK_ERROR_OUT_OF_DATE_KHR;
+    }
+    if ((res = retarget_composition_surface( instance, surface ))) return res;
 
     if (!NtUserIsWindow( surface->hwnd ))
     {
