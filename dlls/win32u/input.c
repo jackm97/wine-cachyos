@@ -3050,7 +3050,7 @@ BOOL WINAPI NtUserClipCursor( const RECT *rect )
         }
 
         /* keep the mouse clipped inside of a fullscreen foreground window */
-        if (keep_inside_window && NtUserGetWindowRect( foreground, &full_rect, dpi ) && is_fullscreen( &info, &full_rect ))
+        if (keep_inside_window && get_window_rect( foreground, &full_rect, dpi ) && is_fullscreen( &info, &full_rect ))
         {
             full_rect.left = max( full_rect.left, min( full_rect.right - 1, rect->left ) );
             full_rect.right = max( full_rect.left, min( full_rect.right - 1, rect->right ) );

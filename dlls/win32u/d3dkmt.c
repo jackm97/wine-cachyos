@@ -863,7 +863,7 @@ NTSTATUS WINAPI NtGdiDdDDIQueryAdapterInfo( D3DKMT_QUERYADAPTERINFO *desc )
         D3DKMT_WDDM_2_7_CAPS *data;
         const char *e;
 
-        if (!(adapter = get_d3dkmt_object( desc->hAdapter, D3DKMT_ADAPTER ))) return STATUS_INVALID_PARAMETER;
+        if (!(adapter = get_d3dkmt_adapter( desc->hAdapter ))) return STATUS_INVALID_PARAMETER;
         if (!(physical_device = adapter->physical_device)) return STATUS_INVALID_PARAMETER;
         instance = physical_device->instance;
 
@@ -911,7 +911,7 @@ NTSTATUS WINAPI NtGdiDdDDIQueryAdapterInfo( D3DKMT_QUERYADAPTERINFO *desc )
 
         TRACE("size %x\n", desc->PrivateDriverDataSize);
 
-        if (!(adapter = get_d3dkmt_object( desc->hAdapter, D3DKMT_ADAPTER ))) return STATUS_INVALID_PARAMETER;
+        if (!(adapter = get_d3dkmt_adapter( desc->hAdapter ))) return STATUS_INVALID_PARAMETER;
         if (!(physical_device = adapter->physical_device)) return STATUS_INVALID_PARAMETER;
         instance = physical_device->instance;
 
@@ -989,7 +989,7 @@ NTSTATUS WINAPI NtGdiDdDDIQueryAdapterInfo( D3DKMT_QUERYADAPTERINFO *desc )
 
         TRACE("Version %u\n", info->Version);
 
-        if (!(adapter = get_d3dkmt_object( desc->hAdapter, D3DKMT_ADAPTER ))) return STATUS_INVALID_PARAMETER;
+        if (!(adapter = get_d3dkmt_adapter( desc->hAdapter ))) return STATUS_INVALID_PARAMETER;
         if (!(physical_device = adapter->physical_device)) return STATUS_INVALID_PARAMETER;
         instance = physical_device->instance;
 
