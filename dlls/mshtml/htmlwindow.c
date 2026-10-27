@@ -47,6 +47,7 @@
 WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 static ExternalCycleCollectionParticipant outer_window_ccp;
+static nsresult NSAPI outer_window_unlink(void*);
 
 static int window_map_compare(const void *key, const struct wine_rb_entry *entry)
 {
@@ -63,22 +64,6 @@ HTMLOuterWindow *mozwindow_to_window(const mozIDOMWindowProxy *mozwindow)
 {
     struct wine_rb_entry *entry = wine_rb_get(&window_map, mozwindow);
     return entry ? WINE_RB_ENTRY_VALUE(entry, HTMLOuterWindow, entry) : NULL;
-}
-
-void __cdecl cc_api_collect(void)
-{
-    nsIDOMWindowUtils *window_utils = NULL;
-    HTMLOuterWindow *window;
-
-    /* We can't rely on GetScriptGlobal as this can be initialized before any scripts are set up */
-    if(!window_map.root || !(window = WINE_RB_ENTRY_VALUE(window_map.root, HTMLOuterWindow, entry))->browser)
-        return;
-    get_nsinterface((nsISupports*)window->browser->content_window->nswindow, &IID_nsIDOMWindowUtils, (void**)&window_utils);
-
-    if(window_utils) {
-        cycle_collect(window_utils);
-        nsIDOMWindowUtils_Release(window_utils);
-    }
 }
 
 static HRESULT get_location(HTMLOuterWindow *This, HTMLLocation **ret)
@@ -223,7 +208,10 @@ static HRESULT WINAPI outer_window_QueryInterface(IHTMLWindow2 *iface, REFIID ri
 
     TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
 
-    if(IsEqualGUID(&IID_nsXPCOMCycleCollectionParticipant, riid)) {
+    if(IsEqualGUID(&IID_IWineGetJSDispatch, riid)) {
+        *ppv = This->base.inner_window ? This->base.inner_window->event_target.dispex.jsdisp : NULL;
+        return S_OK;
+    }else if(IsEqualGUID(&IID_nsXPCOMCycleCollectionParticipant, riid)) {
         *ppv = &outer_window_ccp;
         return S_OK;
     }else if(IsEqualGUID(&IID_nsCycleCollectionISupports, riid)) {
@@ -1427,6 +1415,7 @@ static HRESULT WINAPI HTMLWindow2_resizeBy(IHTMLWindow2 *iface, LONG x, LONG y)
 static HRESULT WINAPI HTMLWindow2_get_external(IHTMLWindow2 *iface, IDispatch **p)
 {
     HTMLWindow *This = impl_from_IHTMLWindow2(iface);
+    HRESULT hres;
 
     TRACE("(%p)->(%p)\n", This, p);
 
@@ -1438,7 +1427,14 @@ static HRESULT WINAPI HTMLWindow2_get_external(IHTMLWindow2 *iface, IDispatch **
     if(!This->outer_window->browser->doc->hostui)
         return S_OK;
 
-    return IDocHostUIHandler_GetExternal(This->outer_window->browser->doc->hostui, p);
+    hres = IDocHostUIHandler_GetExternal(This->outer_window->browser->doc->hostui, p);
+    if(FAILED(hres)) {
+        *p = NULL;
+        if(hres == E_NOINTERFACE)
+            hres = S_OK;
+    }
+
+    return hres;
 }
 
 static const IHTMLWindow2Vtbl HTMLWindow2Vtbl = {
@@ -3567,11 +3563,25 @@ static HRESULT WINAPI WindowDispEx_ToString(IWineJSDispatchHost *iface, BSTR *st
     return IWineJSDispatchHost_ToString(&This->base.inner_window->event_target.dispex.IWineJSDispatchHost_iface, str);
 }
 
-static void WINAPI WindowDispEx_InitCC(IWineJSDispatchHost *iface, struct jshost_cc_api *cc_api, const CCObjCallback *callback)
+static ULONG WINAPI WindowDispEx_GetRefCount(IWineJSDispatchHost *iface)
 {
     HTMLOuterWindow *This = impl_from_IWineJSDispatchHost(iface);
 
-    IWineJSDispatchHost_InitCC(&This->base.inner_window->event_target.dispex.IWineJSDispatchHost_iface, cc_api, callback);
+    return NS_REFCOUNT_VALUE(This->ccref);
+}
+
+static HRESULT WINAPI WindowDispEx_Traverse(IWineJSDispatchHost *iface, void *context, const struct cc_traverse_ops *ops)
+{
+    HTMLOuterWindow *This = impl_from_IWineJSDispatchHost(iface);
+
+    return cc_participant_Traverse(&cc_participant, &This->base.IHTMLWindow2_iface, &outer_window_ccp, context, ops);
+}
+
+static void WINAPI WindowDispEx_Unlink(IWineJSDispatchHost *iface)
+{
+    HTMLOuterWindow *This = impl_from_IWineJSDispatchHost(iface);
+
+    outer_window_unlink(&This->base.IHTMLWindow2_iface);
 }
 
 static const IWineJSDispatchHostVtbl WindowDispExVtbl = {
@@ -3601,7 +3611,9 @@ static const IWineJSDispatchHostVtbl WindowDispExVtbl = {
     WindowDispEx_FillProperties,
     WindowDispEx_GetOuterDispatch,
     WindowDispEx_ToString,
-    WindowDispEx_InitCC
+    WindowDispEx_GetRefCount,
+    WindowDispEx_Traverse,
+    WindowDispEx_Unlink
 };
 
 static inline HTMLOuterWindow *impl_from_IEventTarget(IEventTarget *iface)

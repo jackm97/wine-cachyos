@@ -38,6 +38,7 @@
 #include "shellapi.h"
 #include "ddk/d3dkmthk.h"
 #include "kbd.h"
+#include "wine/vulkan.h"
 #include "wine/list.h"
 #include "wine/debug.h"
 
@@ -218,7 +219,7 @@ struct gdi_dc_funcs
 };
 
 /* increment this when you change the DC function table */
-#define WINE_GDI_DRIVER_VERSION 108
+#define WINE_GDI_DRIVER_VERSION 110
 
 #define GDI_PRIORITY_NULL_DRV        0  /* null driver */
 #define GDI_PRIORITY_FONT_DRV      100  /* any font driver */
@@ -249,6 +250,7 @@ static inline void push_dc_driver( PHYSDEV *dev, PHYSDEV physdev, const struct g
 struct client_surface;
 struct client_surface_funcs
 {
+    const UINT size; /* size of the implementation struct */
     void (*destroy)( struct client_surface *surface );
     /* detach the surface from its window, called from window owner thread */
     void (*detach)( struct client_surface *surface );
@@ -256,6 +258,8 @@ struct client_surface_funcs
     void (*update)( struct client_surface *surface );
     /* present the client surface if necessary, hdc != NULL when offscreen, called from render thread */
     void (*present)( struct client_surface *surface, HDC hdc );
+    /* try to set the client surface color space directly for vulkan pass-through */
+    BOOL (*set_color_space)( struct client_surface *surface, VkColorSpaceKHR color_space );
 };
 
 struct client_surface
@@ -265,15 +269,19 @@ struct client_surface
     LONG                               ref;            /* reference count */
     LONG                               busy_ref;       /* count of drawables/swapchains referencing this surface */
     HWND                               hwnd;           /* window the surface was created for */
+    int                                format;         /* pixel format of the surface */
     LONG                               updated;        /* has been moved / resized / reparented */
+    HWND                               toplevel;       /* toplevel window of the surface */
     LONG                               offscreen;      /* client window is offscreen */
+    RECT                               virtual_rect;   /* virtual size and position in the toplevel ancestor, relative to its visible rect */
+    RECT                               monitor_rect;   /* raw physical size and position in the toplevel ancestor, relative to its visible rect */
+    BOOL                               raw;            /* use the raw physical position and size for the host client surface */
 };
 
-W32KAPI void *client_surface_create( UINT size, const struct client_surface_funcs *funcs, HWND hwnd );
+W32KAPI void *client_surface_create( const struct client_surface_funcs *funcs, HWND hwnd, int format, BOOL raw );
 W32KAPI void client_surface_add_ref( struct client_surface *surface );
 W32KAPI void client_surface_release( struct client_surface *surface );
 W32KAPI void client_surface_present( struct client_surface *surface );
-W32KAPI void client_surface_update( struct client_surface *surface );
 W32KAPI void update_client_surfaces( HWND hwnd );
 W32KAPI void detach_client_surfaces( HWND hwnd );
 
@@ -289,6 +297,7 @@ struct window_surface;
 
 struct window_surface_funcs
 {
+    const UINT size; /* size of the implementation struct */
     void  (*set_clip)( struct window_surface *surface, const RECT *rects, UINT count );
     BOOL  (*flush)( struct window_surface *surface, const RECT *rect, const RECT *dirty,
                     const BITMAPINFO *color_info, const void *color_bits, BOOL shape_changed,
@@ -317,15 +326,10 @@ struct window_surface
     /* driver-specific fields here */
 };
 
-W32KAPI struct window_surface *window_surface_create( UINT size, const struct window_surface_funcs *funcs, HWND hwnd,
+W32KAPI struct window_surface *window_surface_create( const struct window_surface_funcs *funcs, HWND hwnd,
                                                       const RECT *rect, BITMAPINFO *info, HBITMAP bitmap );
 W32KAPI void window_surface_add_ref( struct window_surface *surface );
 W32KAPI void window_surface_release( struct window_surface *surface );
-W32KAPI void window_surface_lock( struct window_surface *surface );
-W32KAPI void window_surface_unlock( struct window_surface *surface );
-W32KAPI void window_surface_set_layered( struct window_surface *surface, COLORREF color_key, UINT alpha_bits, UINT alpha_mask );
-W32KAPI void window_surface_flush( struct window_surface *surface );
-W32KAPI void window_surface_set_clip( struct window_surface *surface, HRGN clip_region );
 W32KAPI void window_surface_set_shape( struct window_surface *surface, HRGN shape_region );
 W32KAPI struct window_surface *window_surface_get( HWND hwnd );
 
@@ -414,7 +418,7 @@ struct user_driver_funcs
     const KBDTABLES *(*pKbdLayerDescriptor)(HKL);
     void    (*pReleaseKbdTables)(const KBDTABLES *);
     /* IME functions */
-    UINT    (*pImeProcessKey)(HIMC,UINT,UINT,const BYTE*);
+    UINT    (*pImeToAsciiEx)(UINT,UINT,const BYTE*,void *);
     void    (*pNotifyIMEStatus)(HWND,UINT);
     BOOL    (*pSetIMECompositionRect)(HWND,RECT);
     void    (*pEnableIMEContext)(HWND, BOOL);
@@ -448,7 +452,7 @@ struct user_driver_funcs
     BOOL    (*pProcessEvents)(DWORD);
     void    (*pReleaseDC)(HWND,HDC);
     BOOL    (*pScrollDC)(HDC,INT,INT,HRGN);
-    void    (*pSetCapture)(HWND,UINT);
+    void    (*pSetCapture)(HWND,UINT,HWND);
     void    (*pSetDesktopWindow)(HWND);
     void    (*pActivateWindow)(HWND,HWND);
     void    (*pSetLayeredWindowAttributes)(HWND,COLORREF,BYTE,DWORD);
@@ -464,6 +468,7 @@ struct user_driver_funcs
     BOOL    (*pWindowPosChanging)(HWND,UINT,BOOL,const struct window_rects *);
     BOOL    (*pGetWindowStyleMasks)(HWND,UINT,UINT,UINT*,UINT*);
     BOOL    (*pGetWindowStateUpdates)(HWND,UINT*,UINT*,RECT*,HWND*);
+    struct client_surface *(*pCreateClientSurface)(HWND,int,BOOL);
     BOOL    (*pCreateWindowSurface)(HWND,BOOL,const RECT *,struct window_surface**);
     void    (*pMoveWindowBits)(HWND,const struct window_rects *,const struct window_rects *,const RECT *);
     void    (*pWindowPosChanged)(HWND,HWND,HWND,UINT,const struct window_rects*,struct window_surface*);

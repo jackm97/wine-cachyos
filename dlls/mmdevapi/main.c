@@ -22,7 +22,6 @@
 
 #include "ntstatus.h"
 #define COBJMACROS
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "wingdi.h"
@@ -216,9 +215,9 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
             }
             if (lpvReserved) break;
 
+            wine_unix_call( main_loop_stop, NULL );
             if (drvs.module_unixlib)
             {
-                wine_unix_call( main_loop_stop, NULL );
                 __wine_unload_unix_lib( drvs.module );
                 if (midi_driver.module != drvs.module) __wine_unload_unix_lib( midi_driver.module );
             }

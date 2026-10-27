@@ -58,11 +58,7 @@ typedef struct WS(addrinfoW)
 typedef WINELIB_NAME_AW(ADDRINFO) ADDRINFOT, *PADDRINFOT;
 #endif
 
-#ifdef USE_WS_PREFIX
-typedef int WS_socklen_t;
-#else
-#define socklen_t int  /* avoid conflicts with the system's socklen_t typedef */
-#endif
+typedef int WS(socklen_t);
 
 typedef ADDRINFOA ADDRINFO, *LPADDRINFO;
 
@@ -149,6 +145,7 @@ static inline char *gai_strerrorA(int errcode)
 
     /* FIXME: should format message from system, ignoring inserts in neutral
      * language */
+    UNREFERENCED_PARAMETER(errcode);
     buffer[0] = '\0';
 
     return buffer;
@@ -160,6 +157,7 @@ static inline WCHAR *gai_strerrorW(int errcode)
 
     /* FIXME: should format message from system, ignoring inserts in neutral
      * language */
+    UNREFERENCED_PARAMETER(errcode);
     buffer[0] = '\0';
 
     return buffer;

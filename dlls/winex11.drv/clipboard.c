@@ -81,7 +81,6 @@
 #include <assert.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "x11drv.h"
 #include "xfixes.h"
 
@@ -600,8 +599,8 @@ static CPTABLEINFO *get_ansi_cp(void)
     static CPTABLEINFO cp;
     if (!cp.CodePage)
     {
-        if (NtCurrentTeb()->Peb->AnsiCodePageData)
-            RtlInitCodePageTable( NtCurrentTeb()->Peb->AnsiCodePageData, &cp );
+        if (RtlGetCurrentPeb()->AnsiCodePageData)
+            RtlInitCodePageTable( RtlGetCurrentPeb()->AnsiCodePageData, &cp );
         else
             RtlInitCodePageTable( utf8_hdr, &cp );
     }

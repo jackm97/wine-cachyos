@@ -29,7 +29,6 @@
 #include <sys/types.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winver.h"
@@ -1690,13 +1689,14 @@ static UINT32 processor_arch_from_string(const WCHAR *str, unsigned int len)
     return ~0u;
 }
 
-const WCHAR *string_from_processor_arch(UINT32 code)
+static const WCHAR *processor_arch_from_code(UINT32 code)
 {
     unsigned int i;
 
     for (i = 0; i < ARRAY_SIZE(arch_names); ++i)
-        if (code == arch_names[i].code)
+        if (arch_names[i].code == code)
             return arch_names[i].name;
+
     return NULL;
 }
 
@@ -1793,35 +1793,82 @@ LONG WINAPI PackageIdFromFullName(const WCHAR *full_name, UINT32 flags, UINT32 *
 /***********************************************************************
  *         PackageFullNameFromId   (kernelbase.@)
  */
-LONG WINAPI PackageFullNameFromId(const PACKAGE_ID *package_id, UINT32 *length, WCHAR *full_name)
+LONG WINAPI PackageFullNameFromId(const PACKAGE_ID *id, UINT32 *length, WCHAR *buffer)
 {
-    WCHAR ver_str[5 * 4 + 3 + 1];
-    const WCHAR *arch_str;
-    UINT32 have_length;
+    WCHAR full_name[PACKAGE_FULL_NAME_MAX_LENGTH + 1];
+    WCHAR version[PACKAGE_VERSION_MAX_LENGTH + 1];
+    const WCHAR *arch;
+    size_t len;
 
-    TRACE("package_id %p, length %p, full_name %p.\n", package_id, length, full_name);
+    TRACE("id %p, length %p, buffer %p\n", id, length, buffer);
 
-    if (!package_id || !length)
-        return ERROR_INVALID_PARAMETER;
-    if (!full_name && *length)
-        return ERROR_INVALID_PARAMETER;
-    if (!package_id->name || !package_id->resourceId || !package_id->publisherId
-            || !(arch_str = string_from_processor_arch(package_id->processorArchitecture)))
+    if (!id || !length)
         return ERROR_INVALID_PARAMETER;
 
-    swprintf(ver_str, ARRAY_SIZE(ver_str), L"%u.%u.%u.%u", package_id->version.Major,
-            package_id->version.Minor, package_id->version.Build, package_id->version.Revision);
-    have_length = *length;
-    *length = lstrlenW(package_id->name) + 1 + lstrlenW(ver_str) + 1 + lstrlenW(arch_str) + 1
-            + lstrlenW(package_id->resourceId) + 1 + lstrlenW(package_id->publisherId) + 1;
+    len = id->name ? wcslen(id->name) : 0;
+    if (len < PACKAGE_NAME_MIN_LENGTH || len > PACKAGE_NAME_MAX_LENGTH)
+        return ERROR_INVALID_PARAMETER;
 
-    if (have_length < *length)
+    *full_name = 0;
+    wcscpy(full_name, id->name);
+    wcscat(full_name, L"_");
+
+    swprintf(version, ARRAYSIZE(version), L"%u.%u.%u.%u", id->version.Major, id->version.Minor,
+            id->version.Build, id->version.Revision);
+    wcscat(full_name, version);
+    wcscat(full_name, L"_");
+
+    arch = processor_arch_from_code(id->processorArchitecture);
+    if (!arch)
+    {
+        WARN("Unrecognized architecture id %u.\n", id->processorArchitecture);
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    wcscat(full_name, arch);
+    wcscat(full_name, L"_");
+
+    if (id->resourceId)
+    {
+        len = wcslen(id->resourceId);
+
+        if (len > PACKAGE_RESOURCEID_MAX_LENGTH)
+            return ERROR_INVALID_PARAMETER;
+
+        wcscat(full_name, id->resourceId);
+        wcscat(full_name, L"_");
+    }
+
+    if (id->publisherId)
+    {
+        len = wcslen(id->publisherId);
+
+        if (len != PACKAGE_PUBLISHERID_MAX_LENGTH)
+            return ERROR_INVALID_PARAMETER;
+
+        wcscat(full_name, id->publisherId);
+    }
+    else
+    {
+        if (!id->publisher)
+            return ERROR_INVALID_PARAMETER;
+
+        FIXME("Publisher ID generation is not implemented.\n");
+
+        wcscat(full_name, L"123456789abcd");
+    }
+
+    len = wcslen(full_name);
+    *length = len + 1;
+
+    if (!buffer || *length <= len)
         return ERROR_INSUFFICIENT_BUFFER;
 
-    swprintf(full_name, *length, L"%s_%s_%s_%s_%s", package_id->name, ver_str, arch_str, package_id->resourceId, package_id->publisherId);
+    wcscpy(buffer, full_name);
+    *length = len + 1;
+
     return ERROR_SUCCESS;
 }
-
 
 /***********************************************************************
  *         GetPackagesByPackageFamily   (kernelbase.@)

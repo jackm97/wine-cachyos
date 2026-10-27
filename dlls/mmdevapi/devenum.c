@@ -873,6 +873,8 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
         {
             PROPVARIANT pv;
 
+            set_driver_prop_value(id, flow, (const PROPERTYKEY*)&DEVPKEY_Device_InstanceId);
+
             if (SUCCEEDED(set_driver_prop_value(id, flow, &devicepath_key))) {
                 if (SUCCEEDED(MMDevice_GetPropValue(id, flow, &devicepath_key, &device_path)) && device_path.vt == VT_LPWSTR) {
                     const WCHAR *override;

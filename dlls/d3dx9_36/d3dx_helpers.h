@@ -252,8 +252,8 @@ enum conversion_flag
 {
     CONV_FLAG_PM_ALPHA_IN  = 0x01,
     CONV_FLAG_PM_ALPHA_OUT = 0x02,
-    CONV_FLAG_GAMMA_2_2_IN  = 0x04,
-    CONV_FLAG_GAMMA_2_2_OUT = 0x08,
+    CONV_FLAG_SRGB_IN  = 0x04,
+    CONV_FLAG_SRGB_OUT = 0x08,
 };
 
 enum component_type
@@ -489,6 +489,4 @@ HRESULT d3dx_load_resource(HMODULE module, HRSRC rsrc, void **data, uint32_t *si
 HRESULT d3dx_load_resource_a(HMODULE module, const char *resource, void **data, uint32_t *size);
 HRESULT d3dx_load_resource_w(HMODULE module, const WCHAR *resource, void **data, uint32_t *size);
 
-/* debug helpers */
-const char *debug_d3dx_image_file_format(enum d3dx_image_file_format format);
 #endif /* __WINE_D3DX_HELPERS_H */

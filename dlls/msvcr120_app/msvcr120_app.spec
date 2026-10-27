@@ -682,8 +682,8 @@
 @ cdecl -arch=win64 ?__ExceptionPtrDestroy@@YAXPEAX@Z(ptr) msvcr120.?__ExceptionPtrDestroy@@YAXPEAX@Z
 @ cdecl -arch=win32 ?__ExceptionPtrRethrow@@YAXPBX@Z(ptr) msvcr120.?__ExceptionPtrRethrow@@YAXPBX@Z
 @ cdecl -arch=win64 ?__ExceptionPtrRethrow@@YAXPEBX@Z(ptr) msvcr120.?__ExceptionPtrRethrow@@YAXPEBX@Z
-@ stub -arch=win32 ?__ExceptionPtrSwap@@YAXPAX0@Z
-@ stub -arch=win64 ?__ExceptionPtrSwap@@YAXPEAX0@Z
+@ cdecl -arch=win32 ?__ExceptionPtrSwap@@YAXPAX0@Z(ptr ptr) msvcr120.?__ExceptionPtrSwap@@YAXPAX0@Z
+@ cdecl -arch=win64 ?__ExceptionPtrSwap@@YAXPEAX0@Z(ptr ptr) msvcr120.?__ExceptionPtrSwap@@YAXPEAX0@Z
 @ cdecl -arch=win32 ?__ExceptionPtrToBool@@YA_NPBX@Z(ptr) msvcr120.?__ExceptionPtrToBool@@YA_NPBX@Z
 @ cdecl -arch=win64 ?__ExceptionPtrToBool@@YA_NPEBX@Z(ptr) msvcr120.?__ExceptionPtrToBool@@YA_NPEBX@Z
 @ cdecl __uncaught_exception() msvcr120.__uncaught_exception
@@ -997,9 +997,9 @@
 @ cdecl _aligned_msize(ptr long long) msvcr120._aligned_msize
 @ cdecl _aligned_offset_malloc(long long long) msvcr120._aligned_offset_malloc
 @ cdecl _aligned_offset_realloc(ptr long long long) msvcr120._aligned_offset_realloc
-@ stub _aligned_offset_recalloc
+@ cdecl _aligned_offset_recalloc(ptr long long long long) msvcr120._aligned_offset_recalloc
 @ cdecl _aligned_realloc(ptr long long) msvcr120._aligned_realloc
-@ stub _aligned_recalloc
+@ cdecl _aligned_recalloc(ptr long long long) msvcr120._aligned_recalloc
 @ cdecl _amsg_exit(long) msvcr120._amsg_exit
 @ cdecl _assert(str str long) msvcr120._assert
 @ cdecl _atodbl(ptr str) msvcr120._atodbl
@@ -1545,7 +1545,7 @@
 @ cdecl _vswprintf_p(ptr long wstr ptr) msvcr120._vswprintf_p
 @ cdecl _vswprintf_p_l(ptr long wstr ptr ptr) msvcr120._vswprintf_p_l
 @ cdecl _vswprintf_s_l(ptr long wstr ptr ptr) msvcr120._vswprintf_s_l
-@ stub _vwprintf_l
+@ cdecl _vwprintf_l(wstr ptr ptr) msvcr120._vwprintf_l
 @ stub _vwprintf_p
 @ stub _vwprintf_p_l
 @ stub _vwprintf_s_l
@@ -1633,7 +1633,7 @@
 @ varargs _wopen(wstr long) msvcr120._wopen
 @ cdecl _wperror(wstr) msvcr120._wperror
 @ extern _wpgmptr msvcr120._wpgmptr
-@ stub _wprintf_l
+@ varargs _wprintf_l(wstr ptr) msvcr120._wprintf_l
 @ stub _wprintf_p
 @ stub _wprintf_p_l
 @ stub _wprintf_s_l

@@ -98,8 +98,6 @@ static int has_relays( struct exports *exports )
 {
     int i;
 
-    if (target.cpu == CPU_ARM64EC) return 0;
-
     for (i = exports->base; i <= exports->limit; i++)
     {
         ORDDEF *odp = exports->ordinals[i];
@@ -220,6 +218,20 @@ static char *build_args_string( struct exports *exports )
 static void output_relay_debug( struct exports *exports )
 {
     int i;
+
+    if (is_pe())
+    {
+        output( "\t.data\n" );
+        output( "\t.balign %u\n", get_ptr_size() );
+    }
+
+    output( ".L__wine_spec_relay_descr:\n" );
+    output( "\t%s 0xdeb90002\n", get_asm_ptr_keyword() );  /* magic */
+    output( "\t%s 0\n", get_asm_ptr_keyword() );           /* relay func */
+    output( "\t%s 0\n", get_asm_ptr_keyword() );           /* private data */
+    output( "\t%s __wine_spec_relay_entry_points\n", get_asm_ptr_keyword() );
+    output( "\t%s .L__wine_spec_relay_entry_point_offsets\n", get_asm_ptr_keyword() );
+    output( "\t%s .L__wine_spec_relay_args_string\n", get_asm_ptr_keyword() );
 
     /* first the table of entry point offsets */
 
@@ -364,6 +376,7 @@ static void output_relay_debug( struct exports *exports )
         }
 
         case CPU_x86_64:
+        case CPU_ARM64EC:
             output( "\t.balign 4\n" );
             output( "\t.long 0x90909090,0x90909090\n" );
             output( "__wine_spec_relay_entry_point_%d:\n", i );
@@ -436,6 +449,7 @@ void output_exports( DLLSPEC *spec )
                     odp->name ? "" : ",NONAME",
                     odp->type == TYPE_EXTERN ? ",DATA" : "" );
         }
+        if (needs_relay) output_relay_debug( exports );
         return;
     }
 
@@ -550,35 +564,13 @@ void output_exports( DLLSPEC *spec )
 
     /* output relays */
 
-    if (needs_relay)
+    if (!is_pe())
     {
-        if (is_pe())
-        {
-            output( "\t.data\n" );
-            output( "\t.balign %u\n", get_ptr_size() );
-        }
-        else
-        {
-            output( "\t.balign %u\n", get_ptr_size() );
-            output( ".L__wine_spec_exports_end:\n" );
-        }
-
-        output( ".L__wine_spec_relay_descr:\n" );
-        output( "\t%s 0xdeb90002\n", get_asm_ptr_keyword() );  /* magic */
-        output( "\t%s 0\n", get_asm_ptr_keyword() );           /* relay func */
-        output( "\t%s 0\n", get_asm_ptr_keyword() );           /* private data */
-        output( "\t%s __wine_spec_relay_entry_points\n", get_asm_ptr_keyword() );
-        output( "\t%s .L__wine_spec_relay_entry_point_offsets\n", get_asm_ptr_keyword() );
-        output( "\t%s .L__wine_spec_relay_args_string\n", get_asm_ptr_keyword() );
-
-        output_relay_debug( exports );
+        output( "\t.balign %u\n", get_ptr_size() );
+        output( ".L__wine_spec_exports_end:\n" );
+        if (!needs_relay) output( "\t%s 0\n", get_asm_ptr_keyword() );
     }
-    else if (!is_pe())
-    {
-            output( "\t.balign %u\n", get_ptr_size() );
-            output( ".L__wine_spec_exports_end:\n" );
-            output( "\t%s 0\n", get_asm_ptr_keyword() );
-    }
+    if (needs_relay) output_relay_debug( exports );
 
     /* output import thunks */
 
@@ -625,14 +617,19 @@ void output_exports( DLLSPEC *spec )
  *
  * Output the load configuration structure.
  */
-static void output_load_config(void)
+static void output_load_config( DLLSPEC *spec )
 {
     if (!is_pe()) return;
 
     output( "\n/* load_config */\n\n" );
     output( "\t%s\n", get_asm_rodata_section() );
-    output( "\t.globl %s\n", asm_name( "_load_config_used" ));
     output( "\t.balign %u\n", get_ptr_size() );
+    if (has_relays( &spec->exports ))
+    {
+        output( "\t.long 0xdeb90002\n" );             /* magic */
+        output_rva( ".L__wine_spec_relay_descr" );
+    }
+    output( "\t.globl %s\n", asm_name( "_load_config_used" ));
     output( "%s:\n", asm_name( "_load_config_used" ));
     output( "\t.long %u\n", get_ptr_size() == 8 ? 0x140 : 0xc0 ); /* Size */
     output( "\t.long 0\n" );                          /* TimeDateStamp */
@@ -704,6 +701,37 @@ static void output_load_config(void)
 
 
 /*******************************************************************
+ *         output_crt_sections
+ *
+ * Generate the start/end symbols for .CRT$X?? sections. The start symbol is put into
+ * .CRT$X?A, the end .CRT$X?Z. Since the linker sort .CRT$X?? sections by name, these symbols
+ * will end up at the right location.
+ */
+void output_crt_sections(void)
+{
+    static const char sections[] = "ict";
+    int i;
+
+    for (i = 0; sections[i]; i++)
+    {
+        char *symbol_name = strmake( "__x%c_a", sections[i] );
+        output( "\t.section .CRT$X%cA\n", toupper( sections[i] ) );
+        output( "\t.globl %s\n", asm_name( symbol_name ) );
+        output( "\t.balign %u\n", get_ptr_size() );
+        output( "%s:\n", asm_name( symbol_name ) );
+        output( "\t%s 0\n", get_asm_ptr_keyword() );
+
+        symbol_name = strmake( "__x%c_z", sections[i] );
+        output( "\t.section .CRT$X%cZ\n", toupper( sections[i] ) );
+        output( "\t.globl %s\n", asm_name( symbol_name ) );
+        output( "\t.balign %u\n", get_ptr_size() );
+        output( "%s:\n", asm_name( symbol_name ) );
+        output( "\t%s 0\n", get_asm_ptr_keyword() );
+    }
+}
+
+
+/*******************************************************************
  *         output_module
  *
  * Output the module data.
@@ -720,6 +748,7 @@ void output_module( DLLSPEC *spec )
     {
     case PLATFORM_MINGW:
     case PLATFORM_WINDOWS:
+    case PLATFORM_WINDOWS_GNU:
         return;  /* nothing to do */
     case PLATFORM_APPLE:
         output( "\t.text\n" );
@@ -840,7 +869,8 @@ void output_spec32_file( DLLSPEC *spec )
     output_exports( spec );
     output_imports( spec );
     if (needs_get_pc_thunk) output_get_pc_thunk();
-    output_load_config();
+    output_load_config( spec );
+    output_crt_sections();
     output_resources( spec );
     output_gnu_stack_note();
     close_output_file();

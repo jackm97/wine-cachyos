@@ -17,7 +17,6 @@
  */
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
@@ -45,7 +44,6 @@ struct device
 
     WCHAR device_id[MAX_DEVICE_ID_LEN];
     WCHAR instance_id[MAX_DEVICE_ID_LEN];
-    WCHAR container_id[MAX_GUID_STRING_LEN];
     const GUID *class_guid;
 
     HANDLE steam_overlay_event;
@@ -58,7 +56,6 @@ struct func_device
     struct device base;
     HID_DEVICE_ATTRIBUTES attrs;
     HIDP_DEVICE_DESC device_desc;
-    WCHAR serial[256];
 
     ULONG poll_interval;
     KEVENT halt_event;

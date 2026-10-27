@@ -47,7 +47,6 @@
 #endif
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
@@ -179,6 +178,8 @@ static pthread_once_t init_once = PTHREAD_ONCE_INIT;
 static struct icmp_data *handle_table[MAX_HANDLES];
 static pthread_mutex_t handle_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct icmp_data **next_free, **next_unused = handle_table;
+
+static void icmp_listen( void *args );
 
 static icmp_handle handle_alloc( struct icmp_data *data )
 {
@@ -908,7 +909,14 @@ static void icmp_data_free( struct icmp_data *data )
 
 static void init_listen(void)
 {
+    HANDLE thread;
+
     pipe( socket_list_update_pipe );
+
+    if (PsCreateSystemThread( &thread, THREAD_ALL_ACCESS, NULL, 0, NULL, icmp_listen, NULL ))
+        ERR( "Could not create listen thread.\n" );
+    else
+        NtClose( thread );
 }
 
 static NTSTATUS icmp_get_socket( struct icmp_send_echo_params *params, struct icmp_socket **ret_socket )
@@ -1074,7 +1082,7 @@ static ULONG get_rtt( LARGE_INTEGER start )
     return (now.QuadPart - start.QuadPart) / 10000;
 }
 
-NTSTATUS icmp_listen( void *args )
+static void icmp_listen( void *args )
 {
     struct sockaddr_storage addr;
     struct icmp_reply_ctx ctx;
@@ -1123,7 +1131,7 @@ NTSTATUS icmp_listen( void *args )
         if (ret < 0)
         {
             ERR( "poll(): ret %d, %s.\n", ret, strerror( errno ));
-            return STATUS_UNSUCCESSFUL;
+            return;
         }
 
         i = 0;
@@ -1191,7 +1199,6 @@ skip:
             icmp_release_socket( s );
         }
     }
-    return 0;
 }
 
 NTSTATUS icmp_get_reply( void *args )

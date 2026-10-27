@@ -23,7 +23,6 @@
 #include <stdlib.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "ntsecapi.h"
@@ -645,7 +644,7 @@ static void DataView_destructor(jsdisp_t *dispex)
 static HRESULT DataView_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, jsdisp_t *dispex)
 {
     DataViewInstance *view = dataview_from_jsdisp(dispex);
-    return gc_process_linked_obj(gc_ctx, op, dispex, &view->buffer->dispex, (void**)&view->buffer);
+    return gc_process_linked_obj(gc_ctx, op, &view->buffer->dispex, (void**)&view->buffer);
 }
 
 static void DataView_cc_traverse(jsdisp_t *dispex, nsCycleCollectionTraversalCallback *cb)
@@ -1044,7 +1043,7 @@ static HRESULT TypedArray_fill_props(jsdisp_t *dispex)
 static HRESULT TypedArray_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, jsdisp_t *dispex)
 {
     TypedArrayInstance *typedarr = typedarr_from_jsdisp(dispex);
-    return gc_process_linked_obj(gc_ctx, op, dispex, &typedarr->buffer->dispex, (void**)&typedarr->buffer);
+    return gc_process_linked_obj(gc_ctx, op, &typedarr->buffer->dispex, (void**)&typedarr->buffer);
 }
 
 static void TypedArray_cc_traverse(jsdisp_t *dispex, nsCycleCollectionTraversalCallback *cb)

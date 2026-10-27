@@ -1121,7 +1121,8 @@ WINUSERAPI BOOL     WINAPI SetSysColors(INT,const INT*,const COLORREF*);
 #define EDS_ROTATEDMODE   0x00000004
 
 /* Used for PrintWindow */
-#define PW_CLIENTONLY   0x00000001
+#define PW_CLIENTONLY        0x00000001
+#define PW_RENDERFULLCONTENT 0x00000002
 
 /****** Window classes ******/
 
@@ -1566,7 +1567,7 @@ typedef struct tagMSG
     POINT   pt;
 } MSG, *PMSG, *LPMSG;
 
-#define POINTSTOPOINT(pt, pts) { (pt).x = (pts).x; (pt).y = (pts).y; }
+#define POINTSTOPOINT(pt, pts) { (pt).x = ((short *)&(pts))[0]; (pt).y = ((short *)&(pts))[1]; }
 #define POINTTOPOINTS(pt)      (MAKELONG((short)((pt).x), (short)((pt).y)))
 
 #define MAKELPARAM(low,high)   ((LPARAM)(DWORD)MAKELONG(low,high))
@@ -3843,6 +3844,8 @@ typedef struct tagMENUGETOBJECTINFO
     void  *riid;
     void  *pvObj;
 } MENUGETOBJECTINFO, *PMENUGETOBJECTINFO;
+
+typedef BOOLEAN (WINAPI *PREGISTERCLASSNAMEW)(LPCWSTR);
 
 #if defined(_WINGDI_) && !defined(NOGDI)
 WINUSERAPI LONG        WINAPI ChangeDisplaySettingsA(LPDEVMODEA,DWORD);

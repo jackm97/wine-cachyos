@@ -39,6 +39,40 @@
 WINE_DEFAULT_DEBUG_CHANNEL(keyboard);
 WINE_DECLARE_DEBUG_CHANNEL(key);
 
+static BOOL is_ime_hkl(HKL hkl)
+{
+    /* See https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-language-pack-default-values#input-method-editors */
+    switch (HIWORD(hkl))
+    {
+    case MAKELANGID(LANG_AMHARIC, SUBLANG_AMHARIC_ETHIOPIA): return TRUE;
+    case MAKELANGID(LANG_BENGALI, SUBLANG_BENGALI_INDIA): return TRUE;
+    case MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED): return TRUE;
+    case MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL): return TRUE;
+    case MAKELANGID(LANG_GUJARATI, SUBLANG_GUJARATI_INDIA): return TRUE;
+    case MAKELANGID(LANG_HINDI, SUBLANG_HINDI_INDIA): return TRUE;
+    case MAKELANGID(LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN): return TRUE;
+    case MAKELANGID(LANG_KANNADA, SUBLANG_KANNADA_INDIA): return TRUE;
+    case MAKELANGID(LANG_KOREAN, SUBLANG_KOREAN): return TRUE;
+    case MAKELANGID(LANG_MALAYALAM, SUBLANG_MALAYALAM_INDIA): return TRUE;
+    case MAKELANGID(LANG_MARATHI, SUBLANG_MARATHI_INDIA): return TRUE;
+    case MAKELANGID(LANG_NEPALI, SUBLANG_NEPALI_NEPAL): return TRUE;
+    case MAKELANGID(LANG_ODIA, SUBLANG_ODIA_INDIA): return TRUE;
+    case MAKELANGID(LANG_PUNJABI, SUBLANG_PUNJABI_INDIA): return TRUE;
+    case MAKELANGID(LANG_TAMIL, SUBLANG_TAMIL_INDIA): return TRUE;
+    case MAKELANGID(LANG_TAMIL, SUBLANG_TAMIL_SRI_LANKA): return TRUE;
+    case MAKELANGID(LANG_TELUGU, SUBLANG_TELUGU_INDIA): return TRUE;
+    case MAKELANGID(LANG_TIGRINYA, SUBLANG_TIGRINYA_ETHIOPIA): return TRUE;
+    case MAKELANGID(LANG_VIETNAMESE, SUBLANG_VIETNAMESE_VIETNAM): return TRUE;
+    case MAKELANGID(LANG_YI, SUBLANG_YI_PRC): return TRUE;
+    default: return (HIWORD(hkl) & 0xf000) == 0xe000;
+    }
+}
+
+static HKL get_ime_hkl(LCID locale)
+{
+    return ULongToHandle(MAKELONG(locale, 0xe001));
+}
+
 struct layout
 {
     struct list entry;
@@ -79,6 +113,13 @@ static struct list xkb_layouts = LIST_INIT(xkb_layouts);
 /* These are only used from the wayland event thread and don't need locking */
 static struct rxkb_context *rxkb_context;
 static HKL keyboard_hkl; /* the HKL matching the currently active xkb group */
+
+void activate_keyboard_hkl(HWND hwnd, BOOL ime)
+{
+    HKL hkl = ime && !is_ime_hkl(keyboard_hkl) ? get_ime_hkl(LOWORD(keyboard_hkl)) : keyboard_hkl;
+    TRACE("Changing keyboard layout to %p\n", hkl);
+    NtUserPostMessage(hwnd, WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/, (LPARAM)hkl);
+}
 
 static void xkb_layout_addref(struct layout *layout)
 {
@@ -738,9 +779,11 @@ static void add_xkb_layout(const char *xkb_layout, struct xkb_keymap *xkb_keymap
 
 static void set_current_xkb_group(xkb_layout_index_t xkb_group)
 {
+    struct wayland_text_input *text_input = &process_wayland.text_input;
     struct wayland_keyboard *keyboard = &process_wayland.keyboard;
     LCID locale = LOWORD(NtUserGetKeyboardLayout(0));
     struct layout *layout;
+    BOOL ime;
     HKL hkl;
 
     pthread_mutex_lock(&xkb_layouts_mutex);
@@ -760,9 +803,11 @@ static void set_current_xkb_group(xkb_layout_index_t xkb_group)
     if (hkl == keyboard_hkl) return;
     keyboard_hkl = hkl;
 
-    TRACE("Changing keyboard layout to %p\n", hkl);
-    NtUserPostMessage(keyboard->focused_hwnd, WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
-                      (LPARAM)keyboard_hkl);
+    pthread_mutex_lock(&text_input->mutex);
+    ime = text_input->focused_hwnd == keyboard->focused_hwnd;
+    pthread_mutex_unlock(&text_input->mutex);
+
+    activate_keyboard_hkl(keyboard->focused_hwnd, ime);
 }
 
 static BOOL find_xkb_layout_variant(const char *name, const char **layout, const char **variant)
@@ -804,6 +849,56 @@ static void release_all_keys(HWND hwnd)
         NtUserSendHardwareInput(hwnd, 0, &input, 0);
         keyboard->keystate[i] = 0;
     }
+}
+
+static void set_async_key_state(const BYTE state[256])
+{
+    SERVER_START_REQ(set_key_state)
+    {
+        req->async = 1;
+        wine_server_add_data(req, state, 256);
+        wine_server_call(req);
+    }
+    SERVER_END_REQ;
+}
+
+static BOOL update_key_lock_state(BYTE keystate[256], WORD vkey, int xkb_mod_active)
+{
+    BYTE key = keystate[vkey];
+    BYTE newkey = xkb_mod_active;
+
+    /* If the the vkey is pressed use the existing Windows lock state, since it
+     * might differ from the Wayland state (e.g., due to Windows clearing lock
+     * state on key press rather than release). */
+    if (key & 0x80)
+        return FALSE;
+
+    if (xkb_mod_active < 0) /* unknown xkb mod, ignore */
+        return FALSE;
+
+    if (key == newkey)
+        return FALSE;
+
+    keystate[vkey] = newkey;
+    return TRUE;
+}
+
+static void update_keyboard_lock_state(struct xkb_state *xkb_state)
+{
+    BYTE keystate[256];
+    BOOL changed = FALSE;
+
+    if (!NtUserGetAsyncKeyboardState(keystate)) return;
+
+    changed |= update_key_lock_state(keystate, VK_CAPITAL,
+           xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_CAPS, XKB_STATE_MODS_LOCKED));
+    changed |= update_key_lock_state(keystate, VK_NUMLOCK,
+           xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_NUM, XKB_STATE_MODS_LOCKED));
+    changed |= update_key_lock_state(keystate, VK_SCROLL,
+           xkb_state_mod_name_is_active(xkb_state, "ScrollLock", XKB_STATE_MODS_LOCKED));
+
+    if (changed)
+        set_async_key_state(keystate);
 }
 
 /**********************************************************************
@@ -913,6 +1008,8 @@ static void keyboard_handle_enter(void *private, struct wl_keyboard *wl_keyboard
                                   struct wl_array *keys)
 {
     struct wayland_keyboard *keyboard = &process_wayland.keyboard;
+    struct wayland_surface *surface;
+    struct wayland_win_data *data;
     HWND hwnd;
 
     InterlockedExchange(&process_wayland.input_serial, serial);
@@ -928,26 +1025,25 @@ static void keyboard_handle_enter(void *private, struct wl_keyboard *wl_keyboard
     keyboard->focused_hwnd = hwnd;
     pthread_mutex_unlock(&keyboard->mutex);
 
-    NtUserPostMessage(hwnd, WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/, (LPARAM)keyboard_hkl);
-    NtUserPostMessage(hwnd, WM_WINE_WINDOW_STATE_CHANGED, 0, 0);
-    wayland_refresh_activation_token(hwnd);
-}
+    NtUserPostMessage(keyboard->focused_hwnd, WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
+                      (LPARAM)keyboard_hkl);
 
-static BOOL wayland_disable_focus_loss(void)
-{
-    static int disabled = -1;
+    if (!(data = wayland_win_data_get(hwnd))) return;
 
-    if (disabled == -1)
+    if ((surface = data->wayland_surface))
     {
-        const char *env = getenv("WAYLANDDRV_FOCUS_LOSS");
-        if ((disabled = env && !atoi(env)))
-            FIXME("Focus loss explicitly disabled!\n");
+        /* TODO: Drop the internal message and call NtUserSetForegroundWindow
+         * directly once it's updated to not explicitly deactivate the old
+         * foreground window when both the old and new foreground windows
+         * are in the same non-current thread. */
+        if (surface->window.managed)
+            NtUserPostMessage(hwnd, WM_WAYLAND_SET_FOREGROUND, 0, 0);
     }
 
-    return disabled;
+    wayland_win_data_release(data);
 }
 
-static void keyboard_handle_leave(void *private, struct wl_keyboard *wl_keyboard,
+static void keyboard_handle_leave(void *data, struct wl_keyboard *wl_keyboard,
                                   uint32_t serial, struct wl_surface *wl_surface)
 {
     struct wayland_keyboard *keyboard = &process_wayland.keyboard;
@@ -971,16 +1067,7 @@ static void keyboard_handle_leave(void *private, struct wl_keyboard *wl_keyboard
      * and for any key repetition to stop. */
     release_all_keys(hwnd);
 
-    if (hwnd == NtUserGetForegroundWindow())
-    {
-        if (!(NtUserGetWindowLongW(hwnd, GWL_STYLE) & WS_MINIMIZE))
-            send_message(hwnd, WM_CANCELMODE, 0, 0);
-
-        if (hwnd != NtUserGetForegroundWindow()) return;
-
-        if (!wayland_disable_focus_loss())
-            NtUserPostMessage(hwnd, WM_WINE_WINDOW_STATE_CHANGED, 0, 0);
-    }
+    /* FIXME: update foreground window as well */
 }
 
 static inline void update_keystate(uint32_t key, uint32_t state)
@@ -1069,7 +1156,6 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
     InterlockedExchange(&process_wayland.input_serial, serial);
 
     if (!(hwnd = wayland_keyboard_get_focused_hwnd())) return;
-    if (wayland_is_overlay_active()) return;
 
     TRACE_(key)("serial=%u hwnd=%p key=%d scan=%#x state=%#x\n", serial, hwnd, key, scan, state);
 
@@ -1087,7 +1173,6 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
     if (state == WL_KEYBOARD_KEY_STATE_RELEASED) input.ki.dwFlags |= KEYEVENTF_KEYUP;
     NtUserSendHardwareInput(hwnd, 0, &input, 0);
     update_keystate(key, state);
-    wayland_refresh_activation_token(hwnd);
 }
 
 static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboard,
@@ -1110,6 +1195,11 @@ static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboar
     pthread_mutex_unlock(&keyboard->mutex);
 
     set_current_xkb_group(xkb_group);
+
+    update_keyboard_lock_state(keyboard->xkb_state);
+
+    /* FIXME: Sync wine pressed key state with keys from keyboard_handle_enter.*/
+    /*        See https://gitlab.winehq.org/wine/wine/-/merge_requests/5712 */
 }
 
 static void keyboard_handle_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
@@ -1209,6 +1299,8 @@ const KBDTABLES *WAYLAND_KbdLayerDescriptor(HKL hkl)
     struct layout *layout;
 
     TRACE("hkl=%p\n", hkl);
+
+    if (hkl == get_ime_hkl(LOWORD(hkl))) hkl = keyboard_hkl;
 
     pthread_mutex_lock(&xkb_layouts_mutex);
 

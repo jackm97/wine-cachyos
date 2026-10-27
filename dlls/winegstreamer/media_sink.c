@@ -91,6 +91,7 @@ struct media_sink
 
     IMFByteStream *bytestream;
     IMFMediaEventQueue *event_queue;
+    IMFPresentationClock *clock;
 
     struct list stream_sinks;
 
@@ -672,7 +673,7 @@ static HRESULT media_sink_begin_finalize(struct media_sink *media_sink, IMFAsync
         IUnknown_Release(&command->IUnknown_iface);
         return hr;
     }
-    IMFAsyncResult_AddRef((command->u.finalize.result = result));
+    command->u.finalize.result = result;
 
     hr = MFPutWorkItem(MFASYNC_CALLBACK_QUEUE_STANDARD,
             &media_sink->async_callback, &command->IUnknown_iface);
@@ -696,6 +697,22 @@ static HRESULT media_sink_finalize(struct media_sink *media_sink, IMFAsyncResult
     MFInvokeCallback(result);
 
     return hr;
+}
+
+static void media_sink_set_presentation_clock(struct media_sink *media_sink, IMFPresentationClock *clock)
+{
+    if (media_sink->clock)
+    {
+        IMFPresentationClock_RemoveClockStateSink(media_sink->clock, &media_sink->IMFClockStateSink_iface);
+        IMFPresentationClock_Release(media_sink->clock);
+    }
+
+    media_sink->clock = clock;
+    if (media_sink->clock)
+    {
+        IMFPresentationClock_AddRef(media_sink->clock);
+        IMFPresentationClock_AddClockStateSink(media_sink->clock, &media_sink->IMFClockStateSink_iface);
+    }
 }
 
 static HRESULT WINAPI media_sink_QueryInterface(IMFFinalizableMediaSink *iface, REFIID riid, void **obj)
@@ -891,16 +908,45 @@ static HRESULT WINAPI media_sink_GetStreamSinkById(IMFFinalizableMediaSink *ifac
 
 static HRESULT WINAPI media_sink_SetPresentationClock(IMFFinalizableMediaSink *iface, IMFPresentationClock *clock)
 {
-    FIXME("iface %p, clock %p stub!\n", iface, clock);
+    struct media_sink *media_sink = impl_from_IMFFinalizableMediaSink(iface);
+    HRESULT hr = S_OK;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, clock %p.\n", iface, clock);
+
+    EnterCriticalSection(&media_sink->cs);
+
+    if (media_sink->state == STATE_SHUTDOWN)
+        hr = MF_E_SHUTDOWN;
+    else
+        media_sink_set_presentation_clock(media_sink, clock);
+
+    LeaveCriticalSection(&media_sink->cs);
+
+    return hr;
 }
 
 static HRESULT WINAPI media_sink_GetPresentationClock(IMFFinalizableMediaSink *iface, IMFPresentationClock **clock)
 {
-    FIXME("iface %p, clock %p stub!\n", iface, clock);
+    struct media_sink *media_sink = impl_from_IMFFinalizableMediaSink(iface);
+    HRESULT hr = S_OK;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, clock %p.\n", iface, clock);
+
+    if (!clock)
+        return E_POINTER;
+
+    EnterCriticalSection(&media_sink->cs);
+
+    if (media_sink->state == STATE_SHUTDOWN)
+        hr = MF_E_SHUTDOWN;
+    else if (media_sink->clock)
+        IMFPresentationClock_AddRef((*clock = media_sink->clock));
+    else
+        hr = MF_E_NO_CLOCK;
+
+    LeaveCriticalSection(&media_sink->cs);
+
+    return hr;
 }
 
 static HRESULT WINAPI media_sink_Shutdown(IMFFinalizableMediaSink *iface)
@@ -917,6 +963,8 @@ static HRESULT WINAPI media_sink_Shutdown(IMFFinalizableMediaSink *iface)
         LeaveCriticalSection(&media_sink->cs);
         return MF_E_SHUTDOWN;
     }
+
+    media_sink_set_presentation_clock(media_sink, NULL);
 
     LIST_FOR_EACH_ENTRY_SAFE(stream_sink, next, &media_sink->stream_sinks, struct stream_sink, entry)
     {

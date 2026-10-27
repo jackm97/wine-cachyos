@@ -25,7 +25,6 @@
 #include <setjmp.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winternl.h"
 #include "ddk/wdm.h"
@@ -370,6 +369,12 @@ DEFINE_SYSCALL(NtAllocateReserveObject, (HANDLE *handle, const OBJECT_ATTRIBUTES
 DEFINE_SYSCALL(NtAllocateUuids, (ULARGE_INTEGER *time, ULONG *delta, ULONG *sequence, UCHAR *seed))
 DEFINE_WRAPPED_SYSCALL(NtAllocateVirtualMemory, (HANDLE process, PVOID *ret, ULONG_PTR zero_bits, SIZE_T *size_ptr, ULONG type, ULONG protect))
 DEFINE_WRAPPED_SYSCALL(NtAllocateVirtualMemoryEx, (HANDLE process, PVOID *ret, SIZE_T *size_ptr, ULONG type, ULONG protect, MEM_EXTENDED_PARAMETER *parameters, ULONG count))
+DEFINE_SYSCALL(NtAlpcAcceptConnectPort, (HANDLE *communication_port, HANDLE connection_port, DWORD flags, OBJECT_ATTRIBUTES *obj_attr, ALPC_PORT_ATTRIBUTES *port_attr, void *port_context, ALPC_PORT_MESSAGE *send_msg, ALPC_MESSAGE_ATTRIBUTES *send_msg_attr, BOOLEAN accept))
+DEFINE_SYSCALL(NtAlpcConnectPort, (HANDLE *port_handle, UNICODE_STRING *port_name, OBJECT_ATTRIBUTES *obj_attr, ALPC_PORT_ATTRIBUTES *port_attr, DWORD flags, PSID required_server_sid, ALPC_PORT_MESSAGE *connect_msg, SIZE_T *connect_msg_size, ALPC_MESSAGE_ATTRIBUTES *send_msg_attr, ALPC_MESSAGE_ATTRIBUTES *recv_msg_attr, LARGE_INTEGER *timeout))
+DEFINE_SYSCALL(NtAlpcCreatePort, (HANDLE *port_handle, OBJECT_ATTRIBUTES *obj_attr, ALPC_PORT_ATTRIBUTES *port_attr))
+DEFINE_SYSCALL(NtAlpcDisconnectPort, (HANDLE port_handle, ULONG flags))
+DEFINE_SYSCALL(NtAlpcImpersonateClientOfPort, (HANDLE port_handle, ALPC_PORT_MESSAGE *msg, void *reserved ))
+DEFINE_SYSCALL(NtAlpcSendWaitReceivePort, (HANDLE port_handle, DWORD flags, ALPC_PORT_MESSAGE *send_msg, ALPC_MESSAGE_ATTRIBUTES *send_msg_attr, ALPC_PORT_MESSAGE *recv_msg, SIZE_T *recv_buffer_size, ALPC_MESSAGE_ATTRIBUTES *recv_msg_attr, LARGE_INTEGER *timeout))
 DEFINE_SYSCALL(NtApphelpCacheControl, (ULONG class, void *context))
 DEFINE_SYSCALL(NtAreMappedFilesTheSame, (PVOID addr1, PVOID addr2))
 DEFINE_SYSCALL(NtAssignProcessToJobObject, (HANDLE job, HANDLE process))
@@ -435,7 +440,7 @@ DEFINE_SYSCALL(NtFlushBuffersFileEx, (HANDLE handle, ULONG flags, void *params, 
 DEFINE_WRAPPED_SYSCALL(NtFlushInstructionCache, (HANDLE handle, const void *addr, SIZE_T size))
 DEFINE_SYSCALL(NtFlushKey, (HANDLE key))
 DEFINE_SYSCALL(NtFlushProcessWriteBuffers, (void))
-DEFINE_SYSCALL(NtFlushVirtualMemory, (HANDLE process, LPCVOID *addr_ptr, SIZE_T *size_ptr, ULONG unknown))
+DEFINE_SYSCALL(NtFlushVirtualMemory, (HANDLE process, LPCVOID *addr_ptr, SIZE_T *size_ptr, IO_STATUS_BLOCK *io))
 DEFINE_WRAPPED_SYSCALL(NtFreeVirtualMemory, (HANDLE process, PVOID *addr_ptr, SIZE_T *size_ptr, ULONG type))
 DEFINE_SYSCALL(NtFsControlFile, (HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc_context, IO_STATUS_BLOCK *io, ULONG code, void *in_buffer, ULONG in_size, void *out_buffer, ULONG out_size))
 DEFINE_WRAPPED_SYSCALL(NtGetContextThread, (HANDLE handle, ARM64_NT_CONTEXT *context))
@@ -475,6 +480,7 @@ DEFINE_SYSCALL(NtOpenKeyTransacted, (HANDLE *key, ACCESS_MASK access, const OBJE
 DEFINE_SYSCALL(NtOpenKeyTransactedEx, (HANDLE *key, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr, ULONG options, HANDLE transaction))
 DEFINE_SYSCALL(NtOpenKeyedEvent, (HANDLE *handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr))
 DEFINE_SYSCALL(NtOpenMutant, (HANDLE *handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr))
+DEFINE_SYSCALL(NtOpenPrivateNamespace, (HANDLE *handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr, const OBJECT_BOUNDARY_DESCRIPTOR *boundary_descriptor))
 DEFINE_SYSCALL(NtOpenProcess, (HANDLE *handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr, const CLIENT_ID *id))
 DEFINE_SYSCALL(NtOpenProcessToken, (HANDLE process, DWORD access, HANDLE *handle))
 DEFINE_SYSCALL(NtOpenProcessTokenEx, (HANDLE process, DWORD access, DWORD attributes, HANDLE *handle))
@@ -537,7 +543,7 @@ DEFINE_SYSCALL(NtReadVirtualMemory, (HANDLE process, const void *addr, void *buf
 DEFINE_SYSCALL(NtRegisterThreadTerminatePort, (HANDLE handle))
 DEFINE_SYSCALL(NtReleaseKeyedEvent, (HANDLE handle, const void *key, BOOLEAN alertable, const LARGE_INTEGER *timeout))
 DEFINE_SYSCALL(NtReleaseMutant, (HANDLE handle, LONG *prev_count))
-DEFINE_SYSCALL(NtReleaseSemaphore, (HANDLE handle, ULONG count, ULONG *previous))
+DEFINE_SYSCALL(NtReleaseSemaphore, (HANDLE handle, LONG count, ULONG *previous))
 DEFINE_SYSCALL(NtRemoveIoCompletion, (HANDLE handle, ULONG_PTR *key, ULONG_PTR *value, IO_STATUS_BLOCK *io, LARGE_INTEGER *timeout))
 DEFINE_SYSCALL(NtRemoveIoCompletionEx, (HANDLE handle, FILE_IO_COMPLETION_INFORMATION *info, ULONG count, ULONG *written, LARGE_INTEGER *timeout, BOOLEAN alertable))
 DEFINE_SYSCALL(NtRemoveProcessDebug, (HANDLE process, HANDLE debug))
@@ -574,7 +580,7 @@ DEFINE_SYSCALL(NtSetInformationVirtualMemory, (HANDLE process, VIRTUAL_MEMORY_IN
 DEFINE_SYSCALL(NtSetIntervalProfile, (ULONG interval, KPROFILE_SOURCE source))
 DEFINE_SYSCALL(NtSetIoCompletion, (HANDLE handle, ULONG_PTR key, ULONG_PTR value, NTSTATUS status, SIZE_T count))
 DEFINE_SYSCALL(NtSetIoCompletionEx, (HANDLE completion_handle, HANDLE completion_reserve_handle, ULONG_PTR key, ULONG_PTR value, NTSTATUS status, SIZE_T count))
-DEFINE_SYSCALL(NtSetLdtEntries, (ULONG sel1, LDT_ENTRY entry1, ULONG sel2, LDT_ENTRY entry2))
+DEFINE_SYSCALL(NtSetLdtEntries, (ULONG sel1, ULONG entry1_low, ULONG entry1_high, ULONG sel2, ULONG entry2_low, ULONG entry2_high))
 DEFINE_SYSCALL(NtSetSecurityObject, (HANDLE handle, SECURITY_INFORMATION info, PSECURITY_DESCRIPTOR descr))
 DEFINE_SYSCALL(NtSetSystemInformation, (SYSTEM_INFORMATION_CLASS class, void *info, ULONG length))
 DEFINE_SYSCALL(NtSetSystemTime, (const LARGE_INTEGER *new, LARGE_INTEGER *old))
@@ -2166,9 +2172,9 @@ __ASM_GLOBAL_FUNC( "#process_breakpoint",
                    "brk #0xf000\n\t"
                    "ret\n"
                    "process_breakpoint_handler:\n\t"
-                   "ldr x4, [x2, #0x108]\n\t" /* context->Pc */
+                   "ldr x4, [x2, #0xf8]\n\t"  /* context->Rip */
                    "add x4, x4, #4\n\t"
-                   "str x4, [x2, #0x108]\n\t"
+                   "str x4, [x2, #0xf8]\n\t"
                    "mov w0, #0\n\t"           /* ExceptionContinueExecution */
                    "ret" )
 

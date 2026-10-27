@@ -262,6 +262,7 @@ static void test_window_create(unsigned line, const char* fname, HWND parent,
                         wnd_creation.open_msg >= WM_USER ? "WM_USER+" : "",
                         wnd_creation.open_msg >= WM_USER ? wnd_creation.open_msg - WM_USER : wnd_creation.open_msg);
     ret = SendMessageA(window, MCIWNDM_GETERRORA, sizeof(error), (LPARAM)error);
+    todo_wine_if (sizeof(void*) > sizeof(int))  /* iccvid is missing on 64-bit */
     ok_(__FILE__, line)(!ret || broken(ret == ERROR_INVALID_HANDLE) /* w2003std, w2008s64 */,
                         "Unexpected error %Id\n", ret);
     DestroyWindow(window);
@@ -381,7 +382,55 @@ static void test_MCIWndCreate(void)
     DeleteFileA(fname);
 }
 
+static WCHAR *load_resource(const WCHAR *res_name)
+{
+    static WCHAR path[MAX_PATH];
+    DWORD written;
+    HANDLE file;
+    HRSRC res;
+    void *ptr;
+
+    GetTempPathW(ARRAY_SIZE(path), path);
+    wcscat_s(path, ARRAY_SIZE(path), res_name);
+
+    file = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, 0);
+    ok(file != INVALID_HANDLE_VALUE, "creation of file %s failed, error %ld\n", debugstr_w(path), GetLastError());
+
+    res = FindResourceW(NULL, res_name, (LPCWSTR)RT_RCDATA);
+    ok(!!res, "failed to load resource %s, error %ld\n", debugstr_w(res_name), GetLastError());
+
+    ptr = LockResource(LoadResource(GetModuleHandleA(NULL), res));
+    WriteFile(file, ptr, SizeofResource(GetModuleHandleA(NULL), res), &written, NULL);
+    ok(written == SizeofResource(GetModuleHandleA(NULL), res), "failed to write resource\n");
+    CloseHandle(file);
+
+    return path;
+}
+
+static void test_audio_playback(void)
+{
+    HINSTANCE hisnt = GetModuleHandleW(NULL);
+    WCHAR *test_file = load_resource(L"test.mp3");
+    HWND parent, mci_wnd;
+    DWORD error;
+
+    parent = CreateWindowExW(0, L"static", L"msvfw32 test", WS_POPUP, 0, 0, 100, 100, 0, 0, 0, NULL);
+    ok(!!parent, "failed to create parent window\n");
+
+    mci_wnd = MCIWndCreateW(parent, hisnt, MCIWNDF_SHOWMODE, NULL);
+    ok(!!parent, "failed to create mci window\n");
+
+    error = SendMessageW(mci_wnd, MCIWNDM_OPENW, 0, (DWORD_PTR)test_file);
+    ok(!error, "failed to set playback source, error %lu\n", error);
+
+    pump_messages();
+
+    DestroyWindow(mci_wnd);
+    DestroyWindow(parent);
+}
+
 START_TEST(mciwnd)
 {
     test_MCIWndCreate();
+    test_audio_playback();
 }

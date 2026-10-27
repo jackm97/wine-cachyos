@@ -47,12 +47,8 @@ struct xkb_compose_table;
 #include "pointer-warp-v1-client-protocol.h"
 #include "alpha-modifier-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
-#include "xdg-toplevel-tag-v1-client-protocol.h"
-#include "content-type-v1-client-protocol.h"
-#include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "color-management-v1-client-protocol.h"
 #include "xdg-activation-v1-client-protocol.h"
-#include "keyboard-shortcuts-inhibit-unstable-v1-client-protocol.h"
 
 #include "windef.h"
 #include "winbase.h"
@@ -70,7 +66,6 @@ struct xkb_compose_table;
  *          Globals
  */
 
-extern char *process_activate_token;
 extern char *process_name;
 extern struct wayland process_wayland;
 
@@ -82,6 +77,7 @@ enum wayland_window_message
 {
     WM_WAYLAND_INIT_DISPLAY_DEVICES = WM_WINE_FIRST_DRIVER_MSG,
     WM_WAYLAND_CONFIGURE,
+    WM_WAYLAND_SET_FOREGROUND,
 };
 
 enum wayland_surface_config_state
@@ -97,13 +93,6 @@ enum wayland_surface_role
     WAYLAND_SURFACE_ROLE_NONE,
     WAYLAND_SURFACE_ROLE_TOPLEVEL,
     WAYLAND_SURFACE_ROLE_POPUP,
-};
-
-enum wayland_surface_ensure_type
-{
-    WAYLAND_SURFACE_NOT_ENSURED = 0,
-    WAYLAND_SURFACE_ENSURED_FLUSH,
-    WAYLAND_SURFACE_ENSURED_DUMMY_BUFFER,
 };
 
 struct wayland_keyboard
@@ -126,29 +115,6 @@ struct wayland_cursor
     int hotspot_x, hotspot_y;
 };
 
-enum wayland_pointer_frame_flags
-{
-    WAYLAND_POINTER_FRAME_RELATIVE = (1 << 0),
-    WAYLAND_POINTER_FRAME_ABSOLUTE = (1 << 1),
-    WAYLAND_POINTER_FRAME_DISCRETE_WHEEL = (1 << 2),
-    WAYLAND_POINTER_FRAME_DISCRETE_WHEEL_HORZ = (1 << 3),
-    WAYLAND_POINTER_FRAME_AXIS = (1 << 4),
-    WAYLAND_POINTER_FRAME_AXIS_HORZ = (1 << 5),
-    WAYLAND_POINTER_FRAME_AXIS_STOP = (1 << 6),
-    WAYLAND_POINTER_FRAME_AXIS_HORZ_STOP = (1 << 7)
-};
-
-struct wayland_pointer_frame
-{
-    LONG x, y;
-    double dx, dy;
-    double dx_raw, dy_raw;
-    double axis, horz_axis;
-    LONG scroll, horz_scroll;
-
-    enum wayland_pointer_frame_flags flags;
-};
-
 struct wayland_pointer
 {
     struct wl_pointer *wl_pointer;
@@ -158,12 +124,16 @@ struct wayland_pointer
     struct wp_cursor_shape_device_v1 *wp_cursor_shape_device_v1;
     HWND focused_hwnd;
     HWND constraint_hwnd;
+    BOOL relative_mode;
     BOOL pending_warp;
     POINT warp;
     uint32_t enter_serial;
     uint32_t button_serial;
     struct wayland_cursor cursor;
-    struct wayland_pointer_frame frame;
+    double accum_x;
+    double accum_y;
+    double accum_raw_x;
+    double accum_raw_y;
     pthread_mutex_t mutex;
 };
 
@@ -234,7 +204,6 @@ struct wayland
     struct wl_shm *wl_shm;
     struct wp_viewporter *wp_viewporter;
     struct wl_subcompositor *wl_subcompositor;
-    struct wl_fixes *wl_fixes;
     struct wp_fractional_scale_manager_v1 *wp_fractional_scale_manager_v1;
     struct zwp_pointer_constraints_v1 *zwp_pointer_constraints_v1;
     struct zwp_relative_pointer_manager_v1 *zwp_relative_pointer_manager_v1;
@@ -245,25 +214,21 @@ struct wayland
     struct wp_cursor_shape_manager_v1 *wp_cursor_shape_manager_v1;
     struct wp_pointer_warp_v1 *wp_pointer_warp_v1;
     struct wp_alpha_modifier_v1 *wp_alpha_modifier_v1;
-    struct xdg_toplevel_tag_manager_v1 *xdg_toplevel_tag_manager_v1;
-    struct wp_content_type_manager_v1 *wp_content_type_manager_v1;
-    struct zxdg_decoration_manager_v1 *zxdg_decoration_manager_v1;
     struct wp_color_manager_v1 *wp_color_manager_v1;
     struct xdg_activation_v1 *xdg_activation_v1;
-    struct zwp_keyboard_shortcuts_inhibit_manager_v1* zwp_keyboard_shortcuts_inhibit_manager_v1;
     struct wayland_seat seat;
     struct wayland_keyboard keyboard;
     struct wayland_pointer pointer;
     struct wayland_touch touch;
     struct wayland_text_input text_input;
     struct wayland_data_device data_device;
-    struct wl_array output_array;
-    /* Protects the output_array, and the wayland_output.current states. */
+#ifdef WL_FIXES_ACK_GLOBAL_REMOVE
+    struct wl_fixes *wl_fixes;
+#endif
+    struct wl_list output_list;
+    /* Protects the output_list and the wayland_output.current states. */
     pthread_mutex_t output_mutex;
     LONG input_serial;
-    BOOL supports_win_scrgb;
-    BOOL supports_win_pq;
-    HANDLE overlay_event;
 };
 
 struct wayland_output_mode
@@ -274,48 +239,18 @@ struct wayland_output_mode
     int32_t refresh;
 };
 
-#define WAYLAND_OUTPUT_MODES        0x01
-#define WAYLAND_OUTPUT_NAME         0x02
-#define WAYLAND_OUTPUT_LOGICAL_XY   0x04
-#define WAYLAND_OUTPUT_LOGICAL_WH   0x08
-#define WAYLAND_OUTPUT_GEOMETRY     0x10
-#define WAYLAND_OUTPUT_PRIMARIES    0x20
-#define WAYLAND_OUTPUT_FALL         0x40
-#define WAYLAND_OUTPUT_CLL          0x80
-#define WAYLAND_OUTPUT_LUMINANCES   0x100
-
-struct wayland_primaries
-{
-    int32_t r_x;
-    int32_t r_y;
-    int32_t g_x;
-    int32_t g_y;
-    int32_t b_x;
-    int32_t b_y;
-    int32_t w_x;
-    int32_t w_y;
-};
-
 struct wayland_output_state
 {
     int modes_count;
     struct rb_tree modes;
     struct wayland_output_mode *current_mode;
-    struct wayland_primaries primaries;
     char *name;
     char *make;
     char *model;
     int logical_x, logical_y;
     int logical_w, logical_h;
-    int physical_x, physical_y;
     int physical_w, physical_h;
     int transform;
-    uint32_t max_fall;
-    uint32_t max_cll;
-    uint32_t max_lum;
-    uint32_t ref_lum;
-    BOOL supports_hdr;
-    unsigned int flags;
 };
 
 struct wayland_output
@@ -323,18 +258,16 @@ struct wayland_output
     struct wl_list link;
     struct wl_output *wl_output;
     struct zxdg_output_v1 *zxdg_output_v1;
-    struct wp_image_description_v1 *wp_image_description_v1;
-    struct wp_color_management_output_v1 *wp_color_management_output_v1;
     uint32_t global_id;
-    LONG ref;
-    struct wayland_output_state pending, current;
+    unsigned int pending_flags;
+    struct wayland_output_state pending;
+    struct wayland_output_state current;
 };
 
 struct wayland_surface_config
 {
     RECT rect;
     enum wayland_surface_config_state state;
-    enum zxdg_toplevel_decoration_v1_mode decor;
     uint32_t serial;
     BOOL processed;
 };
@@ -342,29 +275,27 @@ struct wayland_surface_config
 struct wayland_window_config
 {
     RECT rect;
-    RECT client_rect;
     enum wayland_surface_config_state state;
     /* The scale (i.e., normalized dpi) the window is rendering at. */
     double scale;
     BOOL visible;
     BOOL managed;
-    BOOL resizeable;
     BOOL minimized;
+    BOOL resizeable;
 };
 
 struct wayland_client_surface
 {
     struct client_surface client;
     HWND toplevel;
-    HANDLE throttle;
-    RECT viewport_rect;
-    struct wl_callback *wl_callback;
+    RECT rect;
     struct wl_surface *wl_surface;
     struct wl_subsurface *wl_subsurface;
-    struct wp_color_management_surface_v1 *wp_color_management_surface_v1;
     struct wp_viewport *wp_viewport;
-    struct wp_content_type_v1 *wp_content_type_v1;
+    struct wp_color_management_surface_v1 *color_management;
 };
+
+extern struct wayland_client_surface *impl_from_client_surface(struct client_surface *client);
 
 struct wayland_shm_buffer
 {
@@ -379,12 +310,6 @@ struct wayland_shm_buffer
     HRGN damage_region;
 };
 
-struct surface_output_entry
-{
-    struct wl_list entry;
-    struct wayland_output *output;
-};
-
 struct wayland_surface
 {
     HWND hwnd;
@@ -392,14 +317,12 @@ struct wayland_surface
     struct wl_surface *wl_surface;
     struct wp_viewport *wp_viewport;
     struct wp_fractional_scale_v1 *wp_fractional_scale_v1;
-    struct zwp_keyboard_shortcuts_inhibitor_v1* zwp_keyboard_shortcuts_inhibitor_v1;
     struct wayland_shm_buffer *small_icon_buffer;
     struct wayland_shm_buffer *big_icon_buffer;
 
     enum wayland_surface_role role;
 
     struct xdg_surface *xdg_surface;
-    HWND owner_hwnd;
 
     union
     {
@@ -407,22 +330,19 @@ struct wayland_surface
         {
             struct xdg_toplevel *xdg_toplevel;
             struct xdg_toplevel_icon_v1 *xdg_toplevel_icon;
-            struct zxdg_toplevel_decoration_v1 *zxdg_toplevel_decoration_v1;
-            const struct wl_output *requested_output;
+            struct wl_output *requested_output;
         };
         struct
         {
             struct xdg_popup *xdg_popup;
+            HWND owner_hwnd;
         };
     };
     struct wp_alpha_modifier_surface_v1 *wp_alpha_modifier_surface_v1;
-    struct wl_list output_list;
+
     struct wayland_surface_config pending, requested, processing, current;
     BOOL resizing;
-    /* TODO: We can remove this once FSHack is implemented in opengl and vulkan upstream for all drivers.
-     * The opengl implementation is already merged. Then we would only need to ensure contents via expose. */
-    enum wayland_surface_ensure_type ensured_contents;
-    struct wayland_window_config window, comitted;
+    struct wayland_window_config window;
     int content_width, content_height;
     HCURSOR hcursor;
 };
@@ -437,24 +357,21 @@ BOOL wayland_process_init(void);
  *          Wayland output
  */
 
-void wayland_output_add_ref(struct wayland_output *output);
 BOOL wayland_output_create(uint32_t id, uint32_t version);
-void wayland_output_release(struct wayland_output *output);
-void wayland_output_remove(struct wayland_output **output);
+void wayland_output_destroy(struct wayland_output *output);
 void wayland_output_use_xdg_extension(struct wayland_output *output);
-void wayland_output_use_image_description(struct wayland_output *output);
 struct wayland_output *wayland_output_for_rect(const RECT *rect);
-void wayland_output_array_arrange_physical_coords(void);
 
 /**********************************************************************
  *          Wayland surface
  */
 
+extern const struct wp_color_manager_v1_listener color_manager_listener;
+void color_management_init(void);
+
 struct wayland_surface *wayland_surface_create(HWND hwnd);
 void wayland_surface_destroy(struct wayland_surface *surface);
-void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_decor);
-void wayland_surface_make_subsurface(struct wayland_surface *surface,
-                                     struct wayland_surface *parent);
+void wayland_surface_make_toplevel(struct wayland_surface *surface);
 void wayland_surface_make_popup(struct wayland_surface *surface,
                                 struct wayland_surface *owner);
 void wayland_surface_clear_role(struct wayland_surface *surface);
@@ -464,23 +381,18 @@ void wayland_surface_attach_shm(struct wayland_surface *surface,
 BOOL wayland_surface_reconfigure(struct wayland_surface *surface);
 BOOL wayland_surface_config_is_compatible(struct wayland_surface_config *conf, RECT rect,
                                           enum wayland_surface_config_state state);
-void wayland_surface_update_toplevel_parent(struct wayland_surface *surface);
 RECT map_rect_to_surface(struct wayland_surface *surface, RECT rect);
 POINT map_point_to_surface(struct wayland_surface *surface, POINT point);
 RECT map_rect_from_surface(struct wayland_surface *surface, RECT rect);
 POINT map_point_from_surface(struct wayland_surface *surface, POINT point);
-struct wayland_client_surface *wayland_client_surface_create(HWND hwnd);
-void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel);
-void wayland_client_surface_attach_image_description(struct wayland_client_surface *surface,
-                                                     struct wp_image_description_v1 *image_desc);
-struct wayland_client_surface *impl_from_client_surface(struct client_surface *client);
+void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel, const RECT *rect);
+void wayland_surface_ensure_contents(struct wayland_surface *surface);
 void wayland_surface_set_title(struct wayland_surface *surface, LPCWSTR title);
 void wayland_surface_assign_icon(struct wayland_surface *surface);
 void wayland_surface_set_icon_buffer(struct wayland_surface *surface, UINT type, const ICONINFO *ii);
 void wayland_surface_set_opacity(struct wayland_surface *surface, BYTE alpha, UINT flags);
 void wayland_surface_flash_window(struct wayland_surface *surface);
-void wayland_surface_activate(struct wayland_surface *surface);
-void wayland_surface_shortcut_control(struct wayland_surface *surface, BOOL inhibit);
+void wayland_client_surface_update_offscreen(struct wayland_client_surface *surface);
 
 static inline BOOL wayland_surface_is_toplevel(struct wayland_surface *surface)
 {
@@ -519,8 +431,6 @@ struct wayland_win_data
     struct wayland_surface *wayland_surface;
     /* wayland client surface (if any) for this window */
     struct wayland_client_surface *client_surface;
-    /* track a stale client surface to ensure DMABUF modifiers stay valid */
-    struct wayland_client_surface *stashed_client;
     /* window rects, relative to parent client area */
     struct window_rects rects;
     BOOL is_fullscreen;
@@ -538,9 +448,7 @@ struct wayland_client_surface *get_client_surface(HWND hwnd);
 void set_client_surface(HWND hwnd, struct wayland_client_surface *client);
 BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffer, HRGN damage_region);
 struct wayland_shm_buffer *get_window_surface_contents(HWND hwnd);
-void wayland_refresh_activation_token(HWND hwnd);
 void wayland_window_init(void);
-BOOL wayland_is_overlay_active(void);
 
 /**********************************************************************
  *          Wayland Keyboard
@@ -550,6 +458,7 @@ void wayland_keyboard_init(struct wl_keyboard *wl_keyboard);
 void wayland_keyboard_deinit(void);
 const KBDTABLES *WAYLAND_KbdLayerDescriptor(HKL hkl);
 void WAYLAND_ReleaseKbdTables(const KBDTABLES *);
+void activate_keyboard_hkl(HWND hwnd, BOOL ime);
 
 /**********************************************************************
  *          Wayland pointer
@@ -597,29 +506,12 @@ static inline LRESULT send_message(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lp
     return NtUserMessageCall(hwnd, msg, wparam, lparam, NULL, NtUserSendMessage, FALSE);
 }
 
-static inline BOOL is_decoration_enabled(DWORD style, DWORD ex_style)
-{
-    if (ex_style & WS_EX_TOOLWINDOW) return FALSE;
-    if (ex_style & WS_EX_LAYERED) return FALSE;
-
-    if ((style & WS_CAPTION) == WS_CAPTION)
-        return TRUE;
-
-    return FALSE;
-}
-
-static inline void ascii_to_unicode(WCHAR *dst, const char *src, int len)
-{
-    while (len-- && *src) *dst++ = (unsigned char)*src++;
-}
-
 RGNDATA *get_region_data(HRGN region);
 
 /**********************************************************************
  *          USER driver functions
  */
 
-void WAYLAND_ActivateWindow(HWND hwnd, HWND previous);
 LRESULT WAYLAND_ClipboardWindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 BOOL WAYLAND_ClipCursor(const RECT *clip, BOOL reset);
 LRESULT WAYLAND_DesktopWindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
@@ -640,9 +532,8 @@ LRESULT WAYLAND_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UINT swp_flags,
                               const struct window_rects *new_rects, struct window_surface *surface);
 BOOL WAYLAND_WindowPosChanging(HWND hwnd, UINT swp_flags, BOOL shaped, const struct window_rects *rects);
+struct client_surface *WAYLAND_CreateClientSurface(HWND hwnd, int pixel_format, BOOL raw);
 BOOL WAYLAND_CreateWindowSurface(HWND hwnd, BOOL layered, const RECT *surface_rect, struct window_surface **surface);
-BOOL WAYLAND_GetWindowStyleMasks(HWND hwnd,  UINT style, UINT ex_style, UINT *style_mask, UINT *ex_style_mask);
-BOOL WAYLAND_GetWindowStateUpdates(HWND hwnd, UINT *state_cmd, UINT *swp_flags, RECT *rect, HWND *foreground);
 BOOL WAYLAND_HasWindowManager(const char *name);
 UINT WAYLAND_VulkanInit(UINT version, void *vulkan_handle, const struct vulkan_driver_funcs **driver_funcs);
 UINT WAYLAND_OpenGLInit(UINT version, const struct opengl_funcs *opengl_funcs, const struct opengl_driver_funcs **driver_funcs);

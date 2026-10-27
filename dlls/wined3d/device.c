@@ -797,22 +797,21 @@ static bool wined3d_null_image_vk_init(struct wined3d_image_vk *image, struct wi
 {
     const struct wined3d_vk_info *vk_info = context_vk->vk_info;
     VkImageSubresourceRange range;
-    uint32_t flags = 0;
+    VkImageCreateInfo desc;
 
     static const VkClearColorValue colour = {{0}};
 
     TRACE("image %p, context_vk %p, vk_command_buffer %p, type %#x, layer_count %u, sample_count %u.\n",
             image, context_vk, vk_command_buffer, type, layer_count, sample_count);
 
+    wined3d_init_vk_image_info(&desc, type, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_FORMAT_R8G8B8A8_UNORM, 1, 1, 1);
+    desc.samples = sample_count;
+    desc.arrayLayers = layer_count;
     if (type == VK_IMAGE_TYPE_2D && layer_count >= 6)
-        flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-
-    if (!wined3d_context_vk_create_image(context_vk, type,
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_FORMAT_R8G8B8A8_UNORM,
-            1, 1, 1, sample_count, 1, layer_count, flags, NULL, image))
-    {
+        desc.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    if (!wined3d_context_vk_create_image(context_vk, &desc, image))
         return false;
-    }
 
     wined3d_context_vk_reference_image(context_vk, image);
 
@@ -2744,7 +2743,7 @@ void CDECL wined3d_device_set_max_frame_latency(struct wined3d_device *device, u
 
     device->max_frame_latency = latency;
     for (i = 0; i < device->swapchain_count; ++i)
-        swapchain_set_max_frame_latency(device->swapchains[i], device);
+        wined3d_swapchain_set_max_frame_latency(device->swapchains[i], device->max_frame_latency);
 }
 
 unsigned int CDECL wined3d_device_get_max_frame_latency(const struct wined3d_device *device)
@@ -4522,7 +4521,7 @@ void CDECL wined3d_device_context_update_sub_resource(struct wined3d_device_cont
 void CDECL wined3d_device_context_resolve_sub_resource(struct wined3d_device_context *context,
         struct wined3d_resource *dst_resource, unsigned int dst_sub_resource_idx,
         struct wined3d_resource *src_resource, unsigned int src_sub_resource_idx,
-        enum wined3d_format_id format_id)
+        uint32_t flags, enum wined3d_format_id format_id)
 {
     struct wined3d_texture *dst_texture, *src_texture;
     unsigned int dst_level, src_level;
@@ -4566,7 +4565,7 @@ void CDECL wined3d_device_context_resolve_sub_resource(struct wined3d_device_con
     SetRect(&src_rect, 0, 0, wined3d_texture_get_level_width(src_texture, src_level),
             wined3d_texture_get_level_height(src_texture, src_level));
     wined3d_device_context_blt(context, dst_texture, dst_sub_resource_idx, &dst_rect,
-            src_texture, src_sub_resource_idx, &src_rect, 0, &fx, WINED3D_TEXF_POINT);
+            src_texture, src_sub_resource_idx, &src_rect, flags, &fx, WINED3D_TEXF_POINT);
     wined3d_device_context_unlock(context);
 }
 
@@ -4807,7 +4806,7 @@ void CDECL wined3d_device_context_generate_mipmaps(struct wined3d_device_context
     }
 
     texture = texture_from_resource(view->resource);
-    if (!(texture->flags & WINED3D_TEXTURE_GENERATE_MIPMAPS))
+    if (!(texture->resource.usage & WINED3DUSAGE_GENERATE_MIPMAPS))
     {
         WARN("Texture without the WINED3D_TEXTURE_GENERATE_MIPMAPS flag, ignoring.\n");
         return;
@@ -5086,6 +5085,7 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
     static struct wined3d_rendertarget_view *const views[WINED3D_MAX_RENDER_TARGETS];
     const struct wined3d_d3d_info *d3d_info = &device->adapter->d3d_info;
     struct wined3d_device_context *context = &device->cs->c;
+    BOOL backbuffer_resized, flags_changed, windowed;
     struct wined3d_swapchain_state *swapchain_state;
     struct wined3d_state *state = context->state;
     struct wined3d_swapchain_desc *current_desc;
@@ -5093,7 +5093,6 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
     struct wined3d_rendertarget_view *view;
     struct wined3d_swapchain *swapchain;
     struct wined3d_view_desc view_desc;
-    BOOL backbuffer_resized, windowed;
     HRESULT hr = WINED3D_OK;
     HWND device_window;
     unsigned int i;
@@ -5193,6 +5192,7 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
 
     backbuffer_resized = swapchain_desc->backbuffer_width != current_desc->backbuffer_width
             || swapchain_desc->backbuffer_height != current_desc->backbuffer_height;
+    flags_changed = swapchain_desc->flags != current_desc->flags;
     windowed = current_desc->windowed;
 
     if (!swapchain_desc->windowed != !windowed || swapchain->reapply_mode
@@ -5247,13 +5247,11 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
 
     if (FAILED(hr = wined3d_swapchain_resize_buffers(swapchain, swapchain_desc->backbuffer_count,
             swapchain_desc->backbuffer_width, swapchain_desc->backbuffer_height, swapchain_desc->backbuffer_format,
-            swapchain_desc->multisample_type, swapchain_desc->multisample_quality)))
+            swapchain_desc->multisample_type, swapchain_desc->multisample_quality, swapchain_desc->flags)))
         return hr;
 
-    if (swapchain_desc->flags != current_desc->flags)
+    if (flags_changed)
     {
-        current_desc->flags = swapchain_desc->flags;
-
         update_swapchain_flags(swapchain->front_buffer);
         for (i = 0; i < current_desc->backbuffer_count; ++i)
         {
@@ -5753,31 +5751,4 @@ LRESULT device_process_message(struct wined3d_device *device, HWND window, BOOL 
         return CallWindowProcW(proc, window, message, wparam, lparam);
     else
         return CallWindowProcA(proc, window, message, wparam, lparam);
-}
-
-unsigned int CDECL wined3d_device_get_video_decode_profile_count(struct wined3d_device *device)
-{
-    GUID profiles[WINED3D_DECODER_MAX_PROFILE_COUNT];
-    unsigned int count;
-
-    TRACE("device %p.\n", device);
-
-    device->adapter->decoder_ops->get_profiles(device->adapter, &count, profiles);
-    return count;
-}
-
-HRESULT CDECL wined3d_device_get_video_decode_profile(struct wined3d_device *device, unsigned int idx, GUID *profile)
-{
-    GUID profiles[WINED3D_DECODER_MAX_PROFILE_COUNT];
-    unsigned int count;
-
-    TRACE("device %p, idx %u.\n", device, idx);
-
-    device->adapter->decoder_ops->get_profiles(device->adapter, &count, profiles);
-
-    if (idx >= count)
-        return E_INVALIDARG;
-
-    *profile = profiles[idx];
-    return S_OK;
 }

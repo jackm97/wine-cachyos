@@ -22,7 +22,6 @@
 #include <assert.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
@@ -64,7 +63,6 @@ static NTSTATUS nsiproxy_call( unsigned int code, void *args )
 enum unix_calls
 {
     icmp_get_reply,
-    icmp_listen,
     icmp_send_echo,
     nsi_enumerate_all_ex,
     nsi_get_all_parameters_ex,
@@ -211,12 +209,6 @@ static struct icmp_data *irp_set_icmp_data( IRP *irp, struct icmp_data *data )
 
 DECLARE_CRITICAL_SECTION( icmp_echo_completion_cs );
 
-static DWORD WINAPI icmp_listen_thread_proc( void *arg )
-{
-    nsiproxy_call( icmp_listen, NULL );
-    return 0;
-}
-
 static void WINAPI icmp_echo_cancel( DEVICE_OBJECT *device, IRP *irp )
 {
     struct icmp_data *data;
@@ -259,7 +251,6 @@ static void CALLBACK icmp_wait_complete( void *arg, BOOLEAN timed_out )
     params.reply_len = irpsp->Parameters.DeviceIoControl.OutputBufferLength;
 
     status = nsiproxy_call( icmp_get_reply, &params );
-    TRACE( "irp %p, icmp_listen rets %08lx\n", irp, status );
 
     irp->IoStatus.Information = 0;
     if (irp->Cancel)
@@ -517,6 +508,13 @@ static DWORD WINAPI notification_thread_proc( void *arg )
     return 0;
 }
 
+static NTSTATUS WINAPI nsi_create( DEVICE_OBJECT *device, IRP *irp )
+{
+    irp->IoStatus.Status = STATUS_SUCCESS;
+    IoCompleteRequest( irp, IO_NO_INCREMENT );
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS WINAPI DriverEntry( DRIVER_OBJECT *driver, UNICODE_STRING *path )
 {
     NTSTATUS status;
@@ -527,13 +525,12 @@ NTSTATUS WINAPI DriverEntry( DRIVER_OBJECT *driver, UNICODE_STRING *path )
     status = __wine_init_unix_call();
     if (status) return status;
 
+    driver->MajorFunction[IRP_MJ_CREATE] = nsi_create;
     driver->MajorFunction[IRP_MJ_DEVICE_CONTROL] = nsi_ioctl;
 
     add_device( driver );
 
     thread = CreateThread( NULL, 0, notification_thread_proc, NULL, 0, NULL );
-    CloseHandle( thread );
-    thread = CreateThread( NULL, 0, icmp_listen_thread_proc, NULL, 0, NULL );
     CloseHandle( thread );
 
     return STATUS_SUCCESS;

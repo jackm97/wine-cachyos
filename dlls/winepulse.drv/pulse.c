@@ -35,7 +35,6 @@
 #include <pulse/pulseaudio.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "winternl.h"
 
 #include "mmdeviceapi.h"
@@ -284,16 +283,6 @@ static NTSTATUS pulse_process_attach(void *args)
 
     if (pthread_mutex_init(&pulse_mutex, &attr) != 0)
         pthread_mutex_init(&pulse_mutex, NULL);
-
-#ifdef _WIN64
-    if (NtCurrentTeb()->WowTebOffset)
-    {
-        SYSTEM_BASIC_INFORMATION info;
-
-        NtQuerySystemInformation(SystemEmulationBasicInformation, &info, sizeof(info), NULL);
-        zero_bits = (ULONG_PTR)info.HighestUserAddress | 0x7fffffff;
-    }
-#endif
 
     return STATUS_SUCCESS;
 }
@@ -1111,6 +1100,8 @@ static HRESULT pulse_spec_from_waveformat(struct pulse_stream *stream, const WAV
             stream->ss.format = PA_SAMPLE_U8;
         else if (fmt->wBitsPerSample == 16)
             stream->ss.format = PA_SAMPLE_S16LE;
+        else if (fmt->wBitsPerSample == 24)
+            stream->ss.format = PA_SAMPLE_S24LE;
         else if (fmt->wBitsPerSample == 32)
             stream->ss.format = PA_SAMPLE_S32LE;
         else
@@ -1121,7 +1112,7 @@ static HRESULT pulse_spec_from_waveformat(struct pulse_stream *stream, const WAV
         WAVEFORMATEXTENSIBLE *wfe = (WAVEFORMATEXTENSIBLE*)fmt;
         UINT mask = wfe->dwChannelMask;
         unsigned i = 0, j;
-        if (fmt->cbSize != (sizeof(*wfe) - sizeof(*fmt)) && fmt->cbSize != sizeof(*wfe))
+        if (fmt->cbSize < sizeof(*wfe) - sizeof(*fmt))
             break;
         if (IsEqualGUID(&wfe->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) &&
             (!wfe->Samples.wValidBitsPerSample || wfe->Samples.wValidBitsPerSample == 32) &&
@@ -1147,9 +1138,7 @@ static HRESULT pulse_spec_from_waveformat(struct pulse_stream *stream, const WAV
                         stream->ss.format = PA_SAMPLE_S24LE;
                     break;
                 case 32:
-                    if (valid == 24)
-                        stream->ss.format = PA_SAMPLE_S24_32LE;
-                    else if (valid == 32)
+                    if (valid == 32)
                         stream->ss.format = PA_SAMPLE_S32LE;
                     break;
                 default:
@@ -1175,19 +1164,6 @@ static HRESULT pulse_spec_from_waveformat(struct pulse_stream *stream, const WAV
         }
         break;
         }
-    case WAVE_FORMAT_ALAW:
-    case WAVE_FORMAT_MULAW:
-        if (fmt->wBitsPerSample != 8) {
-            FIXME("Unsupported bpp %u for LAW\n", fmt->wBitsPerSample);
-            return AUDCLNT_E_UNSUPPORTED_FORMAT;
-        }
-        if (fmt->nChannels != 1 && fmt->nChannels != 2) {
-            FIXME("Unsupported channels %u for LAW\n", fmt->nChannels);
-            return AUDCLNT_E_UNSUPPORTED_FORMAT;
-        }
-        stream->ss.format = fmt->wFormatTag == WAVE_FORMAT_MULAW ? PA_SAMPLE_ULAW : PA_SAMPLE_ALAW;
-        pa_channel_map_init_auto(&stream->map, fmt->nChannels, PA_CHANNEL_MAP_ALSA);
-        break;
     default:
         WARN("Unhandled tag %x\n", fmt->wFormatTag);
         return AUDCLNT_E_UNSUPPORTED_FORMAT;
@@ -1326,6 +1302,12 @@ static NTSTATUS pulse_create_stream(void *args)
     stream->period_bytes = pa_frame_size(&stream->ss) * muldiv(params->period,
                                                                stream->ss.rate,
                                                                10000000);
+
+    if (stream->period_bytes == 0)
+    {
+        hr = E_INVALIDARG;
+        goto exit;
+    }
 
     stream->bufsize_frames = ceil((params->duration / 10000000.) * params->fmt->nSamplesPerSec);
     bufsize_bytes = stream->bufsize_frames * pa_frame_size(&stream->ss);
@@ -2897,6 +2879,16 @@ C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == funcs_count);
 
 typedef UINT PTR32;
 
+static NTSTATUS pulse_wow64_process_attach(void *args)
+{
+    SYSTEM_BASIC_INFORMATION info;
+
+    NtQuerySystemInformation(SystemEmulationBasicInformation, &info, sizeof(info), NULL);
+    zero_bits = (ULONG_PTR)info.HighestUserAddress | 0x7fffffff;
+
+    return pulse_process_attach( args );
+}
+
 static NTSTATUS pulse_wow64_get_endpoint_ids(void *args)
 {
     struct
@@ -3335,7 +3327,7 @@ static NTSTATUS pulse_wow64_get_prop_value(void *args)
 
 const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
 {
-    pulse_process_attach,
+    pulse_wow64_process_attach,
     pulse_process_detach,
     pulse_main_loop_start,
     pulse_main_loop_stop,

@@ -25,7 +25,6 @@
 #include <sys/types.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winnls.h"
@@ -41,6 +40,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(heap);
 WINE_DECLARE_DEBUG_CHANNEL(virtual);
 WINE_DECLARE_DEBUG_CHANNEL(globalmem);
 
+static const struct _KUSER_SHARED_DATA *user_shared_data = (struct _KUSER_SHARED_DATA *)0x7ffe0000;
 
 static CRITICAL_SECTION memstatus_section;
 static CRITICAL_SECTION_DEBUG critsect_debug =
@@ -123,7 +123,7 @@ DWORD WINAPI DECLSPEC_HOTPATCH DiscardVirtualMemory( void *addr, SIZE_T size )
  */
 BOOL WINAPI DECLSPEC_HOTPATCH FlushViewOfFile( const void *base, SIZE_T size )
 {
-    NTSTATUS status = NtFlushVirtualMemory( GetCurrentProcess(), &base, &size, 0 );
+    NTSTATUS status = NtFlushVirtualMemory( GetCurrentProcess(), &base, &size, NULL );
 
     if (status == STATUS_NOT_MAPPED_DATA) status = STATUS_SUCCESS;
     return set_ntstatus( status );
@@ -179,7 +179,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH FlushInstructionCache( HANDLE process, LPCVOID add
  */
 SIZE_T WINAPI GetLargePageMinimum(void)
 {
-    return 2 * 1024 * 1024;
+    return user_shared_data->LargePageMinimum;
 }
 
 
@@ -237,18 +237,16 @@ void WINAPI DECLSPEC_HOTPATCH GetNativeSystemInfo( SYSTEM_INFO *si )
 {
     SYSTEM_BASIC_INFORMATION basic_info;
     SYSTEM_CPU_INFORMATION cpu_info;
+    USHORT current_machine, native_machine;
 
-    if (is_wow64)
+    RtlWow64GetProcessMachines( 0, &current_machine, &native_machine );
+
+    if (!is_wow64 || native_machine != IMAGE_FILE_MACHINE_AMD64)
     {
-        USHORT current_machine, native_machine;
-
-        RtlWow64GetProcessMachines( 0, &current_machine, &native_machine );
-        if (native_machine != IMAGE_FILE_MACHINE_AMD64)
-        {
-            GetSystemInfo( si );
+        GetSystemInfo( si );
+        if (is_wow64 && native_machine != IMAGE_FILE_MACHINE_AMD64)
             si->wProcessorArchitecture = PROCESSOR_ARCHITECTURE_AMD64;
-            return;
-        }
+        return;
     }
 
     if (!set_ntstatus( RtlGetNativeSystemInformation( SystemBasicInformation,

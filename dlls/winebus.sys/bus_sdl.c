@@ -39,7 +39,6 @@
 #include <pthread.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winnls.h"
@@ -392,7 +391,7 @@ static NTSTATUS build_joystick_report_descriptor(struct unix_device *iface, cons
     for (i = 0; i < ball_count; i++)
     {
         if (!hid_device_add_axes(iface, 2, relative_axis_usages[2 * i].UsagePage,
-                                 &relative_axis_usages[2 * i].Usage, TRUE, INT32_MIN, INT32_MAX))
+                                 &relative_axis_usages[2 * i].Usage, TRUE, INT16_MIN, INT16_MAX))
             return STATUS_NO_MEMORY;
     }
 
@@ -972,9 +971,10 @@ static void sdl_add_device(unsigned int index)
 {
     struct device_desc desc =
     {
-        .input = -1,
+        .interface = -1,
+        .bus_id = -1,
         .manufacturer = {'S','D','L',0},
-        .serialnumber = {'0','0','0','0',0},
+        .parent = { '/','b','u','s','/','s','d','l',0 },
     };
     struct sdl_device *impl;
 

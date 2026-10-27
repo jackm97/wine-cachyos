@@ -24,7 +24,6 @@
 #include <stdlib.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winnt.h"
 #include "winioctl.h"
@@ -2286,26 +2285,41 @@ NTSTATUS WINAPI LdrGetProcedureAddress(HMODULE module, const ANSI_STRING *name,
 static void set_security_cookie( ULONG_PTR *cookie )
 {
     static ULONG seed;
+    ULONG_PTR new_cookie;
+    SIZE_T size;
+    void *addr;
+    ULONG old_prot;
 
     TRACE( "initializing security cookie %p\n", cookie );
 
     if (!seed) seed = NtGetTickCount() ^ GetCurrentProcessId();
+    new_cookie = *cookie;
     for (;;)
     {
-        if (*cookie == DEFAULT_SECURITY_COOKIE_16)
-            *cookie = RtlRandom( &seed ) >> 16; /* leave the high word clear */
-        else if (*cookie == DEFAULT_SECURITY_COOKIE_32)
-            *cookie = RtlRandom( &seed );
+        if (new_cookie == DEFAULT_SECURITY_COOKIE_16)
+            new_cookie = RtlRandom( &seed ) >> 16; /* leave the high word clear */
+        else if (new_cookie == DEFAULT_SECURITY_COOKIE_32)
+            new_cookie = RtlRandom( &seed );
 #ifdef DEFAULT_SECURITY_COOKIE_64
-        else if (*cookie == DEFAULT_SECURITY_COOKIE_64)
+        else if (new_cookie == DEFAULT_SECURITY_COOKIE_64)
         {
-            *cookie = RtlRandom( &seed );
+            new_cookie = RtlRandom( &seed );
             /* fill up, but keep the highest word clear */
-            *cookie ^= (ULONG_PTR)RtlRandom( &seed ) << 16;
+            new_cookie ^= (ULONG_PTR)RtlRandom( &seed ) << 16;
         }
 #endif
         else
             break;
+    }
+
+    if (new_cookie == *cookie) return;  /* already initialized */
+
+    addr = cookie;
+    size = sizeof(*cookie);
+    if (!NtProtectVirtualMemory( NtCurrentProcess(), &addr, &size, PAGE_READWRITE, &old_prot ))
+    {
+        *cookie = new_cookie;
+        NtProtectVirtualMemory( NtCurrentProcess(), &addr, &size, old_prot, &old_prot );
     }
 }
 
@@ -2572,7 +2586,7 @@ static NTSTATUS build_module( LPCWSTR load_path, const UNICODE_STRING *nt_name, 
  *
  * Build the module data for the initially-loaded ntdll.
  */
-static void build_ntdll_module(void)
+static void *build_ntdll_module(void)
 {
     UNICODE_STRING nt_name = RTL_CONSTANT_STRING( L"\\??\\C:\\windows\\system32\\ntdll.dll" );
     MEMORY_BASIC_INFORMATION meminfo;
@@ -2586,10 +2600,10 @@ static void build_ntdll_module(void)
     assert( wm );
     wm->ldr.Flags &= ~LDR_DONT_RESOLVE_REFS;
     node_ntdll = wm->ldr.DdagNode;
-    if (TRACE_ON(relay)) RELAY_SetupDLL( module );
     TRACE_(loaddll)( "Loaded %s at %p: builtin\n", debugstr_w(wm->ldr.FullDllName.Buffer), module);
 
     hidden_exports_init( wm->ldr.FullDllName.Buffer );
+    return module;
 }
 
 
@@ -3564,8 +3578,16 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
     if (RtlDetermineDosPathNameType_U( libname ) == RtlPathTypeRelative)
     {
         status = search_dll_file( load_path, libname, nt_name, pwm, mapping, image_info, id );
-        if (status == STATUS_DLL_NOT_FOUND)
+        switch (status)
+        {
+        case STATUS_NOT_SUPPORTED:
+        case STATUS_INVALID_IMAGE_FORMAT:
+            if (!is_prefix_bootstrap) break;
+            /* fall through */
+        case STATUS_DLL_NOT_FOUND:
             status = find_builtin_without_file( libname, nt_name, pwm, mapping, image_info, id );
+            break;
+        }
     }
     else if (!(status = RtlDosPathNameToNtPathName_U_WithStatus( libname, nt_name, NULL, NULL )))
         status = open_dll_file( nt_name, pwm, mapping, image_info, id );
@@ -4669,13 +4691,14 @@ static void init_wow64( CONTEXT *context )
 {
     if (!imports_fixup_done)
     {
-        HMODULE wow64;
+        HMODULE wow64, ntdll_module;
         WINE_MODREF *wm;
         NTSTATUS status;
         static const WCHAR wow64_path[] = L"C:\\windows\\system32\\wow64.dll";
 
         build_wow64_main_module();
-        build_ntdll_module();
+        ntdll_module = build_ntdll_module();
+        if (TRACE_ON(relay)) RELAY_SetupDLL( ntdll_module );
 
         if ((status = load_dll( NULL, wow64_path, 0, &wm, FALSE )))
         {
@@ -4796,6 +4819,7 @@ void loader_init( CONTEXT *context, void **entry )
         PEB *peb = NtCurrentTeb()->Peb;
         WCHAR env_str[16];
         ULONG heap_flags = HEAP_GROWABLE;
+        void *ntdll_module;
         unsigned int i;
 
         peb->LdrData            = &ldr;
@@ -4850,11 +4874,12 @@ void loader_init( CONTEXT *context, void **entry )
         if (NtCurrentTeb()->WowTebOffset) init_wow64( context );
 
         wm = build_main_module();
-        build_ntdll_module();
+        ntdll_module = build_ntdll_module();
 #ifdef __arm64ec__
         load_arm64ec_module();
         update_load_config( wm->ldr.DllBase );
 #endif
+        if (TRACE_ON(relay)) RELAY_SetupDLL( ntdll_module );
 
         if ((status = load_dll( NULL, L"kernel32.dll", 0, &kernel32, FALSE )) != STATUS_SUCCESS)
         {
@@ -4865,7 +4890,6 @@ void loader_init( CONTEXT *context, void **entry )
         pBaseThreadInitThunk = RtlFindExportedRoutineByName( kernel32->ldr.DllBase, "BaseThreadInitThunk" );
         LdrGetProcedureAddress( kernel32->ldr.DllBase, &ctrl_routine, 0, (void **)&pCtrlRoutine );
 
-        actctx_init();
         locale_init();
         if (needs_elevation())
             elevate_token();
@@ -5116,7 +5140,7 @@ NTSTATUS WINAPI LdrAddDllDirectory( const UNICODE_STRING *dir, void **cookie )
     struct dll_dir_entry *ptr;
     RTL_PATH_TYPE type = RtlDetermineDosPathNameType_U( dir->Buffer );
 
-    if (type != RtlPathTypeRooted && type != RtlPathTypeDriveAbsolute && type != RtlPathTypeUncAbsolute)
+    if (type != RtlPathTypeRooted && type != RtlPathTypeDriveAbsolute && type != RtlPathTypeUncAbsolute && type != RtlPathTypeLocalDevice)
         return STATUS_INVALID_PARAMETER;
 
     status = RtlDosPathNameToNtPathName_U_WithStatus( dir->Buffer, &nt_name, NULL, NULL );

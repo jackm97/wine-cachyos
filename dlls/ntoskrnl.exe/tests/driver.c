@@ -2086,17 +2086,27 @@ static void test_completion(void)
 static void test_IoAttachDeviceToDeviceStack(void)
 {
     DEVICE_OBJECT *dev1, *dev2, *dev3, *ret;
+    DEVOBJ_EXTENSION *ext1, *ext2, *ext3;
     NTSTATUS status;
 
     status = IoCreateDevice(driver_obj, 0, NULL, FILE_DEVICE_UNKNOWN,
             FILE_DEVICE_SECURE_OPEN, FALSE, &dev1);
     ok(status == STATUS_SUCCESS, "IoCreateDevice failed\n");
+    ok(!!dev1->DeviceObjectExtension, "Got NULL DeviceObjectExtension.\n");
+    ext1 = dev1->DeviceObjectExtension;
     status = IoCreateDevice(driver_obj, 0, NULL, FILE_DEVICE_UNKNOWN,
             FILE_DEVICE_SECURE_OPEN, FALSE, &dev2);
     ok(status == STATUS_SUCCESS, "IoCreateDevice failed\n");
+    ok(!!dev2->DeviceObjectExtension, "Got NULL DeviceObjectExtension.\n");
+    ext2 = dev2->DeviceObjectExtension;
     status = IoCreateDevice(driver_obj, 0, NULL, FILE_DEVICE_UNKNOWN,
             FILE_DEVICE_SECURE_OPEN, FALSE, &dev3);
     ok(status == STATUS_SUCCESS, "IoCreateDevice failed\n");
+    ok(!!dev3->DeviceObjectExtension, "Got NULL DeviceObjectExtension.\n");
+    ext3 = dev3->DeviceObjectExtension;
+    ok(!ext1->AttachedTo, "Unexpected AttachedTo %p.\n", ext1->AttachedTo);
+    ok(!ext2->AttachedTo, "Unexpected AttachedTo %p.\n", ext2->AttachedTo);
+    ok(!ext3->AttachedTo, "Unexpected AttachedTo %p.\n", ext3->AttachedTo);
 
     /* TODO: initialize devices properly */
     dev1->Flags &= ~DO_DEVICE_INITIALIZING;
@@ -2106,7 +2116,9 @@ static void test_IoAttachDeviceToDeviceStack(void)
     ok(ret == dev1, "IoAttachDeviceToDeviceStack returned %p, expected %p\n", ret, dev1);
     ok(dev1->AttachedDevice == dev2, "dev1->AttachedDevice = %p, expected %p\n",
             dev1->AttachedDevice, dev2);
+    ok(!ext1->AttachedTo, "Unexpected AttachedTo %p.\n", ext1->AttachedTo);
     ok(!dev2->AttachedDevice, "dev2->AttachedDevice = %p\n", dev2->AttachedDevice);
+    ok(ext2->AttachedTo == dev1, "Unexpected AttachedTo %p.\n", ext2->AttachedTo);
     ok(dev1->StackSize == 1, "dev1->StackSize = %d\n", dev1->StackSize);
     ok(dev2->StackSize == 2, "dev2->StackSize = %d\n", dev2->StackSize);
 
@@ -2114,9 +2126,12 @@ static void test_IoAttachDeviceToDeviceStack(void)
     ok(ret == dev2, "IoAttachDeviceToDeviceStack returned %p, expected %p\n", ret, dev2);
     ok(dev1->AttachedDevice == dev2, "dev1->AttachedDevice = %p, expected %p\n",
             dev1->AttachedDevice, dev2);
+    ok(!ext1->AttachedTo, "Unexpected AttachedTo %p.\n", ext1->AttachedTo);
     ok(dev2->AttachedDevice == dev3, "dev2->AttachedDevice = %p, expected %p\n",
             dev2->AttachedDevice, dev3);
+    ok(ext2->AttachedTo == dev1, "Unexpected AttachedTo %p.\n", ext2->AttachedTo);
     ok(!dev3->AttachedDevice, "dev3->AttachedDevice = %p\n", dev3->AttachedDevice);
+    ok(ext3->AttachedTo == dev2, "Unexpected AttachedTo %p.\n", ext3->AttachedTo);
     ok(dev1->StackSize == 1, "dev1->StackSize = %d\n", dev1->StackSize);
     ok(dev2->StackSize == 2, "dev2->StackSize = %d\n", dev2->StackSize);
     ok(dev3->StackSize == 3, "dev3->StackSize = %d\n", dev3->StackSize);
@@ -2124,9 +2139,11 @@ static void test_IoAttachDeviceToDeviceStack(void)
     IoDetachDevice(dev1);
     ok(!dev1->AttachedDevice, "dev1->AttachedDevice = %p\n", dev1->AttachedDevice);
     ok(dev2->AttachedDevice == dev3, "dev2->AttachedDevice = %p\n", dev2->AttachedDevice);
+    ok(!ext2->AttachedTo, "Unexpected AttachedTo %p.\n", ext2->AttachedTo);
 
     IoDetachDevice(dev2);
     ok(!dev2->AttachedDevice, "dev2->AttachedDevice = %p\n", dev2->AttachedDevice);
+    ok(!ext3->AttachedTo, "Unexpected AttachedTo %p.\n", ext3->AttachedTo);
     ok(dev1->StackSize == 1, "dev1->StackSize = %d\n", dev1->StackSize);
     ok(dev2->StackSize == 2, "dev2->StackSize = %d\n", dev2->StackSize);
     ok(dev3->StackSize == 3, "dev3->StackSize = %d\n", dev3->StackSize);
@@ -2804,6 +2821,49 @@ static void test_default_security(void)
     FltFreeSecurityDescriptor(sd);
 }
 
+static void test_device_object(void)
+{
+    todo_wine ok(lower_device->Type == 3, "Got type %d.\n", lower_device->Type);
+    todo_wine ok(lower_device->ReferenceCount == 1, "Got refcount %ld.\n", lower_device->ReferenceCount);
+    ok(lower_device->DriverObject == driver_obj, "Got driver %p.\n", lower_device->DriverObject);
+    ok(!lower_device->NextDevice, "Got next device %p.\n", lower_device->NextDevice);
+    ok(lower_device->AttachedDevice == upper_device, "Got attached device %p.\n", lower_device->AttachedDevice);
+    ok(!lower_device->CurrentIrp, "Got current IRP %p.\n", lower_device->CurrentIrp);
+    ok(!lower_device->Timer, "Got timer %p.\n", lower_device->Timer);
+    todo_wine ok(lower_device->Flags == 0x40, "Got flags %#lx.\n", lower_device->Flags);
+    ok(lower_device->Characteristics == (FILE_DEVICE_SECURE_OPEN | FILE_FLOPPY_DISKETTE | FILE_PORTABLE_DEVICE),
+            "Got characteristics %#lx.\n", lower_device->Characteristics);
+    ok(!lower_device->Vpb, "Got VPB %p.\n", lower_device->Vpb);
+    todo_wine ok(!lower_device->DeviceExtension, "Got extension %p.\n", lower_device->DeviceExtension);
+    ok(lower_device->DeviceType == FILE_DEVICE_UNKNOWN, "Got device type %#lx.\n", lower_device->DeviceType);
+    ok(lower_device->StackSize == 1, "Got stack size %u.\n", lower_device->StackSize);
+    ok(!lower_device->AlignmentRequirement, "Got alignment %lu.\n", lower_device->AlignmentRequirement);
+    ok(!lower_device->ActiveThreadCount, "Got thread count %lu.\n", lower_device->ActiveThreadCount);
+    ok(!lower_device->SectorSize, "Got sector size %u.\n", lower_device->SectorSize);
+    todo_wine ok(lower_device->Spare1 == 0x1, "Got Spare1 %#x.\n", lower_device->Spare1);
+    ok(!lower_device->Reserved, "Got Reserved %p.\n", lower_device->Reserved);
+
+    todo_wine ok(upper_device->Type == 3, "Got type %d.\n", upper_device->Type);
+    ok(!upper_device->ReferenceCount, "Got refcount %ld.\n", upper_device->ReferenceCount);
+    ok(upper_device->DriverObject == driver_obj, "Got driver %p.\n", upper_device->DriverObject);
+    ok(upper_device->NextDevice == lower_device, "Got next device %p.\n", upper_device->NextDevice);
+    ok(!upper_device->AttachedDevice, "Got attached device %p.\n", upper_device->AttachedDevice);
+    todo_wine ok(!upper_device->CurrentIrp, "Got current IRP %p.\n", upper_device->CurrentIrp);
+    ok(!upper_device->Timer, "Got timer %p.\n", upper_device->Timer);
+    todo_wine ok(upper_device->Flags == 0x40, "Got flags %#lx.\n", upper_device->Flags);
+    ok(upper_device->Characteristics == (FILE_DEVICE_SECURE_OPEN | FILE_READ_ONLY_DEVICE),
+            "Got characteristics %#lx.\n", upper_device->Characteristics);
+    ok(!upper_device->Vpb, "Got VPB %p.\n", upper_device->Vpb);
+    ok(!!upper_device->DeviceExtension, "Expected extension.\n");
+    ok(upper_device->DeviceType == FILE_DEVICE_UNKNOWN, "Got device type %#lx.\n", upper_device->DeviceType);
+    ok(upper_device->StackSize == 2, "Got stack size %u.\n", upper_device->StackSize);
+    ok(!upper_device->AlignmentRequirement, "Got alignment %lu.\n", upper_device->AlignmentRequirement);
+    ok(!upper_device->ActiveThreadCount, "Got thread count %lu.\n", upper_device->ActiveThreadCount);
+    ok(!upper_device->SectorSize, "Got sector size %u.\n", upper_device->SectorSize);
+    ok(!upper_device->Spare1, "Got Spare1 %#x.\n", upper_device->Spare1);
+    ok(!upper_device->Reserved, "Got Reserved %p.\n", upper_device->Reserved);
+}
+
 static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *stack)
 {
     void *buffer = irp->AssociatedIrp.SystemBuffer;
@@ -2858,6 +2918,7 @@ static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *st
     test_permanence();
     test_driver_object_extension();
     test_default_security();
+    test_device_object();
 
     IoMarkIrpPending(irp);
     IoQueueWorkItem(work_item, main_test_task, DelayedWorkQueue, irp);
@@ -3037,6 +3098,13 @@ static NTSTATUS WINAPI driver_Create(DEVICE_OBJECT *device, IRP *irp)
 {
     IO_STACK_LOCATION *irpsp = IoGetCurrentIrpStackLocation( irp );
     struct file_context *context = ExAllocatePool(PagedPool, sizeof(*context));
+
+    if (irpsp->Parameters.Create.ShareAccess & FILE_SHARE_DELETE)
+    {
+        irp->IoStatus.Status = STATUS_DEVICE_NOT_READY;
+        IoCompleteRequest(irp, IO_NO_INCREMENT);
+        return STATUS_DEVICE_NOT_READY;
+    }
 
     if (!context)
     {
@@ -3305,6 +3373,11 @@ static NTSTATUS WINAPI driver_QueryVolumeInformation(DEVICE_OBJECT *device, IRP 
         return STATUS_PENDING;
     }
 
+    case FileFsDeviceInformation:
+        /* This one is actually handled by the I/O manager;
+         * it's never passed down to a driver. */
+        ok(0, "Unexpected call.\n");
+        /* fall through */
     default:
         ret = STATUS_NOT_IMPLEMENTED;
         break;
@@ -3380,14 +3453,17 @@ NTSTATUS WINAPI DriverEntry(DRIVER_OBJECT *driver, PUNICODE_STRING registry)
     RtlInitUnicodeString(&nameW, L"\\Device\\WineTestDriver");
     RtlInitUnicodeString(&linkW, L"\\DosDevices\\WineTestDriver");
 
-    status = IoCreateDevice(driver, 0, &nameW, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &lower_device);
+    status = IoCreateDevice(driver, 0, &nameW, FILE_DEVICE_UNKNOWN,
+            FILE_DEVICE_SECURE_OPEN | FILE_FLOPPY_DISKETTE | FILE_PORTABLE_DEVICE,
+            FALSE, &lower_device);
     ok(!status, "failed to create device, status %#lx\n", status);
     status = IoCreateSymbolicLink(&linkW, &nameW);
     ok(!status, "failed to create link, status %#lx\n", status);
     lower_device->Flags &= ~DO_DEVICE_INITIALIZING;
 
     RtlInitUnicodeString(&nameW, L"\\Device\\WineTestUpper");
-    status = IoCreateDevice(driver, 0, &nameW, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &upper_device);
+    status = IoCreateDevice(driver, 16, &nameW, FILE_DEVICE_UNKNOWN,
+            FILE_DEVICE_SECURE_OPEN | FILE_READ_ONLY_DEVICE, FALSE, &upper_device);
     ok(!status, "failed to create device, status %#lx\n", status);
 
     IoAttachDeviceToDeviceStack(upper_device, lower_device);

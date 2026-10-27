@@ -400,6 +400,7 @@ static HRESULT WINAPI transform_SetOutputType(IMFTransform *iface, DWORD id, IMF
     MF_ATTRIBUTE_TYPE item_type;
     ULONG i, sample_size;
     GUID major, subtype;
+    WAVEFORMATEX *wfx;
     HRESULT hr;
 
     TRACE("iface %p, id %lu, type %p, flags %#lx.\n", iface, id, type, flags);
@@ -450,12 +451,12 @@ static HRESULT WINAPI transform_SetOutputType(IMFTransform *iface, DWORD id, IMF
     MoFreeMediaType(&decoder->output_type);
     memset(&decoder->output_type, 0, sizeof(decoder->output_type));
 
-    if (SUCCEEDED(hr = MFInitAMMediaTypeFromMFMediaType(type, GUID_NULL, &decoder->output_type)))
-    {
-        WAVEFORMATEX *wfx = (WAVEFORMATEX *)decoder->input_type.pbFormat;
-        wfx->wBitsPerSample = sample_size;
-        decoder->output_buf_size = 1024 * block_alignment * channel_count;
-    }
+    if (FAILED(hr = MFInitAMMediaTypeFromMFMediaType(type, GUID_NULL, &decoder->output_type)))
+        return hr;
+
+    wfx = (WAVEFORMATEX *)decoder->input_type.pbFormat;
+    wfx->wBitsPerSample = sample_size;
+    decoder->output_buf_size = 1024 * block_alignment * channel_count;
 
     if (FAILED(hr = try_create_wg_transform(decoder)))
         goto failed;
@@ -476,10 +477,8 @@ static HRESULT WINAPI transform_GetInputCurrentType(IMFTransform *iface, DWORD i
 
     if (!type)
         return E_POINTER;
-
     if (id)
         return MF_E_INVALIDSTREAMNUMBER;
-
     if (IsEqualGUID(&decoder->input_type.majortype, &GUID_NULL))
         return MF_E_TRANSFORM_TYPE_NOT_SET;
 
@@ -494,10 +493,8 @@ static HRESULT WINAPI transform_GetOutputCurrentType(IMFTransform *iface, DWORD 
 
     if (!type)
         return E_POINTER;
-
     if (id)
         return MF_E_INVALIDSTREAMNUMBER;
-
     if (IsEqualGUID(&decoder->output_type.majortype, &GUID_NULL))
         return MF_E_TRANSFORM_TYPE_NOT_SET;
 
@@ -1020,7 +1017,10 @@ static HRESULT WINAPI media_object_ProcessOutput(IMediaObject *iface, DWORD flag
         wg_sample_queue_flush(decoder->wg_sample_queue, false);
     }
     else if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT)
+    {
+        buffers[0].dwStatus = 0;
         hr = S_FALSE;
+    }
 
 
     if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT)
@@ -1135,13 +1135,25 @@ HRESULT wma_decoder_create(IUnknown *outer, IUnknown **out)
     return S_OK;
 }
 
-HRESULT WINAPI winegstreamer_create_wma_decoder(IUnknown *outer, IUnknown **out)
+HRESULT WINAPI winegstreamer_create_wma_decoder(IUnknown *outer, REFIID riid, void **out)
 {
-    TRACE("outer %p, out %p\n", outer, out);
+    IUnknown *unk;
+    HRESULT hr;
+
+    TRACE("outer %p, riid %s, out %p\n", outer, debugstr_guid(riid), out);
 
     if (!init_gstreamer())
         return E_FAIL;
 
-    return wma_decoder_create(outer, out);
-}
+    if (outer && !IsEqualGUID(riid, &IID_IUnknown))
+        return E_NOINTERFACE;
 
+    *out = NULL;
+    if (FAILED(hr = wma_decoder_create(outer, &unk)))
+        return hr;
+
+    hr = IUnknown_QueryInterface(unk, riid, out);
+    IUnknown_Release(unk);
+
+    return hr;
+}

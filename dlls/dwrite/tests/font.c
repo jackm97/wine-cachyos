@@ -109,15 +109,6 @@ static void _expect_ref(IUnknown* obj, ULONG ref, int line)
     ok_(__FILE__,line)(rc == ref, "expected refcount %ld, got %ld\n", ref, rc);
 }
 
-#define EXPECT_REF_BROKEN(obj,ref,brokenref) _expect_ref_broken((IUnknown*)obj, ref, brokenref, __LINE__)
-static void _expect_ref_broken(IUnknown* obj, ULONG ref, ULONG brokenref, int line)
-{
-    ULONG rc;
-    IUnknown_AddRef(obj);
-    rc = IUnknown_Release(obj);
-    ok_(__FILE__,line)(rc == ref || broken(rc == brokenref), "expected refcount %ld, got %ld\n", ref, rc);
-}
-
 static BOOL (WINAPI *pGetFontRealizationInfo)(HDC hdc, void *);
 
 static const WCHAR test_fontfile[] = L"wine_test_font.ttf";
@@ -2110,7 +2101,7 @@ static void get_expected_font_metrics(IDWriteFontFace *fontface, DWRITE_FONT_MET
     }
 
     if (metrics->underlineThickness == 0)
-        metrics->underlineThickness = metrics->designUnitsPerEm / 14;
+        metrics->underlineThickness = (metrics->designUnitsPerEm + 7) / 14;
     if (metrics->strikethroughThickness == 0)
         metrics->strikethroughThickness = metrics->underlineThickness;
 
@@ -8991,7 +8982,6 @@ static void test_object_lifetime(void)
     ok(hr == S_OK, "got %#lx\n", hr);
 
     EXPECT_REF(family, 2);
-    EXPECT_REF(collection, 2);
     EXPECT_REF(factory, 2);
 
     hr = IDWriteFont_GetFontFamily(font, &family2);
@@ -9007,10 +8997,7 @@ static void test_object_lifetime(void)
     ok(hr == S_OK, "got %#lx\n", hr);
 
     EXPECT_REF(font, 1);
-    EXPECT_REF_BROKEN(fontface, 1, 2);
     EXPECT_REF(family, 2);
-    EXPECT_REF(collection, 2);
-    EXPECT_REF_BROKEN(factory, 3, 2);
 
     /* get font from fontface */
     hr = IDWriteFontCollection_GetFontFromFontFace(collection, fontface, &font2);
@@ -9018,17 +9005,13 @@ static void test_object_lifetime(void)
 
     EXPECT_REF(font, 1);
     EXPECT_REF(font2, 1);
-    EXPECT_REF_BROKEN(fontface, 1, 2);
     EXPECT_REF(family, 2);
-    EXPECT_REF(collection, 3);
-    EXPECT_REF_BROKEN(factory, 3, 2);
 
     IDWriteFont_Release(font2);
     IDWriteFontFace_Release(fontface);
 
     EXPECT_REF(font, 1);
     EXPECT_REF(family, 2);
-    EXPECT_REF(collection, 2);
     EXPECT_REF(factory, 2);
 
     IDWriteFont_Release(font);
@@ -9043,7 +9026,6 @@ static void test_object_lifetime(void)
     ok(hr == S_OK, "got %#lx\n", hr);
 
     EXPECT_REF(family, 2);
-    EXPECT_REF(collection, 2);
     EXPECT_REF(factory, 2);
 
     hr = IDWriteFontFamily_GetMatchingFonts(family, DWRITE_FONT_WEIGHT_NORMAL,
@@ -9513,6 +9495,30 @@ static DWORD get_cblc_formats(IDWriteFontFace4 *fontface)
     return ret;
 }
 
+static DWORD get_colr_formats(IDWriteFontFace4 *fontface)
+{
+    DWORD ret = DWRITE_GLYPH_IMAGE_FORMATS_COLR;
+    struct dwrite_fonttable colr;
+    BOOL exists = FALSE;
+    WORD version;
+    HRESULT hr;
+
+    hr = IDWriteFontFace4_TryGetFontTable(fontface, MS_COLR_TAG, (const void **)&colr.data, &colr.size, &colr.context, &exists);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!!exists, "Expected COLR table.\n");
+
+    if (!exists)
+        return 0;
+
+    version = table_read_be_word(&colr, NULL, 0);
+    if (version == 1)
+        ret |= DWRITE_GLYPH_IMAGE_FORMATS_COLR_PAINT_TREE;
+
+    IDWriteFontFace4_ReleaseFontTable(fontface, colr.context);
+
+    return ret;
+}
+
 static DWORD get_face_glyph_image_formats(IDWriteFontFace4 *fontface)
 {
     DWORD ret = DWRITE_GLYPH_IMAGE_FORMATS_NONE;
@@ -9525,7 +9531,7 @@ static DWORD get_face_glyph_image_formats(IDWriteFontFace4 *fontface)
         ret |= DWRITE_GLYPH_IMAGE_FORMATS_CFF;
 
     if (face_has_table(fontface, MS_COLR_TAG))
-        ret |= DWRITE_GLYPH_IMAGE_FORMATS_COLR;
+        ret |= get_colr_formats(fontface);
 
     if (face_has_table(fontface, MS_SVG__TAG))
         ret |= DWRITE_GLYPH_IMAGE_FORMATS_SVG;

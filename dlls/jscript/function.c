@@ -192,14 +192,14 @@ static HRESULT Arguments_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op 
 
     if(arguments->buf) {
         for(i = 0; i < arguments->argc; i++) {
-            hres = gc_process_linked_val(gc_ctx, op, jsdisp, &arguments->buf[i]);
+            hres = gc_process_linked_val(gc_ctx, op, &arguments->buf[i]);
             if(FAILED(hres))
                 return hres;
         }
     }
 
     if(arguments->scope) {
-        hres = gc_process_linked_obj(gc_ctx, op, jsdisp, &arguments->scope->dispex, (void**)&arguments->scope);
+        hres = gc_process_linked_obj(gc_ctx, op, &arguments->scope->dispex, (void**)&arguments->scope);
         if(FAILED(hres))
             return hres;
     }
@@ -875,7 +875,7 @@ static HRESULT InterpretedFunction_get_prototype(script_ctx_t *ctx, jsdisp_t *js
     if(FAILED(hres))
         return hres;
 
-    hres = jsdisp_define_data_property(jsthis, L"prototype", PROPF_WRITABLE, jsval_obj(prototype));
+    hres = jsdisp_replace_builtin_property(jsthis, L"prototype", jsval_obj(prototype));
     if(SUCCEEDED(hres))
         hres = set_constructor_prop(ctx, jsthis, prototype);
     if(FAILED(hres)) {
@@ -889,7 +889,7 @@ static HRESULT InterpretedFunction_get_prototype(script_ctx_t *ctx, jsdisp_t *js
 
 static HRESULT InterpretedFunction_set_prototype(script_ctx_t *ctx, jsdisp_t *jsthis, jsval_t value)
 {
-    return jsdisp_define_data_property(jsthis, L"prototype", PROPF_WRITABLE, value);
+    return jsdisp_replace_builtin_property(jsthis, L"prototype", value);
 }
 
 static const builtin_prop_t InterpretedFunction_props[] = {
@@ -975,8 +975,7 @@ static HRESULT InterpretedFunction_gc_traverse(struct gc_ctx *gc_ctx, enum gc_tr
 
     if(!function->scope_chain)
         return S_OK;
-    return gc_process_linked_obj(gc_ctx, op, &function->function.dispex, &function->scope_chain->dispex,
-                                 (void**)&function->scope_chain);
+    return gc_process_linked_obj(gc_ctx, op, &function->scope_chain->dispex, (void**)&function->scope_chain);
 }
 
 static void InterpretedFunction_cc_traverse(FunctionInstance *func, nsCycleCollectionTraversalCallback *cb)
@@ -1115,7 +1114,6 @@ static const function_vtbl_t HostFunctionVtbl = {
     HostFunction_get_code,
     HostFunction_destructor,
     no_gc_traverse,
-    no_cc_traverse
 };
 
 HRESULT create_host_function(script_ctx_t *ctx, const struct property_info *desc, DWORD flags, jsdisp_t **ret)
@@ -1161,7 +1159,6 @@ static const builtin_info_t HostConstructor_info = {
     .props         = HostFunction_props,
     .get_host_disp = HostConstructor_get_host_disp,
     .gc_traverse   = Function_gc_traverse,
-    .cc_traverse   = Function_cc_traverse,
     .lookup_prop   = HostConstructor_lookup_prop,
 };
 
@@ -1234,13 +1231,19 @@ static void HostConstructor_destructor(FunctionInstance *func)
 {
 }
 
+static HRESULT HostConstructor_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, FunctionInstance *func)
+{
+    HostConstructor *constr = (HostConstructor*)func;
+
+    return host_dispatch_gc_traverse(gc_ctx, op, constr->host_iface);
+}
+
 static const function_vtbl_t HostConstructorVtbl = {
     HostConstructor_call,
     HostConstructor_toString,
     HostConstructor_get_code,
     HostConstructor_destructor,
-    no_gc_traverse,
-    no_cc_traverse
+    HostConstructor_gc_traverse,
 };
 
 HRESULT init_host_constructor(script_ctx_t *ctx, IWineJSDispatchHost *host_constr, const WCHAR *method_name, IWineJSDispatch **ret)
@@ -1345,16 +1348,16 @@ static HRESULT BindFunction_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_
     unsigned i;
 
     for(i = 0; i < function->argc; i++) {
-        hres = gc_process_linked_val(gc_ctx, op, &function->function.dispex, &function->args[i]);
+        hres = gc_process_linked_val(gc_ctx, op, &function->args[i]);
         if(FAILED(hres))
             return hres;
     }
 
-    hres = gc_process_linked_obj(gc_ctx, op, &function->function.dispex, &function->target->dispex, (void**)&function->target);
+    hres = gc_process_linked_obj(gc_ctx, op, &function->target->dispex, (void**)&function->target);
     if(FAILED(hres))
         return hres;
 
-    return gc_process_linked_val(gc_ctx, op, &function->function.dispex, &function->this);
+    return gc_process_linked_val(gc_ctx, op, &function->this);
 }
 
 static void BindFunction_cc_traverse(FunctionInstance *func, nsCycleCollectionTraversalCallback *cb)

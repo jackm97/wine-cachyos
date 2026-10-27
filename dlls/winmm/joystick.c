@@ -271,7 +271,7 @@ static void update_connected_state(void)
 
 static void add_joystick( const DIDEVICEINSTANCEW *instance )
 {
-    int first_disconnected = -1, index = -1;
+    int index = -1;
     IDirectInputDevice8W *device = NULL;
     unsigned int i;
     HANDLE event;
@@ -280,10 +280,8 @@ static void add_joystick( const DIDEVICEINSTANCEW *instance )
     for (i = 0; i < ARRAY_SIZE(joysticks); ++i)
     {
         if (!memcmp( &joysticks[i].instance, instance, sizeof(DIDEVICEINSTANCEW) )) return;
-        if (index == -1 && !joysticks[i].device) index = i;
-        if (index == -1 && first_disconnected == -1 && joysticks[i].disconnected) first_disconnected = i;
+        if (index == -1 && (!joysticks[i].device || joysticks[i].disconnected)) index = i;
     }
-    if (index == -1) index = first_disconnected;
     if (index == -1)
     {
         ERR( "Could not find existing or empty slot.\n" );

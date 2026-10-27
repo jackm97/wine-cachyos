@@ -2902,12 +2902,9 @@ static void test_readvirtualmemory(void)
     ok( strcmp(teststring, buffer) == 0, "Expected read memory to be the same as original memory\n");
 
     /* illegal remote address */
-    todo_wine{
     status = pNtReadVirtualMemory(process, (void *) 0x1234, buffer, 12, &readcount);
     ok( status == STATUS_PARTIAL_COPY, "Expected STATUS_PARTIAL_COPY, got %08lx\n", status);
-    if (status == STATUS_PARTIAL_COPY)
-        ok( readcount == 0, "Expected to read 0 bytes, got %Id\n",readcount);
-    }
+    ok( readcount == 0, "Expected to read 0 bytes, got %Id\n",readcount);
 
     /* 0 handle */
     status = pNtReadVirtualMemory(0, teststring, buffer, 12, &readcount);
@@ -3939,7 +3936,6 @@ static void test_query_numa_map(void)
         ok( bret, "got error %lu.\n", GetLastError() );
         ok( mask.Group == n->GroupMask.Group, "got %u, %u.\n", mask.Group, n->GroupMask.Group );
         ok( mask.Mask == n->GroupMask.Mask, "got %#Ix, %#Ix.\n", mask.Mask, n->GroupMask.Mask );
-        p = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *)((BYTE *)p + p->Size);
 
         memset( &mask64, 0xcc, sizeof(mask64) );
         bret = GetNumaNodeProcessorMask( n->NodeNumber, &mask64 );
@@ -4874,8 +4870,19 @@ static ULONG get_process_parameters_flags( HANDLE process )
     return flags;
 }
 
+static void test_debuggee_process_parameters_flags(int argc, char **argv)
+{
+    PEB *peb = NtCurrentTeb()->Peb;
+
+    ok( peb->ProcessParameters->Flags & PROCESS_PARAMS_IMAGE_KEY_MISSING, "got %#lx.\n", peb->ProcessParameters->Flags );
+    while (!IsDebuggerPresent())
+        Sleep( 10 );
+    ok( peb->ProcessParameters->Flags & PROCESS_PARAMS_IMAGE_KEY_MISSING, "got %#lx.\n", peb->ProcessParameters->Flags );
+}
+
 static void test_process_parameters_flags( int argc, char **argv )
 {
+    SECURITY_ATTRIBUTES sa = { .nLength = sizeof(sa), .bInheritHandle = TRUE };
     PEB *peb = NtCurrentTeb()->Peb;
     STARTUPINFOA si = { 0 };
     char cmdline[MAX_PATH];
@@ -4904,7 +4911,6 @@ static void test_process_parameters_flags( int argc, char **argv )
     CloseHandle( pi.hThread );
     CloseHandle( pi.hProcess );
 
-    si.cb = sizeof(si);
     ret = CreateProcessA( NULL, cmdline, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi );
     ok( ret, "got error %ld.\n", GetLastError() );
     flags = get_process_parameters_flags( pi.hProcess );
@@ -4912,6 +4918,30 @@ static void test_process_parameters_flags( int argc, char **argv )
     TerminateProcess( pi.hProcess, 0 );
     CloseHandle( pi.hThread );
     CloseHandle( pi.hProcess );
+
+    ret = CreateProcessA( NULL, cmdline, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi );
+    ok( ret, "got error %ld.\n", GetLastError() );
+    flags = get_process_parameters_flags( pi.hProcess );
+    ok( flags & PROCESS_PARAMS_IMAGE_KEY_MISSING, "got %#lx.\n", peb->ProcessParameters->Flags );
+    ResumeThread( pi.hThread );
+    ret = DebugActiveProcess( pi.dwProcessId );
+    ok( ret, "got error %ld.\n", GetLastError() );
+    flags = get_process_parameters_flags( pi.hProcess );
+    ok( flags & PROCESS_PARAMS_IMAGE_KEY_MISSING, "got %#lx.\n", peb->ProcessParameters->Flags );
+    for (;;)
+    {
+        DEBUG_EVENT ev;
+
+        ret = WaitForDebugEvent( &ev, INFINITE );
+        ok( ret, "got error %ld.\n", GetLastError() );
+        if (!ret) break;
+        if (ev.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT && ev.dwProcessId == pi.dwProcessId) break;
+        ret = ContinueDebugEvent( ev.dwProcessId, ev.dwThreadId, DBG_CONTINUE );
+        ok( ret, "got error %ld.\n", GetLastError() );
+        if (!ret) break;
+    }
+    DebugActiveProcessStop( pi.dwProcessId );
+    wait_child_process( &pi );
 
     err = RegCreateKeyA( HKEY_LOCAL_MACHINE, keyname, &hkey );
     if (err == ERROR_ACCESS_DENIED)
@@ -4921,7 +4951,6 @@ static void test_process_parameters_flags( int argc, char **argv )
     }
     ok( !err, "got %#lx.\n", err );
 
-    si.cb = sizeof(si);
     ret = CreateProcessA( NULL, cmdline, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi );
     ok( ret, "got error %ld.\n", GetLastError() );
     flags = get_process_parameters_flags( pi.hProcess );
@@ -4932,15 +4961,6 @@ static void test_process_parameters_flags( int argc, char **argv )
 
     RegCloseKey( hkey );
     RegDeleteKeyA( HKEY_LOCAL_MACHINE, keyname );
-
-    si.cb = sizeof(si);
-    ret = CreateProcessA( NULL, cmdline, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi );
-    ok( ret, "got error %ld.\n", GetLastError() );
-    flags = get_process_parameters_flags( pi.hProcess );
-    ok( flags & PROCESS_PARAMS_IMAGE_KEY_MISSING, "got %#lx.\n", peb->ProcessParameters->Flags );
-    TerminateProcess( pi.hProcess, 0 );
-    CloseHandle( pi.hThread );
-    CloseHandle( pi.hProcess );
 }
 
 START_TEST(info)
@@ -4954,6 +4974,7 @@ START_TEST(info)
     if (argc >= 3)
     {
         if (strcmp(argv[2], "debuggee:dbgport") == 0) test_debuggee_dbgport(argc - 2, argv + 2);
+        else if (!strcmp(argv[2], "check_pp_flags"))  test_debuggee_process_parameters_flags(argc - 2, argv + 2);
         return; /* Child */
     }
 

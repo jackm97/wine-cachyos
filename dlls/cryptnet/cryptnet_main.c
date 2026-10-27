@@ -1641,6 +1641,7 @@ static BOOL find_cached_revocation_status(const CERT_CONTEXT *cert, const CERT_R
     }
 
     TRACE("Using cached status %#lx, reason %#lx.\n", status->dwError, status->dwReason);
+    fclose(file);
     return TRUE;
 }
 
@@ -1869,7 +1870,7 @@ static WCHAR *build_request_url(const WCHAR *base_url, const BYTE *data, DWORD d
     DWORD len = 0;
 
     if (!(path = build_request_path(data, data_size))) return NULL;
-    len = (wcslen(base_url) + wcslen(path) + 1) * sizeof(WCHAR);
+    len = wcslen(base_url) + wcslen(path) + 1;
     if (!(ret = malloc(len * sizeof(WCHAR))))
     {
         free(path);

@@ -80,12 +80,12 @@ struct filter
 
 struct emulated_fullscreen_state
 {
-    long auto_show;
-    long cursor_hidden;
-    long source_left, source_top, source_width, source_height;
-    long dest_left, dest_top, dest_width, dest_height;
+    LONG auto_show;
+    LONG cursor_hidden;
+    LONG source_left, source_top, source_width, source_height;
+    LONG dest_left, dest_top, dest_width, dest_height;
     BOOL using_default_source, using_default_dest;
-    long restore_left, restore_top, restore_width, restore_height;
+    LONG restore_left, restore_top, restore_width, restore_height;
     LONG style, style_ex;
     OAHWND owner;
     OAHWND drain;
@@ -491,6 +491,7 @@ static ULONG WINAPI FilterGraphInner_Release(IUnknown *iface)
 
         flush_media_events(This);
         CloseHandle(This->media_event_handle);
+        CloseHandle(This->hEventCompletion);
 
         EnterCriticalSection(&message_cs);
         if (This->threaded && !--message_thread_refcount)
@@ -1823,6 +1824,7 @@ static HRESULT graph_start(struct filter_graph *graph, REFERENCE_TIME stream_sta
     }
     if (list_empty(&graph->media_events))
         ResetEvent(graph->media_event_handle);
+    ResetEvent(graph->hEventCompletion);
 
     if (graph->defaultclock && !graph->refClock)
         IFilterGraph2_SetDefaultSyncSource(&graph->IFilterGraph2_iface);
@@ -2350,8 +2352,7 @@ static HRESULT WINAPI MediaSeeking_GetDuration(IMediaSeeking *iface, LONGLONG *d
 
     LeaveCriticalSection(&graph->cs);
 
-    TRACE("Returning hr %#lx, duration %s (%s seconds).\n", hr,
-            wine_dbgstr_longlong(*duration), debugstr_time(*duration));
+    TRACE("Returning hr %#lx, duration %I64d (%s seconds).\n", hr, *duration, debugstr_time(*duration));
     return hr;
 }
 
@@ -2392,7 +2393,7 @@ static HRESULT WINAPI MediaSeeking_GetStopPosition(IMediaSeeking *iface, LONGLON
 
     LeaveCriticalSection(&graph->cs);
 
-    TRACE("Returning %s (%s seconds).\n", wine_dbgstr_longlong(*stop), debugstr_time(*stop));
+    TRACE("Returning %I64d (%s seconds).\n", *stop, debugstr_time(*stop));
     return hr;
 }
 
@@ -2422,7 +2423,7 @@ static HRESULT WINAPI MediaSeeking_GetCurrentPosition(IMediaSeeking *iface, LONG
 
     LeaveCriticalSection(&graph->cs);
 
-    TRACE("Returning %s (%s seconds).\n", wine_dbgstr_longlong(ret), debugstr_time(ret));
+    TRACE("Returning %I64d (%s seconds).\n", ret, debugstr_time(ret));
     *current = ret;
 
     return S_OK;
@@ -2433,8 +2434,8 @@ static HRESULT WINAPI MediaSeeking_ConvertTimeFormat(IMediaSeeking *iface, LONGL
 {
     struct filter_graph *This = impl_from_IMediaSeeking(iface);
 
-    TRACE("(%p/%p)->(%p, %s, 0x%s, %s)\n", This, iface, pTarget,
-        debugstr_guid(pTargetFormat), wine_dbgstr_longlong(Source), debugstr_guid(pSourceFormat));
+    TRACE("graph %p, target %p, target_format %s, source %I64d, source_format %s.\n",
+            This, pTarget, debugstr_guid(pTargetFormat), Source, debugstr_guid(pSourceFormat));
 
     if (!pSourceFormat)
         pSourceFormat = &This->timeformatseek;
@@ -2458,15 +2459,12 @@ static HRESULT WINAPI MediaSeeking_SetPositions(IMediaSeeking *iface, LONGLONG *
     struct filter *filter;
     FILTER_STATE state;
 
-    TRACE("graph %p, current %s, current_flags %#lx, stop %s, stop_flags %#lx.\n", graph,
-            current_ptr ? wine_dbgstr_longlong(*current_ptr) : "<null>", current_flags,
-            stop_ptr ? wine_dbgstr_longlong(*stop_ptr): "<null>", stop_flags);
+    TRACE("graph %p, current %p, current_flags %#lx, stop %p, stop_flags %#lx.\n",
+            graph, current_ptr, current_flags, stop_ptr, stop_flags);
     if (current_ptr)
-        TRACE("Setting current position to %s (%s seconds).\n",
-                wine_dbgstr_longlong(*current_ptr), debugstr_time(*current_ptr));
+        TRACE("Setting current position to %I64d (%s seconds).\n", *current_ptr, debugstr_time(*current_ptr));
     if (stop_ptr)
-        TRACE("Setting stop position to %s (%s seconds).\n",
-                wine_dbgstr_longlong(*stop_ptr), debugstr_time(*stop_ptr));
+        TRACE("Setting stop position to %I64d (%s seconds).\n", *stop_ptr, debugstr_time(*stop_ptr));
 
     if ((current_flags & 0x7) != AM_SEEKING_AbsolutePositioning
             && (current_flags & 0x7) != AM_SEEKING_NoPositioning)
@@ -4677,7 +4675,7 @@ static void enter_fullscreen_mode(struct filter_graph *graph, IVideoWindow *wind
     IBaseFilter *filter = NULL;
     IBasicVideo *video = NULL;
     IOverlay *overlay = NULL;
-    long width, height;
+    LONG width, height;
     IPin *pin = NULL;
     HWND hwnd = NULL;
 
@@ -5705,16 +5703,27 @@ static HRESULT WINAPI MediaEventSink_Notify(IMediaEventSink *iface, LONG code,
 
     EnterCriticalSection(&graph->event_cs);
 
-    if (code == EC_COMPLETE && graph->HandleEcComplete)
+    if (code == EC_COMPLETE)
     {
-        if (++graph->EcCompleteCount == graph->nRenderers)
+        if (!graph->HandleEcComplete ||
+            ++graph->EcCompleteCount == graph->nRenderers)
         {
+            if (graph->HandleEcComplete)
+            {
+                param1 = S_OK;
+                param2 = 0;
+                graph->current_pos = graph->stream_stop;
+            }
             if (graph->media_events_disabled)
+            {
                 SetEvent(graph->media_event_handle);
+                graph->CompletionStatus = 0;
+            }
             else
-                queue_media_event(graph, EC_COMPLETE, S_OK, 0);
-            graph->CompletionStatus = EC_COMPLETE;
-            graph->current_pos = graph->stream_stop;
+            {
+                queue_media_event(graph, EC_COMPLETE, param1, param2);
+                graph->CompletionStatus = EC_COMPLETE;
+            }
             SetEvent(graph->hEventCompletion);
         }
     }

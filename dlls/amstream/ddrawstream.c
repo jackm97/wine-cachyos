@@ -1457,8 +1457,7 @@ static HRESULT WINAPI ddraw_sink_NewSegment(IPin *iface, REFERENCE_TIME start, R
 {
     struct ddraw_stream *stream = impl_from_IPin(iface);
 
-    TRACE("stream %p, start %s, stop %s, rate %0.16e\n",
-            stream, wine_dbgstr_longlong(start), wine_dbgstr_longlong(stop), rate);
+    TRACE("stream %p, start %I64d, stop %I64d, rate %0.16e.\n", stream, start, stop, rate);
 
     EnterCriticalSection(&stream->cs);
 
@@ -1897,7 +1896,6 @@ HRESULT ddraw_stream_create(IUnknown *outer, void **out)
     object->IMemInputPin_iface.lpVtbl = &ddraw_meminput_vtbl;
     object->IMemAllocator_iface.lpVtbl = &ddraw_mem_allocator_vtbl;
     object->IPin_iface.lpVtbl = &ddraw_sink_vtbl;
-    object->IMemAllocator_iface.lpVtbl = &ddraw_mem_allocator_vtbl;
     object->ref = 1;
 
     object->format.width = 100;

@@ -25,7 +25,6 @@
 
 #include "winerror.h"
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winnls.h"
@@ -874,6 +873,22 @@ HANDLE WINAPI DECLSPEC_HOTPATCH CreateFileW( LPCWSTR filename, DWORD access, DWO
                            NULL, attributes & FILE_ATTRIBUTE_VALID_FLAGS, sharing,
                            nt_disposition[creation - CREATE_NEW],
                            get_nt_file_options( attributes, creation ), NULL, 0 );
+
+    /* Before Windows NT, the write flag was ignored on CD drives */
+    if (status == STATUS_ACCESS_DENIED && (access & GENERIC_WRITE) && (GetVersion() & 0x80000000))
+    {
+        WCHAR volume[MAX_PATH];
+        if (GetVolumePathNameW( filename, volume, ARRAY_SIZE(volume) ) &&
+            GetDriveTypeW( volume ) == DRIVE_CDROM)
+        {
+            WARN( "Ignoring write flag on CD drive\n" );
+            status = NtCreateFile( &ret, (access & ~GENERIC_WRITE) | SYNCHRONIZE | FILE_READ_ATTRIBUTES,
+                                   &attr, &io, NULL, attributes & FILE_ATTRIBUTE_VALID_FLAGS, sharing,
+                                   nt_disposition[creation - CREATE_NEW],
+                                   get_nt_file_options( attributes, creation ), NULL, 0 );
+        }
+    }
+
     if (status)
     {
         if (vxd_name && vxd_name[0])
@@ -1367,7 +1382,7 @@ HANDLE WINAPI DECLSPEC_HOTPATCH FindFirstFileExW( LPCWSTR filename, FINDEX_INFO_
 
     InitializeObjectAttributes( &attr, &nt_name, OBJ_CASE_INSENSITIVE, 0, NULL );
     status = NtOpenFile( &info->handle, FILE_LIST_DIRECTORY | SYNCHRONIZE, &attr, &io,
-                         FILE_SHARE_READ | FILE_SHARE_WRITE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT );
     if (status != STATUS_SUCCESS)
     {
@@ -2478,7 +2493,7 @@ UINT WINAPI DECLSPEC_HOTPATCH GetTempFileNameW( LPCWSTR path, LPCWSTR prefix, UI
     if (prefix) for (i = 3; (i > 0) && (*prefix); i--) *p++ = *prefix++;
 
     unique &= 0xffff;
-    if (unique) swprintf( p, MAX_PATH - (p - buffer), L"%x.tmp", unique );
+    if (unique) swprintf( p, MAX_PATH - (p - buffer), L"%X.tmp", unique );
     else
     {
         /* get a "random" unique number and try to create the file */
@@ -2492,7 +2507,7 @@ UINT WINAPI DECLSPEC_HOTPATCH GetTempFileNameW( LPCWSTR path, LPCWSTR prefix, UI
         unique = num;
         do
         {
-            swprintf( p, MAX_PATH - (p - buffer), L"%x.tmp", unique );
+            swprintf( p, MAX_PATH - (p - buffer), L"%X.tmp", unique );
             handle = CreateFileW( buffer, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, 0 );
             if (handle != INVALID_HANDLE_VALUE)
             {  /* We created it */
@@ -2741,7 +2756,8 @@ BOOL WINAPI DECLSPEC_HOTPATCH ReplaceFileW( const WCHAR *replaced, const WCHAR *
     TRACE( "%s %s %s 0x%08lx %p %p\n", debugstr_w(replaced), debugstr_w(replacement), debugstr_w(backup),
            flags, exclude, reserved );
 
-    if (flags) FIXME("Ignoring flags %lx\n", flags);
+    if (flags & ~(REPLACEFILE_IGNORE_MERGE_ERRORS | REPLACEFILE_IGNORE_ACL_ERRORS))
+        FIXME("Ignoring flags %lx\n", flags);
 
     /* First two arguments are mandatory */
     if (!replaced || !replacement)
@@ -2763,7 +2779,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH ReplaceFileW( const WCHAR *replaced, const WCHAR *
     RtlFreeUnicodeString(&nt_replaced_name);
     if (!set_ntstatus( status )) return FALSE;
 
-    if (info.FileAttributes & FILE_ATTRIBUTE_READONLY)
+    if (info.FileAttributes & ( FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_DIRECTORY ))
     {
         SetLastError( ERROR_ACCESS_DENIED );
         return FALSE;
@@ -3658,7 +3674,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH ReadFile( HANDLE file, LPVOID buffer, DWORD count,
         status = io_status->Status;
     }
 
-    if (result) *result = overlapped && status ? 0 : io_status->Information;
+    if (result && (!overlapped || !status)) *result = io_status->Information;
 
     if (status == STATUS_END_OF_FILE)
     {
@@ -4051,6 +4067,8 @@ BOOL WINAPI DECLSPEC_HOTPATCH WriteFile( HANDLE file, LPCVOID buffer, DWORD coun
     else piosb->Information = 0;
     piosb->Status = STATUS_PENDING;
 
+    if (result) *result = 0;
+
     status = NtWriteFile( file, event, NULL, cvalue, piosb, buffer, count, poffset, NULL );
 
     if (status == STATUS_PENDING && !overlapped)
@@ -4059,7 +4077,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH WriteFile( HANDLE file, LPCVOID buffer, DWORD coun
         status = piosb->Status;
     }
 
-    if (result) *result = overlapped && status ? 0 : piosb->Information;
+    if (result && (!overlapped || !status)) *result = piosb->Information;
 
     if (status && status != STATUS_TIMEOUT)
     {

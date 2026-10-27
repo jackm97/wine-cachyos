@@ -20560,8 +20560,8 @@ out:
     DestroyWindow(window);
 }
 
-static void check_surface_clipper(IDirectDrawSurface4 *surface, IDirectDrawClipper *clipper_hwnd,
-        IDirectDrawClipper *clipper_region, RECT *window_rect, DWORD style)
+static void check_surface_clipper(IDirectDrawSurface4 *surface,
+        IDirectDrawClipper *clipper, RECT *window_rect, DWORD style)
 {
     unsigned int c;
     DDBLTFX fx;
@@ -20573,8 +20573,10 @@ static void check_surface_clipper(IDirectDrawSurface4 *surface, IDirectDrawClipp
 
     fill_surface(surface, 0xffff0000);
 
-    /* Clipper with region works. */
-    hr = IDirectDrawSurface4_SetClipper(surface, clipper_region);
+    /* Clippers with a region work. Clippers with a window work on Windows 98,
+     * but are ignored on modern windows. */
+
+    hr = IDirectDrawSurface4_SetClipper(surface, clipper);
     ok(hr == DD_OK, "got %#lx.\n", hr);
     c = get_surface_color(surface, 101, 101);
     ok(c == 0x00ff0000, "got %#x.\n", c);
@@ -20583,21 +20585,6 @@ static void check_surface_clipper(IDirectDrawSurface4 *surface, IDirectDrawClipp
     c = get_surface_color(surface, 0, 0);
     ok(c == 0x00ff0000, "got %#x.\n", c);
     c = get_surface_color(surface, 101, 101);
-    ok(c == 0x0000ff00, "got %#x.\n", c);
-
-    /* Clipper with window has no effect. */
-    hr = IDirectDrawSurface4_SetClipper(surface, clipper_hwnd);
-    ok(hr == DD_OK, "got %#lx.\n", hr);
-    fill_surface(surface, 0xff0000ff);
-    c = get_surface_color(surface, window_rect->left + 1, window_rect->top + 1);
-    ok(c == 0x000000ff, "got %#x.\n", c);
-
-    hr = IDirectDrawSurface4_Blt(surface, NULL, NULL, NULL, DDBLT_COLORFILL | DDBLT_WAIT, &fx);
-    ok(hr == DD_OK, "got %#lx.\n", hr);
-
-    c = get_surface_color(surface, window_rect->left + 1, window_rect->top + 1);
-    ok(c == 0x0000ff00, "got %#x.\n", c);
-    c = get_surface_color(surface, 0, 0);
     ok(c == 0x0000ff00, "got %#x.\n", c);
 
     hr = IDirectDrawSurface4_SetClipper(surface, NULL);
@@ -20622,15 +20609,15 @@ static void test_clipper_in_exclusive_fullscreen(void)
         { WS_POPUP | WS_VISIBLE },
     };
     IDirectDrawSurface4 *primary, *offscreen;
-    IDirectDrawClipper *clipper, *clipper2;
+    IDirectDrawClipper *clipper;
     DDSURFACEDESC2 surface_desc;
-    HWND window, clip_window;
     IDirectDraw4 *ddraw;
     RGNDATA *rgn_data;
     DWORD ret, style;
     RECT window_rect;
     ULONG refcount;
     unsigned int i;
+    HWND window;
     HRESULT hr;
     HRGN rgn;
 
@@ -20642,12 +20629,12 @@ static void test_clipper_in_exclusive_fullscreen(void)
     hr = IDirectDraw4_CreateClipper(ddraw, 0, &clipper, NULL);
     ok(hr == DD_OK, "got %#lx.\n", hr);
 
-    hr = IDirectDraw4_CreateClipper(ddraw, 0, &clipper2, NULL);
-    ok(hr == DD_OK, "got %#lx.\n", hr);
-
     window = CreateWindowA("static", "ddraw_fullscreen", WS_POPUP | WS_VISIBLE, 0, 0, 640, 480, NULL, NULL, NULL, NULL);
-
+    pump_messages();
+    hr = IDirectDraw4_SetCooperativeLevel(ddraw, NULL, DDSCL_NORMAL);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
     hr = IDirectDraw4_SetCooperativeLevel(ddraw, window, DDSCL_EXCLUSIVE | DDSCL_FULLSCREEN);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
     pump_messages();
 
     rgn = CreateRectRgn(100, 100, 200, 200);
@@ -20657,7 +20644,7 @@ static void test_clipper_in_exclusive_fullscreen(void)
     ret = GetRegionData(rgn, ret, rgn_data);
     ok(!!ret, "Failed to get region data.\n");
     DeleteObject(rgn);
-    hr = IDirectDrawClipper_SetClipList(clipper2, rgn_data, 0);
+    hr = IDirectDrawClipper_SetClipList(clipper, rgn_data, 0);
     ok(hr == DD_OK, "got %#lx.\n", hr);
     free(rgn_data);
 
@@ -20679,50 +20666,20 @@ static void test_clipper_in_exclusive_fullscreen(void)
     {
         winetest_push_context("test %u", i);
         style = tests[i].style;
-        clip_window = CreateWindowA("static", "ddraw_clip", style, 100, 100, 100, 100,
-                tests[i].parent ? window : NULL, NULL, NULL, NULL);
-        ok(!!clip_window, "got error %ld.\n", GetLastError());
-        pump_messages();
-
-        GetWindowRect(clip_window, &window_rect);
-        hr = IDirectDrawClipper_SetHWnd(clipper, 0, clip_window);
-        ok(hr == DD_OK, "got %#lx.\n", hr);
-
-        hr = IDirectDrawClipper_GetClipList(clipper, NULL, NULL, &ret);
-        ok(hr == DD_OK, "got %#lx.\n", hr);
-        rgn_data = malloc(ret);
-        hr = IDirectDrawClipper_GetClipList(clipper, NULL, rgn_data, &ret);
-        ok(hr == DD_OK, "got %#lx.\n", hr);
-        ok(rgn_data->rdh.dwSize == sizeof(rgn_data->rdh), "Got unexpected structure size %#lx.\n", rgn_data->rdh.dwSize);
-        ok(rgn_data->rdh.iType == RDH_RECTANGLES, "Got unexpected type %#lx.\n", rgn_data->rdh.iType);
-        if (style & WS_VISIBLE)
-        {
-            ok(rgn_data->rdh.nCount >= 1, "got %lu.\n", rgn_data->rdh.nCount);
-            if (!(style & WS_CHILD))
-                ok(EqualRect(&rgn_data->rdh.rcBound, &window_rect), "got %s, expected %s.\n",
-                        wine_dbgstr_rect(&rgn_data->rdh.rcBound), wine_dbgstr_rect(&window_rect));
-        }
-        else
-        {
-            ok(!rgn_data->rdh.nCount, "got %lu.\n", rgn_data->rdh.nCount);
-        }
-        free(rgn_data);
 
         winetest_push_context("primary");
-        check_surface_clipper(primary, clipper, clipper2, &window_rect, style);
+        check_surface_clipper(primary, clipper, &window_rect, style);
         winetest_pop_context();
 
         winetest_push_context("offscreen");
-        check_surface_clipper(offscreen, clipper, clipper2, &window_rect, style);
+        check_surface_clipper(offscreen, clipper, &window_rect, style);
         winetest_pop_context();
 
-        hr = IDirectDrawClipper_SetHWnd(clipper, 0, NULL);
-        ok(hr == DD_OK, "got %#lx.\n", hr);
-        DestroyWindow(clip_window);
-        pump_messages();
         winetest_pop_context();
     }
 
+    hr = IDirectDraw4_SetCooperativeLevel(ddraw, NULL, DDSCL_NORMAL);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
     IDirectDrawClipper_Release(clipper);
     refcount = IDirectDrawSurface4_Release(offscreen);
     ok(!refcount, "Got unexpected refcount %lu.\n", refcount);

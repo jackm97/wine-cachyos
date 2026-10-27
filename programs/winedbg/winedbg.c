@@ -85,7 +85,7 @@ HANDLE                  dbg_houtput = 0;
 HANDLE                  dbg_crash_report_file = INVALID_HANDLE_VALUE;
 BOOL                    dbg_use_wine_dbg_output = FALSE;
 
-static struct list      dbg_process_list = LIST_INIT(dbg_process_list);
+struct list             dbg_process_list = LIST_INIT(dbg_process_list);
 
 struct dbg_internal_var         dbg_internal_vars[DBG_IV_LAST];
 
@@ -214,7 +214,7 @@ const struct dbg_internal_var* dbg_get_internal_var(const char* name)
     }
     for (div = dbg_curr_process->be_cpu->context_vars; div->name; div++)
     {
-	if (!strcasecmp(div->name, name))
+	if (!stricmp(div->name, name))
         {
             struct dbg_internal_var*    ret = (void*)lexeme_alloc_size(sizeof(*ret));
             /* relocate register's field against current context */
@@ -521,15 +521,32 @@ void dbg_del_thread(struct dbg_thread* t)
     free(t);
 }
 
+WCHAR* dbg_fetch_thread_name(const struct dbg_thread *thread)
+{
+    WCHAR *descr;
+
+    if (thread->process->process_io->fetch_thread_name &&
+        thread->process->process_io->fetch_thread_name(thread, &descr))
+        return descr;
+    if (*thread->name)
+    {
+        DWORD len = MultiByteToWideChar(CP_ACP, 0, thread->name, -1, NULL, 0);
+        if ((descr = malloc(len * sizeof(WCHAR))))
+            MultiByteToWideChar(CP_ACP, 0, thread->name, -1, descr, len);
+        return descr;
+    }
+    return NULL;
+}
+
 void dbg_set_option(const char* option, const char* val)
 {
-    if (!strcasecmp(option, "module_load_mismatched"))
+    if (!stricmp(option, "module_load_mismatched"))
     {
         DWORD   opt = SymGetOptions();
         if (!val)
             dbg_printf("Option: module_load_mismatched %s\n", opt & SYMOPT_LOAD_ANYTHING ? "true" : "false");
-        else if (!strcasecmp(val, "true"))      opt |= SYMOPT_LOAD_ANYTHING;
-        else if (!strcasecmp(val, "false"))     opt &= ~SYMOPT_LOAD_ANYTHING;
+        else if (!stricmp(val, "true"))      opt |= SYMOPT_LOAD_ANYTHING;
+        else if (!stricmp(val, "false"))     opt &= ~SYMOPT_LOAD_ANYTHING;
         else
         {
             dbg_printf("Syntax: module_load_mismatched [true|false]\n");
@@ -537,14 +554,14 @@ void dbg_set_option(const char* option, const char* val)
         }
         SymSetOptions(opt);
     }
-    else if (!strcasecmp(option, "symbol_picker"))
+    else if (!stricmp(option, "symbol_picker"))
     {
         if (!val)
             dbg_printf("Option: symbol_picker %s\n",
                        symbol_current_picker == symbol_picker_interactive ? "interactive" : "scoped");
-        else if (!strcasecmp(val, "interactive"))
+        else if (!stricmp(val, "interactive"))
             symbol_current_picker = symbol_picker_interactive;
-        else if (!strcasecmp(val, "scoped"))
+        else if (!stricmp(val, "scoped"))
             symbol_current_picker = symbol_picker_scoped;
         else
         {
@@ -552,7 +569,7 @@ void dbg_set_option(const char* option, const char* val)
             return;
         }
     }
-    else if (!strcasecmp(option, "data_model"))
+    else if (!stricmp(option, "data_model"))
     {
         if (!dbg_curr_process)
         {
@@ -568,10 +585,10 @@ void dbg_set_option(const char* option, const char* val)
             else if (dbg_curr_process->data_model == lp64_data_model)  model = "lp64";
             dbg_printf("Option: data_model %s\n", model);
         }
-        else if (!strcasecmp(val, "auto"))  dbg_curr_process->data_model = NULL;
-        else if (!strcasecmp(val, "ilp32")) dbg_curr_process->data_model = ilp32_data_model;
-        else if (!strcasecmp(val, "llp64")) dbg_curr_process->data_model = llp64_data_model;
-        else if (!strcasecmp(val, "lp64"))  dbg_curr_process->data_model = lp64_data_model;
+        else if (!stricmp(val, "auto"))  dbg_curr_process->data_model = NULL;
+        else if (!stricmp(val, "ilp32")) dbg_curr_process->data_model = ilp32_data_model;
+        else if (!stricmp(val, "llp64")) dbg_curr_process->data_model = llp64_data_model;
+        else if (!stricmp(val, "lp64"))  dbg_curr_process->data_model = lp64_data_model;
         else
             dbg_printf("Unknown data model %s\n", val);
     }

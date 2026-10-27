@@ -1199,7 +1199,11 @@ static HRESULT WINAPI media_object_GetOutputType(IMediaObject *iface, DWORD inde
     type->lSampleSize = image_size;
     type->formattype = FORMAT_VideoInfo;
     type->cbFormat = sizeof(VIDEOINFOHEADER);
-    type->pbFormat = CoTaskMemAlloc(type->cbFormat);
+    if (!(type->pbFormat = CoTaskMemAlloc(type->cbFormat)))
+    {
+        IMFMediaType_Release(media_type);
+        return E_OUTOFMEMORY;
+    }
     memset(type->pbFormat, 0, type->cbFormat);
 
     info = (VIDEOINFOHEADER *)type->pbFormat;
@@ -1506,7 +1510,10 @@ static HRESULT WINAPI media_object_ProcessOutput(IMediaObject *iface, DWORD flag
     if (SUCCEEDED(hr))
         wg_sample_queue_flush(decoder->wg_sample_queue, false);
     else if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT)
+    {
+        buffers[0].dwStatus = 0;
         hr = S_FALSE;
+    }
 
     if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT)
         return S_FALSE;

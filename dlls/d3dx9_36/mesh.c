@@ -660,8 +660,8 @@ static BOOL declaration_equals(const D3DVERTEXELEMENT9 *declaration1, const D3DV
     UINT size1 = 0, size2 = 0;
 
     /* Find the size of each declaration */
-    while (declaration1[size1].Stream != 0xff) size1++;
-    while (declaration2[size2].Stream != 0xff) size2++;
+    while (size1 < MAX_FVF_DECL_SIZE && declaration1[size1].Stream != 0xff) size1++;
+    while (size2 < MAX_FVF_DECL_SIZE && declaration2[size2].Stream != 0xff) size2++;
 
     /* If not same size then they are definitely not equal */
     if (size1 != size2)
@@ -1380,14 +1380,19 @@ static HRESULT WINAPI d3dx9_mesh_UpdateSemantics(ID3DXMesh *iface, D3DVERTEXELEM
         return D3DERR_INVALIDCALL;
     }
 
-    /* New declaration must not contain non-zero Stream value  */
-    for (i = 0; declaration[i].Stream != 0xff; i++)
+    /* New declaration must not contain non-zero Stream values */
+    for (i = 0; i < MAX_FVF_DECL_SIZE && declaration[i].Stream != 0xff; i++)
     {
         if (declaration[i].Stream != 0)
         {
             WARN("Invalid declaration. New declaration contains non-zero Stream value.\n");
             return D3DERR_INVALIDCALL;
         }
+    }
+    if (i >= MAX_FVF_DECL_SIZE)
+    {
+        WARN("Declaration is too long, ignoring.\n");
+        return D3D_OK;
     }
 
     This->num_elem = i + 1;
@@ -1671,11 +1676,12 @@ static HRESULT WINAPI d3dx9_mesh_OptimizeInplace(ID3DXMesh *iface, DWORD flags, 
         return E_NOTIMPL;
     }
 
+    dword_indices = malloc(This->numfaces * 3 * sizeof(DWORD));
+    if (!dword_indices) return E_OUTOFMEMORY;
+
     hr = iface->lpVtbl->LockIndexBuffer(iface, 0, &indices);
     if (FAILED(hr)) goto cleanup;
 
-    dword_indices = malloc(This->numfaces * 3 * sizeof(DWORD));
-    if (!dword_indices) return E_OUTOFMEMORY;
     if (This->options & D3DXMESH_32BIT) {
         memcpy(dword_indices, indices, This->numfaces * 3 * sizeof(DWORD));
     } else {
@@ -2269,10 +2275,15 @@ HRESULT WINAPI D3DXCreateMesh(DWORD numfaces, DWORD numvertices, DWORD options,
     {
         return D3DERR_INVALIDCALL;
     }
-    for (i = 0; declaration[i].Stream != 0xff; i++)
+    for (i = 0; i < MAX_FVF_DECL_SIZE - 1 && declaration[i].Stream != 0xff; i++)
         if (declaration[i].Stream != 0)
             return D3DERR_INVALIDCALL;
     num_elem = i + 1;
+    if (num_elem >= MAX_FVF_DECL_SIZE)
+    {
+        WARN("Declaration is too long.\n");
+        return D3DERR_INVALIDCALL;
+    }
 
     if (options & D3DXMESH_32BIT)
         index_format = D3DFMT_INDEX32;
@@ -2866,7 +2877,7 @@ static HRESULT parse_normals(ID3DXFileData *filedata, struct mesh_data *mesh, DW
     mesh->num_normals = *(uint32_t *)data;
     data += sizeof(uint32_t);
     if (data_size < sizeof(uint32_t) * 2 + mesh->num_normals * sizeof(D3DXVECTOR3) +
-            num_face_indices * sizeof(uint32_t))
+            mesh->num_poly_faces * sizeof(uint32_t) + num_face_indices * sizeof(uint32_t))
     {
         WARN("Truncated data (%Id bytes).\n", data_size);
         goto end;
@@ -2965,7 +2976,7 @@ static HRESULT parse_skin_mesh_header(ID3DXFileData *filedata, struct mesh_data 
 static HRESULT parse_skin_weights_info(ID3DXFileData *filedata, struct mesh_data *mesh_data, DWORD flags)
 {
     unsigned int index = mesh_data->skin_weights_info_count;
-    unsigned int influence_count;
+    uint32_t influence_count;
     const char *name;
     const BYTE *data;
     SIZE_T data_size;
@@ -2984,6 +2995,13 @@ static HRESULT parse_skin_weights_info(ID3DXFileData *filedata, struct mesh_data
 
     if (FAILED(hr = filedata->lpVtbl->Lock(filedata, &data_size, (const void **)&data)))
         return hr;
+
+    if (data_size < sizeof(name) + sizeof(influence_count))
+    {
+        WARN("Truncated data (%Id bytes).\n", data_size);
+        filedata->lpVtbl->Unlock(filedata);
+        return E_FAIL;
+    }
 
     /* FIXME: String will have to be retrieved directly instead of through a
      * pointer once our ID3DXFileData implementation is fixed. */
@@ -7481,16 +7499,211 @@ HRESULT WINAPI D3DXComputeNormals(struct ID3DXBaseMesh *mesh, const DWORD *adjac
             adjacency, -1.01f, -0.01f, -1.01f, NULL, NULL);
 }
 
+static HRESULT d3dx_intersect(ID3DXBaseMesh *mesh, BOOL filter_by_attribute, DWORD attrib_id,
+        const D3DXVECTOR3 *ray_pos, const D3DXVECTOR3 *ray_dir, BOOL *hit, DWORD *face_index,
+        float *u, float *v, float *distance, ID3DXBuffer **all_hits, DWORD *count_of_hits)
+{
+    D3DVERTEXELEMENT9 declaration[MAX_FVF_DECL_SIZE];
+    DWORD pos_offset = 0, vertex_size, num_faces, hit_count = 0;
+    struct dynamic_array hits = { 0 };
+    D3DXINTERSECTINFO nearest_hit = { 0 };
+    DWORD face_start = 0, face_end, i;
+    BOOL found_position = FALSE, indices_32bit;
+    ID3DXBuffer *buffer = NULL;
+    const BYTE *vertices = NULL;
+    const void *indices = NULL;
+    HRESULT hr;
+
+    if (!mesh || !ray_pos || !ray_dir)
+        return D3DERR_INVALIDCALL;
+
+    if (!hit)
+        return D3DERR_INVALIDCALL;
+
+    if (FAILED(hr = mesh->lpVtbl->GetDeclaration(mesh, declaration)))
+        return hr;
+
+    for (i = 0; i < MAX_FVF_DECL_SIZE && declaration[i].Stream != 0xff; i++)
+    {
+        if (declaration[i].Usage == D3DDECLUSAGE_POSITION && !declaration[i].UsageIndex
+                && declaration[i].Type == D3DDECLTYPE_FLOAT3)
+        {
+            pos_offset = declaration[i].Offset;
+            found_position = TRUE;
+            break;
+        }
+    }
+
+    if (!found_position)
+    {
+        WARN("Mesh has no float3 position element.\n");
+        return D3DERR_INVALIDCALL;
+    }
+
+    num_faces = mesh->lpVtbl->GetNumFaces(mesh);
+    vertex_size = mesh->lpVtbl->GetNumBytesPerVertex(mesh);
+    indices_32bit = !!(mesh->lpVtbl->GetOptions(mesh) & D3DXMESH_32BIT);
+    face_end = num_faces;
+
+    if (filter_by_attribute)
+    {
+        D3DXATTRIBUTERANGE *attrib_table;
+        DWORD attrib_table_size = 0;
+
+        if (FAILED(hr = mesh->lpVtbl->GetAttributeTable(mesh, NULL, &attrib_table_size)))
+            return hr;
+
+        if (!attrib_table_size)
+        {
+            WARN("Mesh has no attribute table.\n");
+            return D3DERR_INVALIDCALL;
+        }
+
+        if (!(attrib_table = malloc(attrib_table_size * sizeof(*attrib_table))))
+            return E_OUTOFMEMORY;
+
+        if (SUCCEEDED(hr = mesh->lpVtbl->GetAttributeTable(mesh, attrib_table, &attrib_table_size)))
+        {
+            for (i = 0; i < attrib_table_size; i++)
+            {
+                if (attrib_table[i].AttribId != attrib_id)
+                    continue;
+
+                face_start = attrib_table[i].FaceStart;
+                face_end = min(num_faces, face_start + attrib_table[i].FaceCount);
+                break;
+            }
+        }
+        free(attrib_table);
+
+        if (FAILED(hr))
+            return hr;
+
+        if (i == attrib_table_size)
+        {
+            *hit = FALSE;
+            return D3D_OK;
+        }
+    }
+
+    if (FAILED(hr = mesh->lpVtbl->LockVertexBuffer(mesh, D3DLOCK_READONLY, (void **)&vertices)))
+        goto done;
+    if (FAILED(hr = mesh->lpVtbl->LockIndexBuffer(mesh, D3DLOCK_READONLY, (void **)&indices)))
+        goto done;
+
+    for (i = face_start; i < face_end; i++)
+    {
+        const D3DXVECTOR3 *vertex[3];
+        float face_u, face_v, face_dist;
+        unsigned int j;
+
+        for (j = 0; j < 3; j++)
+        {
+            DWORD index = indices_32bit ? ((const DWORD *)indices)[i * 3 + j]
+                    : ((const WORD *)indices)[i * 3 + j];
+
+            vertex[j] = (const D3DXVECTOR3 *)(vertices + index * vertex_size + pos_offset);
+        }
+
+        if (!D3DXIntersectTri(vertex[0], vertex[1], vertex[2], ray_pos, ray_dir, &face_u, &face_v, &face_dist))
+            continue;
+
+        if (all_hits)
+        {
+            D3DXINTERSECTINFO *info;
+
+            if (!reserve(&hits, hit_count + 1, sizeof(*info)))
+            {
+                hr = E_OUTOFMEMORY;
+                goto done;
+            }
+            info = &((D3DXINTERSECTINFO *)hits.items)[hit_count];
+            info->FaceIndex = i;
+            info->U = face_u;
+            info->V = face_v;
+            info->Dist = face_dist;
+        }
+
+        if (!hit_count || face_dist < nearest_hit.Dist)
+        {
+            nearest_hit.FaceIndex = i;
+            nearest_hit.U = face_u;
+            nearest_hit.V = face_v;
+            nearest_hit.Dist = face_dist;
+        }
+
+        hit_count++;
+    }
+
+    if (all_hits && hit_count)
+    {
+        if (FAILED(hr = D3DXCreateBuffer(hit_count * sizeof(D3DXINTERSECTINFO), &buffer)))
+            goto done;
+        memcpy(ID3DXBuffer_GetBufferPointer(buffer), hits.items, hit_count * sizeof(D3DXINTERSECTINFO));
+    }
+
+    *hit = !!hit_count;
+    if (count_of_hits)
+        *count_of_hits = hit_count;
+
+    if (hit_count)
+    {
+        if (face_index)
+            *face_index = nearest_hit.FaceIndex;
+        if (u)
+            *u = nearest_hit.U;
+        if (v)
+            *v = nearest_hit.V;
+        if (distance)
+            *distance = nearest_hit.Dist;
+    }
+
+    if (all_hits)
+    {
+        *all_hits = buffer;
+        buffer = NULL;
+    }
+
+    hr = D3D_OK;
+
+done:
+    if (buffer)
+        ID3DXBuffer_Release(buffer);
+    if (indices)
+        mesh->lpVtbl->UnlockIndexBuffer(mesh);
+    if (vertices)
+        mesh->lpVtbl->UnlockVertexBuffer(mesh);
+    free(hits.items);
+
+    return hr;
+}
+
 /*************************************************************************
  * D3DXIntersect    (D3DX9_36.@)
  */
 HRESULT WINAPI D3DXIntersect(ID3DXBaseMesh *mesh, const D3DXVECTOR3 *ray_pos, const D3DXVECTOR3 *ray_dir,
         BOOL *hit, DWORD *face_index, float *u, float *v, float *distance, ID3DXBuffer **all_hits, DWORD *count_of_hits)
 {
-    FIXME("mesh %p, ray_pos %p, ray_dir %p, hit %p, face_index %p, u %p, v %p, distance %p, all_hits %p, "
-            "count_of_hits %p stub!\n", mesh, ray_pos, ray_dir, hit, face_index, u, v, distance, all_hits, count_of_hits);
+    TRACE("mesh %p, ray_pos %p, ray_dir %p, hit %p, face_index %p, u %p, v %p, distance %p, all_hits %p, "
+            "count_of_hits %p.\n", mesh, ray_pos, ray_dir, hit, face_index, u, v, distance, all_hits, count_of_hits);
 
-    return E_NOTIMPL;
+    return d3dx_intersect(mesh, FALSE, 0, ray_pos, ray_dir, hit, face_index, u, v, distance,
+            all_hits, count_of_hits);
+}
+
+/*************************************************************************
+ * D3DXIntersectSubset    (D3DX9_36.@)
+ */
+HRESULT WINAPI D3DXIntersectSubset(ID3DXBaseMesh *mesh, DWORD attrib_id, const D3DXVECTOR3 *ray_pos,
+        const D3DXVECTOR3 *ray_dir, BOOL *hit, DWORD *face_index, float *u, float *v, float *distance,
+        ID3DXBuffer **all_hits, DWORD *count_of_hits)
+{
+    TRACE("mesh %p, attrib_id %lu, ray_pos %p, ray_dir %p, hit %p, face_index %p, u %p, v %p, distance %p, "
+            "all_hits %p, count_of_hits %p.\n", mesh, attrib_id, ray_pos, ray_dir, hit, face_index, u, v,
+            distance, all_hits, count_of_hits);
+
+    return d3dx_intersect(mesh, TRUE, attrib_id, ray_pos, ray_dir, hit, face_index, u, v, distance,
+            all_hits, count_of_hits);
 }
 
 HRESULT WINAPI D3DXTessellateNPatches(ID3DXMesh *mesh, const DWORD *adjacency_in, float num_segs,

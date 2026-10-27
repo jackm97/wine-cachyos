@@ -28,18 +28,15 @@
 #include <errno.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 
 #include "waylanddrv.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
 
 char *process_name = NULL;
-char *process_activate_token = NULL;
 
 static const struct user_driver_funcs waylanddrv_funcs =
 {
-    .pActivateWindow = WAYLAND_ActivateWindow,
     .pClipboardWindowProc = WAYLAND_ClipboardWindowProc,
     .pClipCursor = WAYLAND_ClipCursor,
     .pDesktopWindowProc = WAYLAND_DesktopWindowProc,
@@ -61,9 +58,8 @@ static const struct user_driver_funcs waylanddrv_funcs =
     .pWindowMessage = WAYLAND_WindowMessage,
     .pWindowPosChanged = WAYLAND_WindowPosChanged,
     .pWindowPosChanging = WAYLAND_WindowPosChanging,
+    .pCreateClientSurface = WAYLAND_CreateClientSurface,
     .pCreateWindowSurface = WAYLAND_CreateWindowSurface,
-    .pGetWindowStyleMasks = WAYLAND_GetWindowStyleMasks,
-    .pGetWindowStateUpdates = WAYLAND_GetWindowStateUpdates,
     .pHasWindowManager = WAYLAND_HasWindowManager,
     .pVulkanInit = WAYLAND_VulkanInit,
     .pOpenGLInit = WAYLAND_OpenGLInit,
@@ -78,7 +74,7 @@ static void wayland_init_process_name(void)
     DWORD utf8_size;
     int i;
 
-    appname = NtCurrentTeb()->Peb->ProcessParameters->ImagePathName.Buffer;
+    appname = RtlGetCurrentPeb()->ProcessParameters->ImagePathName.Buffer;
     if ((p = wcsrchr(appname, '/'))) appname = p + 1;
     if ((p = wcsrchr(appname, '\\'))) appname = p + 1;
     appname_len = lstrlenW(appname);
@@ -97,21 +93,6 @@ static void wayland_init_process_name(void)
     }
 }
 
-static void wayland_init_activation_token(void)
-{
-    char *env;
-
-    if ((env = getenv("XDG_ACTIVATION_TOKEN")))
-        process_activate_token = strdup(env);
-    else if ((env = getenv("DESKTOP_STARTUP_ID")))
-        process_activate_token = strdup(env);
-
-    unsetenv("DESKTOP_STARTUP_ID");
-    unsetenv("XDG_ACTIVATION_TOKEN");
-
-    TRACE("activation token %s\n", debugstr_a(process_activate_token));
-}
-
 static NTSTATUS waylanddrv_unix_init(void *arg)
 {
     /* Set the user driver functions now so that they are available during
@@ -119,7 +100,6 @@ static NTSTATUS waylanddrv_unix_init(void *arg)
     __wine_set_user_driver(&waylanddrv_funcs, WINE_GDI_DRIVER_VERSION);
 
     wayland_init_process_name();
-    wayland_init_activation_token();
 
     if (!wayland_process_init()) goto err;
 

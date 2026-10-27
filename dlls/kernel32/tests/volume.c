@@ -943,7 +943,7 @@ static void test_GetVolumePathNameA(void)
         if (ret)
         {
             ok(!strcmp( volume_path, test_paths[i].path_name )
-                    || broken(!strcasecmp( volume_path, test_paths[i].path_name )), /* XP */
+                    || broken(!stricmp( volume_path, test_paths[i].path_name )), /* XP */
                     "GetVolumePathName test %d unexpectedly returned path %s (expected %s).\n",
                     i, volume_path, test_paths[i].path_name);
         }
@@ -2019,6 +2019,8 @@ static void test_GetVolumeInformationByHandle(void)
     ret = pGetVolumeInformationByHandleW( file, label, ARRAY_SIZE(label), &serial,
             &filename_len, &flags, fsname, ARRAY_SIZE(fsname) );
     ok(ret, "got error %lu\n", GetLastError());
+    ok(flags & FILE_SUPPORTS_OPEN_BY_FILE_ID,
+            "expected FILE_SUPPORTS_OPEN_BY_FILE_ID to be set, got %#lx\n", flags);
 
     memset(buffer, 0, sizeof(buffer));
     status = NtQueryVolumeInformationFile( file, &io, buffer, sizeof(buffer), FileFsVolumeInformation );
@@ -2178,6 +2180,7 @@ static void check_disk_space_information_(unsigned int line, const DISK_SPACE_IN
 static void test_GetDiskSpaceInformationA(void)
 {
     DISK_SPACE_INFORMATION info;
+    char volume[MAX_PATH];
     HRESULT hr;
 
     /* GetDiskSpaceInformation() is supported on Windows 10 build 1809 and later */
@@ -2205,12 +2208,18 @@ static void test_GetDiskSpaceInformationA(void)
     ok(hr == S_OK, "failed 0x%08lx\n", hr);
     check_disk_space_information(&info);
 
-    hr = pGetDiskSpaceInformationA("C:\\", &info);
+    hr = pGetDiskSpaceInformationA("C:\\windows\\", &info);
     ok(hr == S_OK, "failed 0x%08lx\n", hr);
     check_disk_space_information(&info);
 
     hr = pGetDiskSpaceInformationA("\\\\?\\C:\\", &info);
     ok(hr == S_OK, "failed 0x%08lx\n", hr);
+    check_disk_space_information(&info);
+
+    GetVolumeNameForVolumeMountPointA("C:\\", volume, ARRAY_SIZE(volume));
+
+    hr = pGetDiskSpaceInformationA(volume, &info);
+    ok(hr == S_OK, "got %#lx for %s\n", hr, debugstr_a(volume));
     check_disk_space_information(&info);
 }
 

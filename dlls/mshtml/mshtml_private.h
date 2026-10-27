@@ -177,6 +177,7 @@ struct constructor;
     XIID(IDOMUIEvent) \
     XIID(IDOMDocumentType) \
     XIID(IDOMParser) \
+    XIID(IDOMXmlSerializer) \
     XIID(IDocumentEvent) \
     XIID(IDocumentRange) \
     XIID(IDocumentSelector) \
@@ -299,7 +300,6 @@ struct constructor;
     XIID(IHTMLXMLHttpRequestFactory) \
     XIID(IHTMLXDomainRequest) \
     XIID(IHTMLXDomainRequestFactory) \
-    XIID(IXMLSerializer) \
     XIID(IOmHistory) \
     XIID(IOmNavigator) \
     XIID(ISVGCircleElement) \
@@ -370,11 +370,17 @@ typedef struct dispex_dynamic_data_t dispex_dynamic_data_t;
 #define MSHTML_CUSTOM_DISPID_CNT (MSHTML_DISPID_CUSTOM_MAX-MSHTML_DISPID_CUSTOM_MIN)
 
 typedef struct DispatchEx DispatchEx;
+typedef struct nsCycleCollectionTraversalCallback nsCycleCollectionTraversalCallback;
 typedef struct dispex_static_data_t dispex_static_data_t;
 
 typedef struct {
     UINT_PTR x;
 } nsCycleCollectingAutoRefCnt;
+
+static inline UINT_PTR NS_REFCOUNT_VALUE(nsCycleCollectingAutoRefCnt ref)
+{
+    return ref.x >> 2;
+}
 
 /*
    dispex is our base IDispatchEx implementation for all mshtml objects, and the vtbl allows
@@ -566,7 +572,6 @@ ALL_OBJECTS
 #undef X
 
 extern dispex_static_data_t *object_descriptors[OBJID_LAST];
-extern struct list cc_api_list;
 
 typedef HRESULT (*dispex_hook_invoke_t)(DispatchEx*,WORD,DISPPARAMS*,VARIANT*,
                                         EXCEPINFO*,IServiceProvider*);
@@ -626,12 +631,26 @@ struct DispatchEx {
     }                                                                                          \
     DISPEX_IDISPATCH_NOUNK_IMPL(prefix, iface_name, dispex)
 
+typedef struct {
+    void *vtbl;
+    int ref_flags;
+    void *callbacks;
+} ExternalCycleCollectionParticipant;
+
+typedef struct {
+    nsresult (NSAPI *traverse)(void*,void*,nsCycleCollectionTraversalCallback*);
+    nsresult (NSAPI *unlink)(void*);
+    void (NSAPI *delete_cycle_collectable)(void*);
+} CCObjCallback;
+
 extern nsrefcnt (__cdecl *ccref_incr)(nsCycleCollectingAutoRefCnt*,nsISupports*);
 extern nsrefcnt (__cdecl *ccref_decr)(nsCycleCollectingAutoRefCnt*,nsISupports*,ExternalCycleCollectionParticipant*);
 extern void (__cdecl *ccref_init)(nsCycleCollectingAutoRefCnt*,nsrefcnt);
 extern void (__cdecl *ccp_init)(ExternalCycleCollectionParticipant*,const CCObjCallback*);
 extern void (__cdecl *describe_cc_node)(nsCycleCollectingAutoRefCnt*,const char*,nsCycleCollectionTraversalCallback*);
 extern void (__cdecl *note_cc_edge)(nsISupports*,const char*,nsCycleCollectionTraversalCallback*);
+HRESULT WINAPI cc_participant_Traverse(IWineCCParticipant*,void*,void*,void*,const struct cc_traverse_ops*);
+extern IWineCCParticipant cc_participant;
 
 void init_dispatch(DispatchEx*,dispex_static_data_t*,HTMLInnerWindow*,compat_mode_t);
 void init_dispatch_from_desc(DispatchEx*,dispex_data_t*,HTMLInnerWindow*,DispatchEx*);
@@ -1229,7 +1248,6 @@ void ConnectionPointContainer_Destroy(ConnectionPointContainer*);
 HRESULT create_gecko_browser(HTMLDocumentObj*,GeckoBrowser**);
 void detach_gecko_browser(GeckoBrowser*);
 void cycle_collect(nsIDOMWindowUtils*);
-void __cdecl cc_api_collect(void);
 
 DWORD get_compat_mode_version(compat_mode_t compat_mode);
 compat_mode_t lock_document_mode(HTMLDocumentNode*);

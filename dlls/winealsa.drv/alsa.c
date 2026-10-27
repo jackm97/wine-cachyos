@@ -30,7 +30,6 @@
 #include <alsa/asoundlib.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
@@ -517,20 +516,6 @@ static WCHAR *alsa_get_card_name(int card)
     free(cardname);
 
     return ret;
-}
-
-static NTSTATUS alsa_process_attach(void *args)
-{
-#ifdef _WIN64
-    if (NtCurrentTeb()->WowTebOffset)
-    {
-        SYSTEM_BASIC_INFORMATION info;
-
-        NtQuerySystemInformation(SystemEmulationBasicInformation, &info, sizeof(info), NULL);
-        zero_bits = (ULONG_PTR)info.HighestUserAddress | 0x7fffffff;
-    }
-#endif
-    return STATUS_SUCCESS;
 }
 
 static NTSTATUS alsa_get_endpoint_ids(void *args)
@@ -1068,6 +1053,12 @@ static NTSTATUS alsa_create_stream(void *args)
 
     stream->mmdev_period_frames = muldiv(params->fmt->nSamplesPerSec,
             stream->mmdev_period_rt, 10000000);
+
+    if (stream->mmdev_period_frames == 0)
+    {
+        params->result = E_INVALIDARG;
+        goto exit;
+    }
 
     /* Buffer 4 ALSA periods if large enough, else 4 mmdevapi periods */
     stream->alsa_bufsize_frames = stream->mmdev_period_frames * 4;
@@ -2660,7 +2651,7 @@ static NTSTATUS alsa_get_prop_value(void *args)
 
 const unixlib_entry_t __wine_unix_call_funcs[] =
 {
-    alsa_process_attach,
+    alsa_not_implemented,
     alsa_not_implemented,
     alsa_not_implemented,
     alsa_not_implemented,
@@ -2704,6 +2695,15 @@ C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == funcs_count);
 #ifdef _WIN64
 
 typedef UINT PTR32;
+
+static NTSTATUS alsa_wow64_process_attach(void *args)
+{
+    SYSTEM_BASIC_INFORMATION info;
+
+    NtQuerySystemInformation(SystemEmulationBasicInformation, &info, sizeof(info), NULL);
+    zero_bits = (ULONG_PTR)info.HighestUserAddress | 0x7fffffff;
+    return STATUS_SUCCESS;
+}
 
 static NTSTATUS alsa_wow64_get_endpoint_ids(void *args)
 {
@@ -3102,7 +3102,7 @@ static NTSTATUS alsa_wow64_get_prop_value(void *args)
 
 const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
 {
-    alsa_process_attach,
+    alsa_wow64_process_attach,
     alsa_not_implemented,
     alsa_not_implemented,
     alsa_not_implemented,

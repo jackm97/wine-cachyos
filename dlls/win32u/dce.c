@@ -26,7 +26,6 @@
 #include <assert.h>
 #include <pthread.h>
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "ntgdi_private.h"
 #include "ntuser_private.h"
 #include "wine/opengl_driver.h"
@@ -34,6 +33,8 @@
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(win);
+
+static const struct ratio no_dpi;
 
 struct dce
 {
@@ -77,9 +78,10 @@ static void dummy_surface_destroy( struct window_surface *window_surface )
 
 static const struct window_surface_funcs dummy_surface_funcs =
 {
-    dummy_surface_set_clip,
-    dummy_surface_flush,
-    dummy_surface_destroy
+    .size = 0, /* never allocated */
+    .set_clip = dummy_surface_set_clip,
+    .flush = dummy_surface_flush,
+    .destroy = dummy_surface_destroy
 };
 
 struct window_surface dummy_surface =
@@ -111,15 +113,16 @@ static void offscreen_window_surface_destroy( struct window_surface *surface )
 
 static const struct window_surface_funcs offscreen_window_surface_funcs =
 {
-    offscreen_window_surface_set_clip,
-    offscreen_window_surface_flush,
-    offscreen_window_surface_destroy
+    .size = sizeof(struct window_surface),
+    .set_clip = offscreen_window_surface_set_clip,
+    .flush = offscreen_window_surface_flush,
+    .destroy = offscreen_window_surface_destroy
 };
 
 static void create_offscreen_window_surface( HWND hwnd, const RECT *surface_rect, struct window_surface **window_surface )
 {
     char buffer[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
-    struct window_surface *surface, *previous;
+    struct window_surface *previous;
     BITMAPINFO *info = (BITMAPINFO *)buffer;
 
     TRACE( "hwnd %p, surface_rect %s, window_surface %p.\n", hwnd, wine_dbgstr_rect( surface_rect ), window_surface );
@@ -136,7 +139,7 @@ static void create_offscreen_window_surface( HWND hwnd, const RECT *surface_rect
     info->bmiHeader.biSizeImage   = get_dib_image_size( info );
     info->bmiHeader.biCompression = BI_RGB;
 
-    *window_surface = window_surface_create( sizeof(*surface), &offscreen_window_surface_funcs, hwnd, surface_rect, info, 0 );
+    *window_surface = window_surface_create( &offscreen_window_surface_funcs, hwnd, surface_rect, info, 0 );
 
     if (previous) window_surface_release( previous );
 }
@@ -145,8 +148,8 @@ struct scaled_surface
 {
     struct window_surface header;
     struct window_surface *target_surface;
-    UINT dpi_from;
-    UINT dpi_to;
+    struct ratio dpi_from;
+    struct ratio dpi_to;
 };
 
 static struct scaled_surface *get_scaled_surface( struct window_surface *window_surface )
@@ -219,19 +222,20 @@ static void scaled_surface_destroy( struct window_surface *window_surface )
 
 static const struct window_surface_funcs scaled_surface_funcs =
 {
-    scaled_surface_set_clip,
-    scaled_surface_flush,
-    scaled_surface_destroy
+    .size = sizeof(struct scaled_surface),
+    .set_clip = scaled_surface_set_clip,
+    .flush = scaled_surface_flush,
+    .destroy = scaled_surface_destroy
 };
 
-static void scaled_surface_set_target( struct scaled_surface *surface, struct window_surface *target, UINT dpi_to )
+static void scaled_surface_set_target( struct scaled_surface *surface, struct window_surface *target, struct ratio dpi_to )
 {
     if (surface->target_surface) window_surface_release( surface->target_surface );
     window_surface_add_ref( (surface->target_surface = target) );
     surface->dpi_to = dpi_to;
 }
 
-static struct window_surface *scaled_surface_create( HWND hwnd, const RECT *surface_rect, UINT dpi_from, UINT dpi_to,
+static struct window_surface *scaled_surface_create( HWND hwnd, const RECT *surface_rect, struct ratio dpi_from, struct ratio dpi_to,
                                                      struct window_surface *target_surface )
 {
     char buffer[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
@@ -248,7 +252,7 @@ static struct window_surface *scaled_surface_create( HWND hwnd, const RECT *surf
     info->bmiHeader.biSizeImage   = get_dib_image_size( info );
     info->bmiHeader.biCompression = BI_RGB;
 
-    if ((window_surface = window_surface_create( sizeof(*surface), &scaled_surface_funcs, hwnd, surface_rect, info, 0 )))
+    if ((window_surface = window_surface_create( &scaled_surface_funcs, hwnd, surface_rect, info, 0 )))
     {
         surface = get_scaled_surface( window_surface );
         surface->dpi_from = dpi_from;
@@ -270,11 +274,11 @@ static RECT get_surface_rect( RECT rect )
     return rect;
 }
 
-void create_window_surface( HWND hwnd, BOOL create_layered, const RECT *surface_rect, UINT monitor_dpi,
+void create_window_surface( HWND hwnd, BOOL create_layered, const RECT *surface_rect, struct ratio monitor_dpi,
                             struct window_surface **window_surface )
 {
     struct window_surface *previous, *driver_surface;
-    UINT dpi = get_dpi_for_window( hwnd );
+    struct ratio dpi = get_dpi_for_window( hwnd );
     RECT monitor_rect;
 
 
@@ -297,7 +301,7 @@ void create_window_surface( HWND hwnd, BOOL create_layered, const RECT *surface_
         return;
     }
 
-    if (!driver_surface || dpi == monitor_dpi)
+    if (!driver_surface || !memcmp( &dpi, &monitor_dpi, sizeof(monitor_dpi) ))
     {
         if (*window_surface) window_surface_release( *window_surface );
         *window_surface = driver_surface;
@@ -318,11 +322,11 @@ void create_window_surface( HWND hwnd, BOOL create_layered, const RECT *surface_
     window_surface_release( driver_surface );
 }
 
-struct window_surface *get_driver_window_surface( struct window_surface *surface, UINT monitor_dpi )
+struct window_surface *get_driver_window_surface( struct window_surface *surface, struct ratio monitor_dpi )
 {
     if (!surface || surface == &dummy_surface) return surface;
     if (surface->funcs != &scaled_surface_funcs) return surface;
-    if (get_scaled_surface( surface )->dpi_to != monitor_dpi) return &dummy_surface;
+    if (memcmp( &get_scaled_surface( surface )->dpi_to, &monitor_dpi, sizeof(monitor_dpi) )) return &dummy_surface;
     return get_scaled_surface( surface )->target_surface;
 }
 
@@ -527,12 +531,35 @@ static BOOL update_surface_shape( struct window_surface *surface, const RECT *re
         return clear_surface_shape( surface );
 }
 
-W32KAPI struct window_surface *window_surface_create( UINT size, const struct window_surface_funcs *funcs, HWND hwnd,
-                                                      const RECT *rect, BITMAPINFO *info, HBITMAP bitmap )
+static void *window_surface_get_color( struct window_surface *surface, BITMAPINFO *info )
+{
+    struct bitblt_coords coords = {0};
+    struct gdi_image_bits gdi_bits;
+    BITMAPOBJ *bmp;
+
+    if (surface == &dummy_surface)
+    {
+        static BITMAPINFOHEADER header = {.biSize = sizeof(header), .biWidth = 1, .biHeight = 1,
+                                          .biPlanes = 1, .biBitCount = 32, .biCompression = BI_RGB};
+        static DWORD dummy_data;
+
+        info->bmiHeader = header;
+        return &dummy_data;
+    }
+
+    if (!(bmp = GDI_GetObjPtr( surface->color_bitmap, NTGDI_OBJ_BITMAP ))) return NULL;
+    get_image_from_bitmap( bmp, info, &gdi_bits, &coords );
+    GDI_ReleaseObj( surface->color_bitmap );
+
+    return gdi_bits.ptr;
+}
+
+struct window_surface *window_surface_create( const struct window_surface_funcs *funcs, HWND hwnd,
+                                              const RECT *rect, BITMAPINFO *info, HBITMAP bitmap )
 {
     struct window_surface *surface;
 
-    if (!(surface = calloc( 1, size ))) return NULL;
+    if (!(surface = calloc( 1, funcs->size ))) return NULL;
     surface->funcs = funcs;
     surface->ref = 1;
     surface->hwnd = hwnd;
@@ -557,12 +584,12 @@ W32KAPI struct window_surface *window_surface_create( UINT size, const struct wi
     return surface;
 }
 
-W32KAPI void window_surface_add_ref( struct window_surface *surface )
+void window_surface_add_ref( struct window_surface *surface )
 {
     InterlockedIncrement( &surface->ref );
 }
 
-W32KAPI void window_surface_release( struct window_surface *surface )
+void window_surface_release( struct window_surface *surface )
 {
     ULONG ret = InterlockedDecrement( &surface->ref );
     if (!ret)
@@ -590,42 +617,19 @@ W32KAPI struct window_surface *window_surface_get( HWND hwnd )
     return surface;
 }
 
-W32KAPI void window_surface_lock( struct window_surface *surface )
+void window_surface_lock( struct window_surface *surface )
 {
     if (surface == &dummy_surface) return;
     pthread_mutex_lock( &surface->mutex );
 }
 
-W32KAPI void window_surface_unlock( struct window_surface *surface )
+void window_surface_unlock( struct window_surface *surface )
 {
     if (surface == &dummy_surface) return;
     pthread_mutex_unlock( &surface->mutex );
 }
 
-void *window_surface_get_color( struct window_surface *surface, BITMAPINFO *info )
-{
-    struct bitblt_coords coords = {0};
-    struct gdi_image_bits gdi_bits;
-    BITMAPOBJ *bmp;
-
-    if (surface == &dummy_surface)
-    {
-        static BITMAPINFOHEADER header = {.biSize = sizeof(header), .biWidth = 1, .biHeight = 1,
-                                          .biPlanes = 1, .biBitCount = 32, .biCompression = BI_RGB};
-        static DWORD dummy_data;
-
-        info->bmiHeader = header;
-        return &dummy_data;
-    }
-
-    if (!(bmp = GDI_GetObjPtr( surface->color_bitmap, NTGDI_OBJ_BITMAP ))) return NULL;
-    get_image_from_bitmap( bmp, info, &gdi_bits, &coords );
-    GDI_ReleaseObj( surface->color_bitmap );
-
-    return gdi_bits.ptr;
-}
-
-W32KAPI void window_surface_flush( struct window_surface *surface )
+void window_surface_flush( struct window_surface *surface )
 {
     char color_buf[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
     char shape_buf[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
@@ -660,7 +664,7 @@ W32KAPI void window_surface_flush( struct window_surface *surface )
     window_surface_unlock( surface );
 }
 
-W32KAPI void window_surface_set_layered( struct window_surface *surface, COLORREF color_key, UINT alpha_bits, UINT alpha_mask )
+void window_surface_set_layered( struct window_surface *surface, COLORREF color_key, UINT alpha_bits, UINT alpha_mask )
 {
     char color_buf[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
     BITMAPINFO *color_info = (BITMAPINFO *)color_buf;
@@ -689,7 +693,7 @@ W32KAPI void window_surface_set_layered( struct window_surface *surface, COLORRE
     window_surface_unlock( surface );
 }
 
-W32KAPI void window_surface_set_clip( struct window_surface *surface, HRGN clip_region )
+void window_surface_set_clip( struct window_surface *surface, HRGN clip_region )
 {
     window_surface_lock( surface );
 
@@ -722,7 +726,7 @@ W32KAPI void window_surface_set_clip( struct window_surface *surface, HRGN clip_
     window_surface_unlock( surface );
 }
 
-W32KAPI void window_surface_set_shape( struct window_surface *surface, HRGN shape_region )
+void window_surface_set_shape( struct window_surface *surface, HRGN shape_region )
 {
     window_surface_lock( surface );
 
@@ -855,7 +859,7 @@ static void update_visible_region( struct dce *dce )
     DWORD paint_flags = 0;
     size_t size = 256;
     RECT win_rect, top_rect;
-    UINT raw_dpi;
+    struct ratio raw_dpi;
     DWORD layered_flags;
     WND *win;
 
@@ -914,13 +918,13 @@ static void update_visible_region( struct dce *dce )
     if (surface)
     {
         user_driver->pGetDC( dce->hdc, dce->hwnd, top_win, &win_rect, &top_rect, flags );
-        set_visible_region( dce->hdc, vis_rgn, &win_rect, &top_rect, surface, 0, 0 );
+        set_visible_region( dce->hdc, vis_rgn, &win_rect, &top_rect, surface, no_dpi, no_dpi );
         window_surface_release( surface );
     }
     else
     {
         RECT window_rect, toplevel_rect;
-        UINT dpi;
+        struct ratio dpi;
 
         get_win_monitor_dpi( top_win, &raw_dpi );
         dpi = get_dpi_for_window( top_win );
@@ -941,7 +945,7 @@ static void release_dce( struct dce *dce )
 {
     if (!dce->hwnd) return;  /* already released */
 
-    set_visible_region( dce->hdc, 0, &dummy_surface.rect, &dummy_surface.rect, &dummy_surface, 0, 0 );
+    set_visible_region( dce->hdc, 0, &dummy_surface.rect, &dummy_surface.rect, &dummy_surface, no_dpi, no_dpi );
     user_driver->pReleaseDC( dce->hwnd, dce->hdc );
 
     if (dce->clip_rgn) NtGdiDeleteObjectApp( dce->clip_rgn );
@@ -1999,7 +2003,7 @@ BOOL WINAPI NtUserGetUpdateRect( HWND hwnd, RECT *rect, BOOL erase )
     {
         HDC hdc = NtUserGetDCEx( hwnd, 0, DCX_USESTYLE );
         DWORD layout = NtGdiSetLayout( hdc, -1, 0 );  /* map_window_points mirrors already */
-        UINT win_dpi = get_dpi_for_window( hwnd );
+        struct ratio win_dpi = get_dpi_for_window( hwnd );
         map_window_points( 0, hwnd, (POINT *)rect, 2, win_dpi );
         *rect = map_dpi_rect( *rect, win_dpi, get_thread_dpi() );
         NtGdiTransformPoints( hdc, (POINT *)rect, (POINT *)rect, 2, NtGdiDPtoLP );
@@ -2297,8 +2301,33 @@ INT WINAPI NtUserScrollWindowEx( HWND hwnd, INT dx, INT dy, const RECT *rect,
  */
 BOOL WINAPI NtUserPrintWindow( HWND hwnd, HDC hdc, UINT flags )
 {
-    UINT prf_flags = PRF_CHILDREN | PRF_ERASEBKGND | PRF_OWNED | PRF_CLIENT;
-    if (!(flags & PW_CLIENTONLY)) prf_flags |= PRF_NONCLIENT;
-    send_message( hwnd, WM_PRINT, (WPARAM)hdc, prf_flags );
+    RECT rect = {0};
+    HDC hwnd_dc;
+
+    TRACE( "hwnd %p, hdc %p, flags %#x\n", hwnd, hdc, flags );
+
+    if (flags & PW_RENDERFULLCONTENT)
+        WARN( "PW_RENDERFULLCONTENT is unsupported.\n" );
+
+    if (!is_window( hwnd ) || flags & ~(PW_CLIENTONLY | PW_RENDERFULLCONTENT))
+        return FALSE;
+
+    if (flags & PW_CLIENTONLY)
+        NtUserGetClientRect( hwnd, &rect, NtUserGetDpiForWindow( hwnd ) );
+    else
+        NtUserGetWindowRect( hwnd, &rect, NtUserGetDpiForWindow( hwnd ) );
+
+    if (is_window_visible( hwnd ))
+    {
+        NtUserRedrawWindow( hwnd, NULL, NULL, RDW_INVALIDATE | RDW_FRAME | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW );
+        hwnd_dc = flags & PW_CLIENTONLY ? NtUserGetDC( hwnd ) : NtUserGetWindowDC( hwnd );
+        NtGdiBitBlt( hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top, hwnd_dc, 0, 0, SRCCOPY, 0, 0 );
+        NtUserReleaseDC( hwnd, hwnd_dc );
+    }
+    else
+    {
+        NtGdiPatBlt( hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top, BLACKNESS );
+    }
+
     return TRUE;
 }

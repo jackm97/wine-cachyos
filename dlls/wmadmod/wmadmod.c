@@ -34,24 +34,12 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(dmo);
 
-extern HRESULT WINAPI winegstreamer_create_wma_decoder(IUnknown *outer, IUnknown **out);
+extern HRESULT WINAPI winegstreamer_create_wma_decoder(IUnknown *outer, REFIID riid, void **out);
 
 static HRESULT WINAPI wma_decoder_factory_CreateInstance(IClassFactory *iface, IUnknown *outer,
         REFIID riid, void **out)
 {
-    IUnknown *unk;
-    HRESULT hr;
-
-    if (outer && !IsEqualGUID(riid, &IID_IUnknown))
-        return E_NOINTERFACE;
-
-    *out = NULL;
-    if (FAILED(hr = winegstreamer_create_wma_decoder(outer, &unk)))
-        return hr;
-
-    hr = IUnknown_QueryInterface(unk, riid, out);
-    IUnknown_Release(unk);
-    return hr;
+    return winegstreamer_create_wma_decoder(outer, riid, out);
 }
 
 static HRESULT WINAPI class_factory_QueryInterface(IClassFactory *iface, REFIID riid, void **out)

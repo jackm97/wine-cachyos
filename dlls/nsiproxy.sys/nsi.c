@@ -37,7 +37,6 @@
 #endif
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
@@ -345,7 +344,6 @@ static NTSTATUS unix_nsi_get_notification( void *args )
 const unixlib_entry_t __wine_unix_call_funcs[] =
 {
     icmp_get_reply,
-    icmp_listen,
     icmp_send_echo,
     unix_nsi_enumerate_all_ex,
     unix_nsi_get_all_parameters_ex,

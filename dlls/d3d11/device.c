@@ -17,8 +17,6 @@
  *
  */
 
-#define NONAMELESSUNION
-#define WINE_NO_NAMELESS_EXTENSION
 #include "d3d11_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d11);
@@ -66,6 +64,15 @@ static inline BOOL d3d_device_is_d3d10_active(struct d3d_device *device)
 static D3D_FEATURE_LEVEL d3d_feature_level_from_wined3d(enum wined3d_feature_level level)
 {
     return (D3D_FEATURE_LEVEL)level;
+}
+
+static struct wined3d_adapter *d3d_device_get_adapter(struct d3d_device *device)
+{
+    struct wined3d *wined3d = wined3d_device_get_wined3d(device->wined3d_device);
+    struct wined3d_device_creation_parameters params;
+
+    wined3d_device_get_creation_parameters(device->wined3d_device, &params);
+    return wined3d_get_adapter(wined3d, params.adapter_idx);
 }
 
 /* ID3DDeviceContextState methods */
@@ -1523,7 +1530,7 @@ static void STDMETHODCALLTYPE d3d11_device_context_ResolveSubresource(ID3D11Devi
     wined3d_format = wined3dformat_from_dxgi_format(format);
     wined3d_device_context_resolve_sub_resource(context->wined3d_context,
             wined3d_dst_resource, dst_subresource_idx,
-            wined3d_src_resource, src_subresource_idx, wined3d_format);
+            wined3d_src_resource, src_subresource_idx, WINED3D_BLT_RAW, wined3d_format);
 }
 
 static void STDMETHODCALLTYPE d3d11_device_context_ExecuteCommandList(ID3D11DeviceContext4 *iface,
@@ -2784,12 +2791,29 @@ static void STDMETHODCALLTYPE d3d11_device_context_UpdateSubresource1(ID3D11Devi
 static void STDMETHODCALLTYPE d3d11_device_context_DiscardResource(ID3D11DeviceContext4 *iface,
         ID3D11Resource *resource)
 {
-    FIXME("iface %p, resource %p stub!\n", iface, resource);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext4(iface);
+    struct wined3d_resource *wined3d_resource;
+
+    TRACE("iface %p, resource %p.\n", iface, resource);
+
+    wined3d_resource = wined3d_resource_from_d3d11_resource(resource);
+    wined3d_device_context_discard_resource(context->wined3d_context, wined3d_resource, NULL);
 }
 
 static void STDMETHODCALLTYPE d3d11_device_context_DiscardView(ID3D11DeviceContext4 *iface, ID3D11View *view)
 {
-    FIXME("iface %p, view %p stub!\n", iface, view);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext4(iface);
+    struct wined3d_resource *wined3d_resource;
+    struct wined3d_view_desc desc;
+    ID3D11Resource *resource;
+
+    TRACE("iface %p, view %p.\n", iface, view);
+
+    ID3D11View_GetResource(view, &resource);
+    wined3d_resource = wined3d_resource_from_d3d11_resource(resource);
+    wined3d_view_desc_from_d3d11_view(view, &desc);
+    wined3d_device_context_discard_resource(context->wined3d_context, wined3d_resource, &desc);
+    ID3D11Resource_Release(resource);
 }
 
 static void STDMETHODCALLTYPE d3d11_device_context_VSSetConstantBuffers1(ID3D11DeviceContext4 *iface,
@@ -3423,7 +3447,7 @@ static void STDMETHODCALLTYPE d3d11_video_context_VideoProcessorSetOutputBackgro
         ID3D11VideoContext *iface, ID3D11VideoProcessor *processor, BOOL yuv, const D3D11_VIDEO_COLOR *color)
 {
     FIXME("iface %p, processor %p, yuv %d, color {%.8e, %.8e, %.8e, %.8e}, stub!\n",
-            iface, processor, yuv, color->u.RGBA.R, color->u.RGBA.G, color->u.RGBA.B, color->u.RGBA.A);
+            iface, processor, yuv, color->RGBA.R, color->RGBA.G, color->RGBA.B, color->RGBA.A);
 }
 
 static void STDMETHODCALLTYPE d3d11_video_context_VideoProcessorSetOutputColorSpace(ID3D11VideoContext *iface,
@@ -6235,7 +6259,7 @@ static void STDMETHODCALLTYPE d3d10_device_ResolveSubresource(ID3D10Device1 *ifa
     wined3d_format = wined3dformat_from_dxgi_format(format);
     wined3d_device_context_resolve_sub_resource(device->immediate_context.wined3d_context,
             wined3d_dst_resource, dst_subresource_idx,
-            wined3d_src_resource, src_subresource_idx, wined3d_format);
+            wined3d_src_resource, src_subresource_idx, WINED3D_BLT_RAW, wined3d_format);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_VSGetConstantBuffers(ID3D10Device1 *iface,
@@ -7124,7 +7148,8 @@ static HRESULT STDMETHODCALLTYPE d3d10_device_CreateDepthStencilView(ID3D10Devic
         d3d11_desc.Format = desc->Format;
         d3d11_desc.ViewDimension = d3d11_dsv_dimension_from_d3d10(desc->ViewDimension);
         d3d11_desc.Flags = 0;
-        memcpy(&d3d11_desc.u, &desc->u, sizeof(d3d11_desc.u));
+        memcpy(&d3d11_desc.Texture1DArray, &desc->Texture1DArray,
+                sizeof(D3D11_DEPTH_STENCIL_VIEW_DESC) - offsetof(D3D11_DEPTH_STENCIL_VIEW_DESC, Texture1DArray));
     }
 
     if (FAILED(hr = ID3D10Resource_QueryInterface(resource, &IID_ID3D11Resource, (void **)&d3d11_resource)))
@@ -7834,7 +7859,7 @@ static UINT STDMETHODCALLTYPE d3d11_video_device_GetVideoDecoderProfileCount(ID3
 
     TRACE("iface %p.\n", iface);
 
-    return wined3d_device_get_video_decode_profile_count(device->wined3d_device);
+    return wined3d_adapter_get_decode_profile_count(d3d_device_get_adapter(device));
 }
 
 static HRESULT STDMETHODCALLTYPE d3d11_video_device_GetVideoDecoderProfile(
@@ -7844,7 +7869,7 @@ static HRESULT STDMETHODCALLTYPE d3d11_video_device_GetVideoDecoderProfile(
 
     TRACE("iface %p, index %u, profile %p.\n", iface, index, profile);
 
-    return wined3d_device_get_video_decode_profile(device->wined3d_device, index, profile);
+    return wined3d_adapter_get_decode_profile(d3d_device_get_adapter(device), index, profile);
 }
 
 static HRESULT STDMETHODCALLTYPE d3d11_video_device_CheckVideoDecoderFormat(

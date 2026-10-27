@@ -22,7 +22,6 @@
 #define WIN32_LEAN_AND_MEAN
 
 #include "wcmd.h"
-#define WIN32_NO_STATUS
 #include <pathcch.h>
 #include <winioctl.h>
 #include <ddk/ntifs.h>
@@ -950,7 +949,7 @@ RETURN_CODE WCMD_directory(WCHAR *args)
   prevEntry = NULL;
   while (argN) {
     WCHAR fullname[MAXSTRING];
-    WCHAR *thisArg = WCMD_parameter(args, argno++, &argN, FALSE, FALSE);
+    WCHAR *thisArg = WCMD_parameter(args, argno++, &argN, FALSE);
     if (argN && argN[0] != '/') {
 
       WINE_TRACE("Found parm '%s'\n", wine_dbgstr_w(thisArg));

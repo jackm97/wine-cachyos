@@ -542,6 +542,26 @@ sync_test("identifier_keywords", function() {
     ok(tmp === true, "Expected exception for 'function var() { }'");
 });
 
+sync_test("member_expression_keywords", function() {
+    var O = { continue: 1, break: 2, return: 3, throw: 4 };
+    var x = {
+        label: O.continue
+    };
+    ok(x.label === 1, "x.label = " + x.label);
+    var y = {
+        label: O.break
+    };
+    ok(y.label === 2, "y.label = " + y.label);
+    var z = {
+        label: O.return
+    };
+    ok(z.label === 3, "z.label = " + z.label);
+    var w = {
+        label: O.throw
+    };
+    ok(w.label === 4, "w.label = " + w.label);
+});
+
 sync_test("identifiers", function() {
     valid_tests = ['$',
                    '_',
@@ -997,6 +1017,23 @@ sync_test("defineProperty", function() {
         Object.defineProperty(o, "f", { get: function() { return 0; } });
         o.f();
     }, JS_E_FUNCTION_EXPECTED);
+
+    function proto_test() {}
+    desc = { writable: false };
+    Object.defineProperty(proto_test, "prototype", desc);
+
+    proto_test.prototype = 1234;
+    test_own_data_prop_desc(proto_test, "prototype", false, false, false);
+    ok(typeof(proto_test.prototype) === "object", "proto_test.prototype is " + typeof(proto_test.prototype));
+    test_own_data_prop_desc(proto_test, "prototype", false, false, false);
+
+    var array = [4, 2];
+    desc = { writable: false };
+    Object.defineProperty(array, "length", desc);
+    test_own_data_prop_desc(array, "length", false, false, false);
+    ok(array.length === 2, "array.length = " + array.length);
+    array.length = 42;
+    ok(array.length === 2, "array.length after set = " + array.length);
 });
 
 sync_test("defineProperties", function() {

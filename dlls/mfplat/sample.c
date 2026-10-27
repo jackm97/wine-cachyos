@@ -1586,6 +1586,8 @@ static HRESULT WINAPI sample_allocator_InitializeSampleAllocator(IMFVideoSampleA
 
     if (!sample_count)
         return E_INVALIDARG;
+    if (!media_type)
+        return E_POINTER;
 
     EnterCriticalSection(&allocator->cs);
 
@@ -1680,6 +1682,9 @@ static HRESULT WINAPI sample_allocator_InitializeSampleAllocatorEx(IMFVideoSampl
     HRESULT hr;
 
     TRACE("%p, %lu, %lu, %p, %p.\n", iface, initial_sample_count, max_sample_count, attributes, media_type);
+
+    if (!media_type)
+        return E_POINTER;
 
     EnterCriticalSection(&allocator->cs);
 

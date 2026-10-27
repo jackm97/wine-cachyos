@@ -1274,7 +1274,7 @@ static BOOL write_desktop_entry(const WCHAR *link, const WCHAR *location, const 
     fprintf(file, "Exec=" );
 
     fprintf(file, "\"%s\"", escape(path));
-    if (args) fprintf(file, " \"%s\"", escape(args) );
+    if (args && *args) fprintf(file, " \"%s\"", escape(args) );
     fputc( '\n', file );
     fprintf(file, "Type=Application\n");
     fprintf(file, "StartupNotify=true\n");
@@ -1443,23 +1443,20 @@ static HRESULT get_cmdline( IShellLinkW *sl, LPWSTR szPath, DWORD pathSize,
                 d=szPath;
                 while (*s)
                 {
-                    if ((*s==0x0009 || *s==0x0020) && !in_quotes)
+                    if (!in_quotes)
                     {
                         /* skip the remaining spaces */
-                        do {
+                        while (*s == '\t' || *s == ' ')
                             s++;
-                        } while (*s==0x0009 || *s==0x0020);
                         break;
                     }
-                    else if (*s==0x005c)
+                    else if (*s == '\\')
                     {
-                        /* '\\' */
                         *d++=*s++;
                         bcount++;
                     }
-                    else if (*s==0x0022)
+                    else if (*s == '"')
                     {
-                        /* '"' */
                         if ((bcount & 1)==0)
                         {
                             /* Preceded by an even number of '\', this is
@@ -2719,6 +2716,12 @@ static BOOL init_xdg(void)
 {
     WCHAR *p;
     HRESULT hr = SHGetFolderPathW(NULL, CSIDL_DESKTOP, NULL, SHGFP_TYPE_CURRENT, xdg_desktop_dir);
+
+    if (!_wgetenv( L"WINE_HOST_XDG_CURRENT_DESKTOP" ))
+    {
+        WINE_WARN( "Skipping .desktop file creation, no XDG-compliant desktop environment detected.\n" );
+        return FALSE;
+    }
 
     if (FAILED(hr)) return FALSE;
 

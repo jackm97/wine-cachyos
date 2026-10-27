@@ -28,14 +28,18 @@
 
 #include "wine/debug.h"
 
-#include <assert.h>
 #include <stdlib.h>
-#include <unistd.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
 
 static const int32_t default_refresh = 60000;
 static uint32_t next_output_id = 0;
+
+#define WAYLAND_OUTPUT_CHANGED_MODES      0x01
+#define WAYLAND_OUTPUT_CHANGED_NAME       0x02
+#define WAYLAND_OUTPUT_CHANGED_LOGICAL_XY 0x04
+#define WAYLAND_OUTPUT_CHANGED_LOGICAL_WH 0x08
+#define WAYLAND_OUTPUT_CHANGED_GEOMETRY   0x10
 
 /**********************************************************************
  *          Output handling
@@ -132,7 +136,7 @@ static void wayland_output_done(struct wayland_output *output)
     /* Update current state from pending state. */
     pthread_mutex_lock(&process_wayland.output_mutex);
 
-    if (output->pending.flags & WAYLAND_OUTPUT_GEOMETRY)
+    if (output->pending_flags & WAYLAND_OUTPUT_CHANGED_GEOMETRY)
     {
         free(output->current.make);
         free(output->current.model);
@@ -143,7 +147,7 @@ static void wayland_output_done(struct wayland_output *output)
         output->current.model = output->pending.model;
     }
 
-    if (output->pending.flags & WAYLAND_OUTPUT_MODES)
+    if (output->pending_flags & WAYLAND_OUTPUT_CHANGED_MODES)
     {
         RB_FOR_EACH_ENTRY(mode, &output->pending.modes, struct wayland_output_mode, entry)
         {
@@ -163,45 +167,26 @@ static void wayland_output_done(struct wayland_output *output)
         output->pending.modes_count = 0;
     }
 
-    if (output->pending.flags & WAYLAND_OUTPUT_NAME)
+    if (output->pending_flags & WAYLAND_OUTPUT_CHANGED_NAME)
     {
         free(output->current.name);
         output->current.name = output->pending.name;
         output->pending.name = NULL;
     }
 
-    if (output->pending.flags & WAYLAND_OUTPUT_LOGICAL_XY)
+    if (output->pending_flags & WAYLAND_OUTPUT_CHANGED_LOGICAL_XY)
     {
         output->current.logical_x = output->pending.logical_x;
         output->current.logical_y = output->pending.logical_y;
     }
 
-    if (output->pending.flags & WAYLAND_OUTPUT_LOGICAL_WH)
+    if (output->pending_flags & WAYLAND_OUTPUT_CHANGED_LOGICAL_WH)
     {
         output->current.logical_w = output->pending.logical_w;
         output->current.logical_h = output->pending.logical_h;
     }
 
-    if (output->pending.flags & WAYLAND_OUTPUT_PRIMARIES)
-        output->current.primaries = output->pending.primaries;
-
-    if (output->pending.flags & WAYLAND_OUTPUT_FALL)
-        output->current.max_fall = output->pending.max_fall;
-
-    if (output->pending.flags & WAYLAND_OUTPUT_CLL)
-        output->current.max_cll = output->pending.max_cll;
-
-    if (output->pending.flags & WAYLAND_OUTPUT_LUMINANCES)
-    {
-        output->current.max_lum = output->pending.max_lum;
-        output->current.ref_lum = output->pending.ref_lum;
-    }
-
-    output->current.supports_hdr = process_wayland.supports_win_scrgb &&
-                                    (output->current.max_lum > output->current.ref_lum);
-
-    output->current.flags |= output->pending.flags;
-    output->pending.flags = 0;
+    output->pending_flags = 0;
 
     /* Ensure the logical dimensions have sane values. */
     if ((!output->current.logical_w || !output->current.logical_h) &&
@@ -209,16 +194,13 @@ static void wayland_output_done(struct wayland_output *output)
     {
         output->current.logical_w = output->current.current_mode->width;
         output->current.logical_h = output->current.current_mode->height;
-        output->current.flags |= WAYLAND_OUTPUT_LOGICAL_WH;
     }
 
-    wayland_output_array_arrange_physical_coords();
     pthread_mutex_unlock(&process_wayland.output_mutex);
 
-    TRACE("name=%s logical=%d,%d+%dx%d hdr=%u\n",
+    TRACE("name=%s logical=%d,%d+%dx%d\n",
           output->current.name, output->current.logical_x, output->current.logical_y,
-          output->current.logical_w, output->current.logical_h,
-          output->current.supports_hdr);
+          output->current.logical_w, output->current.logical_h);
 
     RB_FOR_EACH_ENTRY(mode, &output->current.modes, struct wayland_output_mode, entry)
     {
@@ -245,7 +227,7 @@ static void output_handle_geometry(void *data, struct wl_output *wl_output,
     output->pending.model = strdup(model);
     output->pending.make = strdup(make);
 
-    output->pending.flags |= WAYLAND_OUTPUT_GEOMETRY;
+    output->pending_flags |= WAYLAND_OUTPUT_CHANGED_GEOMETRY;
 }
 
 static void output_handle_mode(void *data, struct wl_output *wl_output,
@@ -260,7 +242,7 @@ static void output_handle_mode(void *data, struct wl_output *wl_output,
     wayland_output_state_add_mode(&output->pending, width, height, refresh,
                                   (flags & WL_OUTPUT_MODE_CURRENT));
 
-    output->pending.flags |= WAYLAND_OUTPUT_MODES;
+    output->pending_flags |= WAYLAND_OUTPUT_CHANGED_MODES;
 }
 
 static void output_handle_done(void *data, struct wl_output *wl_output)
@@ -279,28 +261,11 @@ static void output_handle_scale(void *data, struct wl_output *wl_output,
 {
 }
 
-static void output_handle_name(void *data, struct wl_output *wl_output,
-                               const char *name)
-{
-    struct wayland_output *output = data;
-
-    free(output->pending.name);
-    output->pending.name = strdup(name);
-    output->pending.flags |= WAYLAND_OUTPUT_NAME;
-}
-
-static void output_handle_description(void *data, struct wl_output *wl_output,
-                                      const char *desc)
-{
-}
-
 static const struct wl_output_listener output_listener = {
     output_handle_geometry,
     output_handle_mode,
     output_handle_done,
-    output_handle_scale,
-    output_handle_name,
-    output_handle_description,
+    output_handle_scale
 };
 
 static void zxdg_output_v1_handle_logical_position(void *data,
@@ -312,7 +277,7 @@ static void zxdg_output_v1_handle_logical_position(void *data,
     TRACE("logical_x=%d logical_y=%d\n", x, y);
     output->pending.logical_x = x;
     output->pending.logical_y = y;
-    output->pending.flags |= WAYLAND_OUTPUT_LOGICAL_XY;
+    output->pending_flags |= WAYLAND_OUTPUT_CHANGED_LOGICAL_XY;
 }
 
 static void zxdg_output_v1_handle_logical_size(void *data,
@@ -324,7 +289,7 @@ static void zxdg_output_v1_handle_logical_size(void *data,
     TRACE("logical_w=%d logical_h=%d\n", width, height);
     output->pending.logical_w = width;
     output->pending.logical_h = height;
-    output->pending.flags |= WAYLAND_OUTPUT_LOGICAL_WH;
+    output->pending_flags |= WAYLAND_OUTPUT_CHANGED_LOGICAL_WH;
 }
 
 static void zxdg_output_v1_handle_done(void *data,
@@ -341,6 +306,11 @@ static void zxdg_output_v1_handle_name(void *data,
                                        struct zxdg_output_v1 *zxdg_output_v1,
                                        const char *name)
 {
+    struct wayland_output *output = data;
+
+    free(output->pending.name);
+    output->pending.name = strdup(name);
+    output->pending_flags |= WAYLAND_OUTPUT_CHANGED_NAME;
 }
 
 static void zxdg_output_v1_handle_description(void *data,
@@ -357,216 +327,6 @@ static const struct zxdg_output_v1_listener zxdg_output_v1_listener = {
     zxdg_output_v1_handle_description,
 };
 
-static void wayland_image_description_info_v1_done(void *data,
-                                              struct wp_image_description_info_v1 *info)
-{
-    struct wayland_output *output = data;
-    wayland_output_done(output);
-}
-
-static void wayland_image_description_info_v1_icc_file(void *data,
-                                                  struct wp_image_description_info_v1 *info,
-                                                  int32_t icc, uint32_t icc_size)
-{
-    close(icc);
-}
-
-static void wayland_image_description_info_v1_primaries_named(void *data,
-				            struct wp_image_description_info_v1 *info,
-				            uint32_t primaries)
-{
-}
-
-static void wayland_image_description_info_v1_tfpower(void *data,
-				            struct wp_image_description_info_v1 *info,
-				            uint32_t power)
-{
-}
-
-static void wayland_image_description_info_v1_tfnamed(void *data,
-				            struct wp_image_description_info_v1 *info,
-				            uint32_t named)
-{
-}
-
-static void wayland_image_description_info_v1_luminance(void *data,
-                            struct wp_image_description_info_v1 *info,
-                            uint32_t min, uint32_t max, uint32_t ref)
-{
-    struct wayland_output *output = data;
-
-    TRACE("ref_lum: %u max_lum: %u\n", ref, max);
-
-    output->pending.ref_lum = ref;
-    output->pending.max_lum = max;
-    output->pending.flags |= WAYLAND_OUTPUT_LUMINANCES;
-}
-
-static void wayland_image_description_info_v1_primaries(void *data,
-                                            struct wp_image_description_info_v1 *info,
-                                            int32_t r_x, int32_t r_y, int32_t g_x,
-                                            int32_t g_y, int32_t b_x, int32_t b_y,
-                                            int32_t w_x, int32_t w_y)
-{
-}
-
-static void wayland_image_description_info_v1_target_primaries(void *data,
-                               	            struct wp_image_description_info_v1 *info,
-                                   	        int32_t r_x, int32_t r_y, int32_t g_x,
-                                            int32_t g_y, int32_t b_x, int32_t b_y,
-                                            int32_t w_x, int32_t w_y)
-{
-    struct wayland_output *output = data;
-    struct wayland_primaries *primaries = &output->pending.primaries;
-
-    primaries->r_x = round((r_x * 1e-6) * 1024);
-    primaries->r_y = round((r_y * 1e-6) * 1024);
-    primaries->g_x = round((g_x * 1e-6) * 1024);
-    primaries->g_y = round((g_y * 1e-6) * 1024);
-    primaries->b_x = round((b_x * 1e-6) * 1024);
-    primaries->b_y = round((b_y * 1e-6) * 1024);
-    primaries->w_x = round((w_x * 1e-6) * 1024);
-    primaries->w_y = round((w_y * 1e-6) * 1024);
-
-    TRACE("primaries: {%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf}\n",
-            r_x * 1e-6, r_y * 1e-6, g_x * 1e-6, g_y * 1e-6,
-            b_x * 1e-6, b_y * 1e-6, w_x * 1e-6, w_y * 1e-6);
-
-    output->pending.flags |= WAYLAND_OUTPUT_PRIMARIES;
-}
-
-static void wayland_image_description_info_v1_target_luminance(void *data,
-                            struct wp_image_description_info_v1 *info,
-                            uint32_t min, uint32_t max)
-{
-}
-
-static void wayland_image_description_info_v1_target_max_cll(void *data,
-				            struct wp_image_description_info_v1 *info,
-				            uint32_t max)
-{
-    struct wayland_output *output = data;
-
-    TRACE("Max CLL: %u\n", max);
-
-    output->pending.max_cll = max;
-    output->pending.flags |= WAYLAND_OUTPUT_CLL;
-}
-
-static void wayland_image_description_info_v1_target_max_fall(void *data,
-				            struct wp_image_description_info_v1 *info,
-				            uint32_t max)
-{
-    struct wayland_output *output = data;
-    TRACE("Max FALL: %u\n", max);
-
-    output->pending.max_fall = max;
-    output->pending.flags |= WAYLAND_OUTPUT_FALL;
-}
-
-static const struct wp_image_description_info_v1_listener image_description_info_listener = {
-    wayland_image_description_info_v1_done,
-    wayland_image_description_info_v1_icc_file,
-    wayland_image_description_info_v1_primaries,
-    wayland_image_description_info_v1_primaries_named,
-    wayland_image_description_info_v1_tfpower,
-    wayland_image_description_info_v1_tfnamed,
-    wayland_image_description_info_v1_luminance,
-    wayland_image_description_info_v1_target_primaries,
-    wayland_image_description_info_v1_target_luminance,
-    wayland_image_description_info_v1_target_max_cll,
-    wayland_image_description_info_v1_target_max_fall
-};
-
-static void wayland_image_description_v1_failed(void *user_data,
-                    struct wp_image_description_v1 *wp_image_description_v1,
-                    uint32_t cause, const char *msg)
-{
-    struct wayland_output *output = user_data;
-    ERR("cause=%u msg=%s\n", cause, debugstr_a(msg));
-
-    wp_image_description_v1_destroy(output->wp_image_description_v1);
-    output->wp_image_description_v1 = NULL;
-}
-
-static void wayland_image_description_v1_ready2(void *user_data,
-                    struct wp_image_description_v1 *wp_image_description_v1,
-                    uint32_t identity_hi, uint32_t identity_lo)
-{
-    struct wp_image_description_info_v1 *info;
-    struct wayland_output *output = user_data;
-    TRACE("id=%#x%x\n", identity_hi, identity_lo);
-
-    if (!(info = wp_image_description_v1_get_information(wp_image_description_v1)))
-    {
-        ERR("Failed to allocate image description info object!\n");
-        return;
-    }
-    wp_image_description_info_v1_add_listener(info, &image_description_info_listener, output);
-}
-
-static void wayland_image_description_v1_ready(void *user_data,
-                    struct wp_image_description_v1 *wp_image_description_v1,
-                    uint32_t identity)
-{
-    wayland_image_description_v1_ready2(user_data, wp_image_description_v1, 0, identity);
-}
-
-static const struct wp_image_description_v1_listener image_description_listener = {
-    wayland_image_description_v1_failed,
-    wayland_image_description_v1_ready,
-    wayland_image_description_v1_ready2
-};
-
-static void wayland_color_management_output_image_description_changed(void *user_data,
-                struct wp_color_management_output_v1 *wp_color_management_output_v1)
-{
-    struct wayland_output *output = user_data;
-
-    if (output->wp_image_description_v1)
-    {
-        wp_image_description_v1_destroy(output->wp_image_description_v1);
-        output->wp_image_description_v1 = NULL;
-    }
-
-    wayland_output_use_image_description(output);
-}
-
-static const struct wp_color_management_output_v1_listener color_management_output_listener = {
-    wayland_color_management_output_image_description_changed
-};
-
-void wayland_output_use_image_description(struct wayland_output *output)
-{
-    if (!output->wp_color_management_output_v1)
-    {
-        output->wp_color_management_output_v1 =
-            wp_color_manager_v1_get_output(
-                        process_wayland.wp_color_manager_v1,
-                                    output->wl_output);
-        wp_color_management_output_v1_add_listener(
-            output->wp_color_management_output_v1,
-            &color_management_output_listener, output);
-        if (!output->wp_color_management_output_v1)
-        {
-            ERR("Failed to allocate color management output object!\n");
-            return;
-        }
-    }
-    if (output->wp_image_description_v1) return;
-    output->wp_image_description_v1 =
-        wp_color_management_output_v1_get_image_description(
-            output->wp_color_management_output_v1);
-    if (!output->wp_image_description_v1)
-    {
-        ERR("Failed to allocate image description object!\n");
-        return;
-    }
-    wp_image_description_v1_add_listener(
-        output->wp_image_description_v1,
-        &image_description_listener, output);
-}
-
 /**********************************************************************
  *          wayland_output_create
  *
@@ -574,7 +334,7 @@ void wayland_output_use_image_description(struct wayland_output *output)
  */
 BOOL wayland_output_create(uint32_t id, uint32_t version)
 {
-    struct wayland_output **elem, *output = calloc(1, sizeof(*output));
+    struct wayland_output *output = calloc(1, sizeof(*output));
     int name_len;
 
     if (!output)
@@ -583,10 +343,10 @@ BOOL wayland_output_create(uint32_t id, uint32_t version)
         goto err;
     }
 
-    if (version < 4) goto err;
+    if (version < 3) goto err;
 
     output->wl_output = wl_registry_bind(process_wayland.wl_registry, id,
-                                         &wl_output_interface, 4);
+                                         &wl_output_interface, 3);
     output->global_id = id;
     wl_output_add_listener(output->wl_output, &output_listener, output);
 
@@ -624,25 +384,14 @@ BOOL wayland_output_create(uint32_t id, uint32_t version)
     if (process_wayland.zxdg_output_manager_v1)
         wayland_output_use_xdg_extension(output);
 
-    if (process_wayland.wp_color_manager_v1)
-        wayland_output_use_image_description(output);
-
-    output->ref = 1;
-
     pthread_mutex_lock(&process_wayland.output_mutex);
-    if (!(elem = wl_array_add(&process_wayland.output_array, sizeof(struct wayland_output *))))
-    {
-        ERR("Failed to add output to output array!\n");
-        pthread_mutex_unlock(&process_wayland.output_mutex);
-        goto err;
-    }
-    *elem = output;
+    wl_list_insert(process_wayland.output_list.prev, &output->link);
     pthread_mutex_unlock(&process_wayland.output_mutex);
 
     return TRUE;
 
 err:
-    if (output) wayland_output_release(output);
+    if (output) wayland_output_destroy(output);
     return FALSE;
 }
 
@@ -653,99 +402,24 @@ static void wayland_output_state_deinit(struct wayland_output_state *state)
 }
 
 /**********************************************************************
- *          wayland_output_remove
- *
- *  Drops ref of wayland output from the output list, and updates display devices.
- */
-void wayland_output_remove(struct wayland_output **output)
-{
-    struct wl_array *array = &process_wayland.output_array;
-    struct wayland_output **end = array->data, *temp;
-
-    assert(array->size && end);
-
-    end += (array->size / sizeof(*output)) - 1;
-    /* swap current element and back element */
-    temp = *end;
-    *end = *output;
-    *output = temp;
-    /* then reduce the size of the array */
-    array->size -= sizeof(*output);
-    wayland_output_array_arrange_physical_coords();
-
-    wayland_output_release(*end);
-
-    maybe_init_display_devices();
-}
-
-void wayland_output_add_ref(struct wayland_output *output)
-{
-    InterlockedIncrement(&output->ref);
-}
-
-/**********************************************************************
  *          wayland_output_destroy
  *
  *  Destroys a wayland_output.
  */
-void wayland_output_release(struct wayland_output *output)
+void wayland_output_destroy(struct wayland_output *output)
 {
-    if (InterlockedDecrement(&output->ref)) return;
+    pthread_mutex_lock(&process_wayland.output_mutex);
+    wl_list_remove(&output->link);
+    pthread_mutex_unlock(&process_wayland.output_mutex);
 
     wayland_output_state_deinit(&output->pending);
     wayland_output_state_deinit(&output->current);
-    if (output->wp_color_management_output_v1)
-        wp_color_management_output_v1_destroy(output->wp_color_management_output_v1);
-    if (output->wp_image_description_v1)
-        wp_image_description_v1_destroy(output->wp_image_description_v1);
     if (output->zxdg_output_v1)
         zxdg_output_v1_destroy(output->zxdg_output_v1);
     wl_output_release(output->wl_output);
     free(output);
-}
 
-/**********************************************************************
- *          wayland_output_for_rect
- */
-struct wayland_output *wayland_output_for_rect(const RECT *window_rect)
-{
-    struct wayland_output *best = NULL, **output;
-    HMONITOR target = NtUserMonitorFromRect(window_rect, 0);
-
-    TRACE("window %s\n", wine_dbgstr_rect(window_rect));
-
-    if (!target) return NULL;
-
-    pthread_mutex_lock(&process_wayland.output_mutex);
-
-    wl_array_for_each(output, &process_wayland.output_array)
-    {
-        struct wayland_output_state *current = &(*output)->current;
-        RECT rect;
-
-        if (!current->current_mode) continue;
-
-        SetRect(&rect, 0, 0,
-                current->current_mode->width,
-                current->current_mode->height);
-        OffsetRect(&rect, current->physical_x, current->physical_y);
-
-        TRACE("output %s: %s\n",
-              debugstr_a(current->name),
-              wine_dbgstr_rect(&rect));
-
-        if (NtUserMonitorFromRect(&rect, 0) == target)
-        {
-            wayland_output_add_ref((best = *output));
-            break;
-        }
-    }
-
-    pthread_mutex_unlock(&process_wayland.output_mutex);
-
-    if (!best) WARN("Could not find output for rect %s!\n", wine_dbgstr_rect(window_rect));
-
-    return best;
+    maybe_init_display_devices();
 }
 
 /**********************************************************************
@@ -755,7 +429,6 @@ struct wayland_output *wayland_output_for_rect(const RECT *window_rect)
  */
 void wayland_output_use_xdg_extension(struct wayland_output *output)
 {
-    if (output->zxdg_output_v1) return;
     output->zxdg_output_v1 =
         zxdg_output_manager_v1_get_xdg_output(process_wayland.zxdg_output_manager_v1,
                                               output->wl_output);

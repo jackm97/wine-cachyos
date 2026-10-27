@@ -2254,6 +2254,14 @@ static void test_fopen_s( void )
             ubuff[0], ubuff[1]);
     fclose(file);
 
+    ret = p_fopen_s(&file, name, "rb,ccs=unicode");
+    ok(ret == 0, "fopen_s failed with %d\n", ret);
+    len = fread(buff, 1, 2, file);
+    ok(len == 2, "len = %d\n", len);
+    ok(ubuff[0]==0xff && ubuff[1]==0xfe, "buff[0]=%02x, buff[1]=%02x\n",
+            ubuff[0], ubuff[1]);
+    fclose(file);
+
     ret = p_fopen_s(&file, name, "r,ccs=utf-16le");
     ok(ret == 0, "fopen_s failed with %d\n", ret);
     len = fread(buff, 1, 2, file);
@@ -2293,6 +2301,20 @@ static void test_fopen_s( void )
     ok(ubuff[0]==0xef && ubuff[1]==0xbb && ubuff[2]==0xbf,
             "buff[0]=%02x, buff[1]=%02x, buff[2]=%02x\n",
             ubuff[0], ubuff[1], ubuff[2]);
+    fclose(file);
+
+    ret = p_fopen_s(&file, name, "wb, ccs=utf-8");
+    ok(ret == 0, "fopen_s failed with %d\n", ret);
+    fwrite("test", 1, 4, file);
+    fputwc('a', file);
+    fputwc('b', file);
+    fclose(file);
+
+    ret = p_fopen_s(&file, name, "rb");
+    ok(ret == 0, "fopen_s failed with %d\n", ret);
+    len = fread(buff, 1, ARRAY_SIZE(buff) - 1, file);
+    ok(len == 8, "len = %d\n", len);
+    ok(!memcmp(buff, "testa\0b", 8), "got %s\n", wine_dbgstr_an(buff, len));
     fclose(file);
 
     /* test initial FILE values */
@@ -2465,7 +2487,7 @@ static void test_stat(void)
         ok(buf.st_dev == 0, "st_dev is %d, expected 0\n", buf.st_dev);
         ok(buf.st_dev == buf.st_rdev, "st_dev (%d) and st_rdev (%d) differ\n", buf.st_dev, buf.st_rdev);
         ok(buf.st_nlink == 1, "st_nlink is %d, expected 1\n", buf.st_nlink);
-        ok(buf.st_size == 0, "st_size is %d, expected 0\n", buf.st_size);
+        ok(buf.st_size == 0, "st_size is %ld, expected 0\n", buf.st_size);
 
         ret = stat("stat.tst", &buf);
         ok(!ret, "stat failed: errno=%d\n", errno);
@@ -2473,7 +2495,7 @@ static void test_stat(void)
         ok((buf.st_mode & 0777) == 0666, "bad st_mode = %06o\n", buf.st_mode);
         ok(buf.st_dev == buf.st_rdev, "st_dev (%d) and st_rdev (%d) differ\n", buf.st_dev, buf.st_rdev);
         ok(buf.st_nlink == 1, "st_nlink is %d, expected 1\n", buf.st_nlink);
-        ok(buf.st_size == 0, "st_size is %d, expected 0\n", buf.st_size);
+        ok(buf.st_size == 0, "st_size is %ld, expected 0\n", buf.st_size);
 
         errno = 0xdeadbeef;
         ret = stat("stat.tst\\", &buf);

@@ -45,7 +45,6 @@
 #undef Status
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 
 #include "x11drv.h"
 #include "wingdi.h"
@@ -149,7 +148,7 @@ static const char *debugstr_monitor_indices( const struct monitor_indices *monit
     return wine_dbg_sprintf( "%ld,%ld,%ld,%ld", monitors->indices[0], monitors->indices[1], monitors->indices[2], monitors->indices[3] );
 }
 
-static pthread_mutex_t win_data_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t win_data_mutex;
 
 static void host_window_add_ref( struct host_window *win )
 {
@@ -2740,8 +2739,8 @@ Window create_client_window( HWND hwnd, RECT client_rect, const XVisualInfo *vis
     attr.backing_store = NotUseful;
     attr.border_pixel = 0;
 
-    x = data->rects.client.left - data->rects.visible.left;
-    y = data->rects.client.top - data->rects.visible.top;
+    x = client_rect.left;
+    y = client_rect.top;
     cx = min( max( 1, client_rect.right - client_rect.left ), 65535 );
     cy = min( max( 1, client_rect.bottom - client_rect.top ), 65535 );
 
@@ -3111,7 +3110,7 @@ void X11DRV_SetDesktopWindow( HWND hwnd )
     else
     {
         Window win = (Window)NtUserGetProp( hwnd, whole_window_prop );
-        if (win && win != root_window) X11DRV_init_desktop( win, width, height );
+        if (win && win != root_window) X11DRV_init_desktop( win );
     }
 }
 
@@ -3158,22 +3157,9 @@ BOOL X11DRV_CreateWindow( HWND hwnd )
 {
     if (hwnd == NtUserGetDesktopWindow())
     {
-        static const WCHAR winsta0[] = {'W','i','n','S','t','a','0',0};
         struct x11drv_thread_data *data = x11drv_init_thread_data();
-        WCHAR winstation_name[64];
         XSetWindowAttributes attr;
 
-        if (NtUserGetObjectInformation( NtUserGetProcessWindowStation(), UOI_NAME, winstation_name,
-                                        sizeof(winstation_name), NULL ))
-        {
-            TRACE( "winstation name %s.\n", debugstr_w(winstation_name) );
-            if (!wcscmp( winstation_name, winsta0 ))
-            {
-                /* listen to raw xinput event in the desktop window thread */
-                data->xinput2_rawinput = TRUE;
-                x11drv_xinput2_enable( data->display, DefaultRootWindow( data->display ) );
-            }
-        }
         /* create the cursor clipping window */
         attr.override_redirect = TRUE;
         attr.event_mask = StructureNotifyMask | FocusChangeMask;
@@ -3520,32 +3506,31 @@ BOOL X11DRV_ScrollDC( HDC hdc, INT dx, INT dy, HRGN update )
 /***********************************************************************
  *		SetCapture  (X11DRV.@)
  */
-void X11DRV_SetCapture( HWND hwnd, UINT flags )
+void X11DRV_SetCapture( HWND hwnd, UINT flags, HWND previous )
 {
-    struct x11drv_thread_data *thread_data = x11drv_thread_data();
     struct x11drv_win_data *data;
+
+    TRACE( "hwnd %p, flags %#x, previous %p\n", hwnd, flags, previous );
 
     if (!(flags & (GUI_INMOVESIZE | GUI_INMENUMODE))) return;
 
     if (hwnd)
     {
-        if (!(data = get_win_data( NtUserGetAncestor( hwnd, GA_ROOT )))) return;
+        if (!(data = get_win_data( hwnd ))) return;
         if (data->whole_window)
         {
             XGrabPointer( data->display, data->whole_window, False,
                           PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
                           GrabModeAsync, GrabModeAsync, None, None, CurrentTime );
             XFlush( data->display );
-            thread_data->grab_hwnd = data->hwnd;
         }
         release_win_data( data );
     }
-    else  /* release capture */
+    else if (previous)  /* release capture */
     {
-        if (!(data = get_win_data( thread_data->grab_hwnd ))) return;
+        if (!(data = get_win_data( previous ))) return;
         XUngrabPointer( data->display, CurrentTime );
         XFlush( data->display );
-        thread_data->grab_hwnd = NULL;
         release_win_data( data );
     }
 }
@@ -3704,7 +3689,7 @@ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
            debugstr_window_rects(new_rects), new_style, swp_flags );
 
     /* visible windows are only hidden after SWP_HIDEWINDOW is used */
-    if (data->pending_state.wm_state != WithdrawnState && !(new_style & WS_VISIBLE) &&
+    if (data->desired_state.wm_state != WithdrawnState && !(new_style & WS_VISIBLE) &&
         !(swp_flags & SWP_HIDEWINDOW))
     {
         WARN( "win %p/%lx not yet hidden, delaying unmapping\n", hwnd, data->whole_window );
@@ -3712,7 +3697,7 @@ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     }
 
     /* layered windows are mapped only once their attributes are set */
-    if (data->pending_state.wm_state == WithdrawnState && (new_style & WS_VISIBLE) &&
+    if (data->desired_state.wm_state == WithdrawnState && (new_style & WS_VISIBLE) &&
         (ex_style & WS_EX_LAYERED) && !data->layered && !IsRectEmpty( &new_rects->window ))
     {
         WARN( "win %p/%lx is layered, delaying mapping\n", hwnd, data->whole_window );

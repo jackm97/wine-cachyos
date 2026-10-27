@@ -5661,12 +5661,31 @@ static void test_flip(void)
     hr = IDirectDrawSurface_Flip(frontbuffer, NULL, DDFLIP_WAIT);
     ok(hr == DDERR_NOTFLIPPABLE, "Got unexpected hr %#lx.\n", hr);
 
-    check_surface_caps(frontbuffer, DDSCAPS_PRIMARYSURFACE | DDSCAPS_VISIBLE | DDSCAPS_FRONTBUFFER, placement, 0);
-    check_surface_caps(backbuffer1, DDSCAPS_BACKBUFFER | DDSCAPS_3DDEVICE, placement, 0);
+    hr = IDirectDrawSurface_AddAttachedSurface(backbuffer1, frontbuffer);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    check_surface_caps(frontbuffer, DDSCAPS_PRIMARYSURFACE | DDSCAPS_VISIBLE | DDSCAPS_FRONTBUFFER | DDSCAPS_FLIP, placement, 0);
+    check_surface_caps(backbuffer1, DDSCAPS_3DDEVICE | DDSCAPS_BACKBUFFER | DDSCAPS_FLIP, placement, 0);
+    hr = IDirectDrawSurface_Flip(frontbuffer, NULL, DDFLIP_WAIT);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    color = get_surface_color(frontbuffer, 1, 1);
+    ok(color == 0x0000ff00, "got %#x.\n", color);
+    color = get_surface_color(backbuffer1, 1, 1);
+    ok(color == 0x00ff0000, "got %#x.\n", color);
+
+    hr = IDirectDrawSurface_Flip(backbuffer1, NULL, DDFLIP_WAIT);
+    ok(hr == DDERR_NOTFLIPPABLE, "Got hr %#lx.\n", hr);
+
+    hr = IDirectDrawSurface_DeleteAttachedSurface(frontbuffer, 0, backbuffer1);
+    ok(hr == DDERR_CANNOTDETACHSURFACE, "got %#lx.\n", hr);
+    hr = IDirectDrawSurface_DeleteAttachedSurface(backbuffer1, 0, frontbuffer);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    check_surface_caps(frontbuffer, DDSCAPS_PRIMARYSURFACE | DDSCAPS_VISIBLE, placement, 0);
+    check_surface_caps(backbuffer1, DDSCAPS_3DDEVICE | DDSCAPS_BACKBUFFER, placement, 0);
+
     check_surface_caps(backbuffer2, DDSCAPS_FRONTBUFFER | DDSCAPS_3DDEVICE, placement, 0);
     hr = IDirectDrawSurface_AddAttachedSurface(backbuffer1, backbuffer2);
     ok(hr == DD_OK, "got %#lx.\n", hr);
-    check_surface_caps(frontbuffer, DDSCAPS_PRIMARYSURFACE | DDSCAPS_VISIBLE | DDSCAPS_FRONTBUFFER, placement, 0);
+    check_surface_caps(frontbuffer, DDSCAPS_PRIMARYSURFACE | DDSCAPS_VISIBLE, placement, 0);
     check_surface_caps(backbuffer1, DDSCAPS_FLIP | DDSCAPS_BACKBUFFER | DDSCAPS_3DDEVICE, placement, 0);
     check_surface_caps(backbuffer2, DDSCAPS_FLIP | DDSCAPS_FRONTBUFFER | DDSCAPS_3DDEVICE, placement, 0);
 
@@ -5711,9 +5730,9 @@ static void test_flip(void)
     }
 
     color = get_surface_color(frontbuffer, 1, 1);
-    ok(color == 0x0000ff00, "got %#x.\n", color);
-    color = get_surface_color(backbuffer1, 1, 1);
     ok(color == 0x00ff0000, "got %#x.\n", color);
+    color = get_surface_color(backbuffer1, 1, 1);
+    ok(color == 0x000ff00, "got %#x.\n", color);
 
     ref = get_refcount((IUnknown *)backbuffer2);
     ok(ref == 1, "got %ld.\n", ref);
@@ -5736,11 +5755,11 @@ static void test_flip(void)
     ok(hr == DD_OK, "got %#lx.\n", hr);
 
     color = get_surface_color(frontbuffer, 1, 1);
-    ok(color == 0x00ff0000, "got %#x.\n", color);
+    ok(color == 0x0000ff00, "got %#x.\n", color);
     color = get_surface_color(backbuffer1, 1, 1);
     ok(color == 0x000000ff, "got %#x.\n", color);
     color = get_surface_color(backbuffer2, 1, 1);
-    ok(color == 0x0000ff00, "got %#x.\n", color);
+    ok(color == 0x00ff0000, "got %#x.\n", color);
 
     hr = IDirectDrawSurface_DeleteAttachedSurface(frontbuffer, 0, backbuffer2);
     ok(hr == DDERR_SURFACENOTATTACHED, "got %#lx.\n", hr);
@@ -6269,6 +6288,7 @@ static void test_surface_attachment(void)
     ok(hr == DD_OK, "got %#lx.\n", hr);
     check_surface_caps(surface1, DDSCAPS_FLIP | DDSCAPS_FRONTBUFFER | DDSCAPS_VISIBLE | DDSCAPS_PRIMARYSURFACE, placement, 0);
     check_surface_caps(surface5, DDSCAPS_FLIP | DDSCAPS_BACKBUFFER, placement, 0);
+    check_surface_caps(surface6, 0, placement, 0);
     hr = IDirectDrawSurface_AddAttachedSurface(surface5, surface6);
     ok(hr == DD_OK, "got %#lx.\n", hr);
     check_surface_caps(surface1, DDSCAPS_VISIBLE | DDSCAPS_PRIMARYSURFACE | DDSCAPS_FRONTBUFFER | DDSCAPS_FLIP, placement, 0);
@@ -6322,6 +6342,13 @@ static void test_surface_attachment(void)
     ok(hr == DDERR_SURFACENOTATTACHED, "got %#lx.\n", hr);
     ref = get_refcount((IUnknown *)surface6);
     ok(ref == 2, "got %ld,\n", ref);
+
+    hr = IDirectDrawSurface_DeleteAttachedSurface(surface1, 0, surface6);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    check_surface_caps(surface6, 0, placement, 0);
+
+    hr = IDirectDrawSurface_GetAttachedSurface(surface1, &caps, &tmp);
+    ok(hr == DDERR_NOTFOUND, "got %#lx.\n", hr);
 
     ref = IDirectDrawSurface_Release(surface1);
     ok(!ref, "got %ld\n", ref);
@@ -6480,8 +6507,7 @@ static void test_surface_attachment(void)
         ref = IDirectDrawSurface_Release(backbuffer1);
     ref = IDirectDrawSurface_Release(surface1);
     ok(!ref, "got %ld.\n", ref);
-    ref = IDirectDrawSurface_Release(backbuffer1);
-    ok(!ref, "got %ld.\n", ref);
+    /* backbuffer1 is auto-generated attachemnt for surface1 and is supposed to be released during surface1 destruction. */
     ref = IDirectDrawSurface_Release(backbuffer2);
     ok(!ref, "got %ld.\n", ref);
     ref = IDirectDrawSurface_Release(surface2);
@@ -13887,6 +13913,239 @@ static void test_enum_surfaces(void)
     IDirectDraw_Release(ddraw);
 }
 
+#define EXEC_VERTEX_OFFSET 0
+#define EXEC_INSTR_OFFSET  1024
+
+static const D3DTLVERTEX exec_update_quad1[] =
+{
+    {{  0.0f}, {  0.0f}, {0.5f}, {1.0f}, {0xff00ff00}, {0x00000000}, {0.0f}, {0.0f}},
+    {{640.0f}, {  0.0f}, {0.5f}, {1.0f}, {0xff00ff00}, {0x00000000}, {0.0f}, {0.0f}},
+    {{  0.0f}, {480.0f}, {0.5f}, {1.0f}, {0xff00ff00}, {0x00000000}, {0.0f}, {0.0f}},
+    {{640.0f}, {480.0f}, {0.5f}, {1.0f}, {0xff00ff00}, {0x00000000}, {0.0f}, {0.0f}},
+};
+
+static const D3DTLVERTEX exec_update_quad2[] =
+{
+    {{  0.0f}, {  0.0f}, {0.5f}, {1.0f}, {0xff0000ff}, {0x00000000}, {0.0f}, {0.0f}},
+    {{640.0f}, {  0.0f}, {0.5f}, {1.0f}, {0xff0000ff}, {0x00000000}, {0.0f}, {0.0f}},
+    {{  0.0f}, {480.0f}, {0.5f}, {1.0f}, {0xff0000ff}, {0x00000000}, {0.0f}, {0.0f}},
+    {{640.0f}, {480.0f}, {0.5f}, {1.0f}, {0xff0000ff}, {0x00000000}, {0.0f}, {0.0f}},
+};
+
+/* A stream that processes four vertices and draws them. */
+static unsigned int write_draw_stream(void *at, WORD pv_start)
+{
+    void *ptr = at;
+
+    emit_process_vertices(&ptr, D3DPROCESSVERTICES_COPY, pv_start, 4);
+    emit_set_rs(&ptr, D3DRENDERSTATE_ZENABLE, D3DZB_FALSE);
+    emit_tquad(&ptr, 0);
+    emit_end(&ptr);
+    return (BYTE *)ptr - (BYTE *)at;
+}
+
+/* A valid stream that processes no vertices and draws nothing. */
+static unsigned int write_nodraw_stream(void *at)
+{
+    void *ptr = at;
+
+    emit_set_rs(&ptr, D3DRENDERSTATE_ZENABLE, D3DZB_FALSE);
+    emit_end(&ptr);
+    return (BYTE *)ptr - (BYTE *)at;
+}
+
+/* Lock() copies the buffer's own descriptor over the caller's, lpData and
+ * D3DDEB_LPDATA included, so it has to be rebuilt before creating another. */
+static IDirect3DExecuteBuffer *create_exec_buffer(IDirect3DDevice *device)
+{
+    IDirect3DExecuteBuffer *execute_buffer;
+    D3DEXECUTEBUFFERDESC exec_desc;
+    HRESULT hr;
+
+    memset(&exec_desc, 0, sizeof(exec_desc));
+    exec_desc.dwSize = sizeof(exec_desc);
+    exec_desc.dwFlags = D3DDEB_BUFSIZE | D3DDEB_CAPS;
+    exec_desc.dwBufferSize = 4096;
+    exec_desc.dwCaps = D3DDEBCAPS_SYSTEMMEMORY;
+
+    hr = IDirect3DDevice_CreateExecuteBuffer(device, &exec_desc, &execute_buffer, NULL);
+    ok(hr == D3D_OK, "Failed to create execute buffer, hr %#lx.\n", hr);
+    return execute_buffer;
+}
+
+static BYTE *lock_exec_buffer(IDirect3DExecuteBuffer *execute_buffer)
+{
+    D3DEXECUTEBUFFERDESC exec_desc;
+    HRESULT hr;
+
+    memset(&exec_desc, 0, sizeof(exec_desc));
+    exec_desc.dwSize = sizeof(exec_desc);
+    hr = IDirect3DExecuteBuffer_Lock(execute_buffer, &exec_desc);
+    ok(hr == D3D_OK, "Failed to lock execute buffer, hr %#lx.\n", hr);
+    return exec_desc.lpData;
+}
+
+static D3DCOLOR execute_and_read(IDirect3DDevice *device, IDirect3DViewport *viewport,
+        IDirectDrawSurface *rt, IDirect3DExecuteBuffer *execute_buffer)
+{
+    static D3DRECT clear_rect = {{0}, {0}, {640}, {480}};
+    HRESULT hr;
+
+    hr = IDirect3DViewport_Clear(viewport, 1, &clear_rect, D3DCLEAR_TARGET);
+    ok(hr == D3D_OK, "Failed to clear viewport, hr %#lx.\n", hr);
+
+    hr = IDirect3DDevice_BeginScene(device);
+    ok(hr == D3D_OK, "Failed to begin scene, hr %#lx.\n", hr);
+    hr = IDirect3DDevice_Execute(device, execute_buffer, viewport, D3DEXECUTE_CLIPPED);
+    ok(hr == D3D_OK, "Failed to execute, hr %#lx.\n", hr);
+    hr = IDirect3DDevice_EndScene(device);
+    ok(hr == D3D_OK, "Failed to end scene, hr %#lx.\n", hr);
+
+    return get_surface_color(rt, 320, 240);
+}
+
+/* The execute buffer's contents are read when Execute() runs, not when
+ * SetExecuteData() is called, so an application may write the vertices and the
+ * instruction stream at any point before executing, and may rewrite them
+ * between executions without calling SetExecuteData() again. */
+static void test_execute_buffer_updates(void)
+{
+    IDirect3DExecuteBuffer *execute_buffer;
+    IDirect3DMaterial *background;
+    IDirect3DViewport *viewport;
+    unsigned int inst_length;
+    IDirect3DDevice *device;
+    IDirectDrawSurface *rt;
+    IDirectDraw *ddraw;
+    D3DCOLOR color;
+    BYTE scratch[64];
+    HWND window;
+    HRESULT hr;
+    BYTE *data;
+
+    window = create_window();
+    ddraw = create_ddraw();
+    ok(!!ddraw, "Failed to create a ddraw object.\n");
+    if (!(device = create_device(ddraw, window, DDSCL_NORMAL)))
+    {
+        skip("Failed to create a 3D device, skipping test.\n");
+        IDirectDraw_Release(ddraw);
+        DestroyWindow(window);
+        return;
+    }
+
+    hr = IDirect3DDevice_QueryInterface(device, &IID_IDirectDrawSurface, (void **)&rt);
+    ok(hr == D3D_OK, "Failed to get the render target, hr %#lx.\n", hr);
+
+    background = create_diffuse_material(device, 1.0f, 0.0f, 0.0f, 1.0f);
+    viewport = create_viewport(device, 0, 0, 640, 480);
+    viewport_set_background(device, viewport, background);
+
+    inst_length = write_draw_stream(scratch, 0);
+
+    /* Control: everything written before SetExecuteData(). */
+    execute_buffer = create_exec_buffer(device);
+    data = lock_exec_buffer(execute_buffer);
+    memcpy(data + EXEC_VERTEX_OFFSET, exec_update_quad1, sizeof(exec_update_quad1));
+    write_draw_stream(data + EXEC_INSTR_OFFSET, 0);
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    set_execute_data(execute_buffer, 4, EXEC_INSTR_OFFSET, inst_length);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x0000ff00, 1), "Got unexpected color 0x%08lx.\n", color);
+    IDirect3DExecuteBuffer_Release(execute_buffer);
+
+    /* The instruction stream is read at Execute() time. */
+    execute_buffer = create_exec_buffer(device);
+    data = lock_exec_buffer(execute_buffer);
+    memcpy(data + EXEC_VERTEX_OFFSET, exec_update_quad1, sizeof(exec_update_quad1));
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    set_execute_data(execute_buffer, 4, EXEC_INSTR_OFFSET, inst_length);
+    data = lock_exec_buffer(execute_buffer);
+    write_draw_stream(data + EXEC_INSTR_OFFSET, 0);
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x0000ff00, 1), "Got unexpected color 0x%08lx.\n", color);
+    IDirect3DExecuteBuffer_Release(execute_buffer);
+
+    /* The vertex data is read at Execute() time as well. */
+    execute_buffer = create_exec_buffer(device);
+    data = lock_exec_buffer(execute_buffer);
+    write_draw_stream(data + EXEC_INSTR_OFFSET, 0);
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    set_execute_data(execute_buffer, 4, EXEC_INSTR_OFFSET, inst_length);
+    data = lock_exec_buffer(execute_buffer);
+    memcpy(data + EXEC_VERTEX_OFFSET, exec_update_quad1, sizeof(exec_update_quad1));
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x0000ff00, 1), "Got unexpected color 0x%08lx.\n", color);
+    IDirect3DExecuteBuffer_Release(execute_buffer);
+
+    /* Nothing at all needs to be written before SetExecuteData(). */
+    execute_buffer = create_exec_buffer(device);
+    set_execute_data(execute_buffer, 4, EXEC_INSTR_OFFSET, inst_length);
+    data = lock_exec_buffer(execute_buffer);
+    memcpy(data + EXEC_VERTEX_OFFSET, exec_update_quad1, sizeof(exec_update_quad1));
+    write_draw_stream(data + EXEC_INSTR_OFFSET, 0);
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x0000ff00, 1), "Got unexpected color 0x%08lx.\n", color);
+    IDirect3DExecuteBuffer_Release(execute_buffer);
+
+    /* A stream with no D3DOP_PROCESSVERTICES may be replaced with one that has
+     * it after SetExecuteData(), and the replacement is what executes. */
+    execute_buffer = create_exec_buffer(device);
+    data = lock_exec_buffer(execute_buffer);
+    memcpy(data + EXEC_VERTEX_OFFSET, exec_update_quad1, sizeof(exec_update_quad1));
+    write_nodraw_stream(data + EXEC_INSTR_OFFSET);
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    set_execute_data(execute_buffer, 4, EXEC_INSTR_OFFSET, inst_length);
+    data = lock_exec_buffer(execute_buffer);
+    write_draw_stream(data + EXEC_INSTR_OFFSET, 0);
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x0000ff00, 1), "Got unexpected color 0x%08lx.\n", color);
+    IDirect3DExecuteBuffer_Release(execute_buffer);
+
+    /* Rewriting the vertices between two Execute() calls, without calling
+     * SetExecuteData() again, draws the new vertices. */
+    execute_buffer = create_exec_buffer(device);
+    data = lock_exec_buffer(execute_buffer);
+    memcpy(data + EXEC_VERTEX_OFFSET, exec_update_quad1, sizeof(exec_update_quad1));
+    write_draw_stream(data + EXEC_INSTR_OFFSET, 0);
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    set_execute_data(execute_buffer, 4, EXEC_INSTR_OFFSET, inst_length);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x0000ff00, 1), "Got unexpected color 0x%08lx.\n", color);
+    data = lock_exec_buffer(execute_buffer);
+    memcpy(data + EXEC_VERTEX_OFFSET, exec_update_quad2, sizeof(exec_update_quad2));
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x000000ff, 1), "Got unexpected color 0x%08lx.\n", color);
+    IDirect3DExecuteBuffer_Release(execute_buffer);
+
+    /* D3DEXECUTEDATA.dwVertexCount does not gate the draw. The number of
+     * vertices processed comes from the D3DOP_PROCESSVERTICES instruction. */
+    execute_buffer = create_exec_buffer(device);
+    data = lock_exec_buffer(execute_buffer);
+    memcpy(data + EXEC_VERTEX_OFFSET, exec_update_quad1, sizeof(exec_update_quad1));
+    write_draw_stream(data + EXEC_INSTR_OFFSET, 0);
+    IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    set_execute_data(execute_buffer, 0, EXEC_INSTR_OFFSET, inst_length);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x0000ff00, 1), "Got unexpected color 0x%08lx.\n", color);
+    set_execute_data(execute_buffer, 1, EXEC_INSTR_OFFSET, inst_length);
+    color = execute_and_read(device, viewport, rt, execute_buffer);
+    ok(compare_color(color, 0x0000ff00, 1), "Got unexpected color 0x%08lx.\n", color);
+    IDirect3DExecuteBuffer_Release(execute_buffer);
+
+    IDirectDrawSurface_Release(rt);
+    destroy_viewport(device, viewport);
+    destroy_material(background);
+    IDirect3DDevice_Release(device);
+    IDirectDraw_Release(ddraw);
+    DestroyWindow(window);
+}
+
 static void test_execute_data(void)
 {
     IDirect3DExecuteBuffer *execute_buffer;
@@ -16870,8 +17129,8 @@ out:
     DestroyWindow(window);
 }
 
-static void check_surface_clipper(IDirectDrawSurface *surface, IDirectDrawClipper *clipper_hwnd,
-        IDirectDrawClipper *clipper_region, RECT *window_rect, DWORD style)
+static void check_surface_clipper(IDirectDrawSurface *surface,
+        IDirectDrawClipper *clipper, RECT *window_rect, DWORD style)
 {
     unsigned int c;
     DDBLTFX fx;
@@ -16883,8 +17142,10 @@ static void check_surface_clipper(IDirectDrawSurface *surface, IDirectDrawClippe
 
     fill_surface(surface, 0xffff0000);
 
-    /* Clipper with region works. */
-    hr = IDirectDrawSurface_SetClipper(surface, clipper_region);
+    /* Clippers with a region work. Clippers with a window work on Windows 98,
+     * but are ignored on modern windows. */
+
+    hr = IDirectDrawSurface_SetClipper(surface, clipper);
     ok(hr == DD_OK, "got %#lx.\n", hr);
     c = get_surface_color(surface, 101, 101);
     ok(c == 0x00ff0000, "got %#x.\n", c);
@@ -16893,21 +17154,6 @@ static void check_surface_clipper(IDirectDrawSurface *surface, IDirectDrawClippe
     c = get_surface_color(surface, 0, 0);
     ok(c == 0x00ff0000, "got %#x.\n", c);
     c = get_surface_color(surface, 101, 101);
-    ok(c == 0x0000ff00, "got %#x.\n", c);
-
-    /* Clipper with window has no effect. */
-    hr = IDirectDrawSurface_SetClipper(surface, clipper_hwnd);
-    ok(hr == DD_OK, "got %#lx.\n", hr);
-    fill_surface(surface, 0xff0000ff);
-    c = get_surface_color(surface, window_rect->left + 1, window_rect->top + 1);
-    ok(c == 0x000000ff, "got %#x.\n", c);
-
-    hr = IDirectDrawSurface_Blt(surface, NULL, NULL, NULL, DDBLT_COLORFILL | DDBLT_WAIT, &fx);
-    ok(hr == DD_OK, "got %#lx.\n", hr);
-
-    c = get_surface_color(surface, window_rect->left + 1, window_rect->top + 1);
-    ok(c == 0x0000ff00, "got %#x.\n", c);
-    c = get_surface_color(surface, 0, 0);
     ok(c == 0x0000ff00, "got %#x.\n", c);
 
     hr = IDirectDrawSurface_SetClipper(surface, NULL);
@@ -16932,15 +17178,15 @@ static void test_clipper_in_exclusive_fullscreen(void)
         { WS_POPUP | WS_VISIBLE },
     };
     IDirectDrawSurface *primary, *offscreen;
-    IDirectDrawClipper *clipper, *clipper2;
+    IDirectDrawClipper *clipper;
     DDSURFACEDESC surface_desc;
-    HWND window, clip_window;
     IDirectDraw *ddraw;
     RGNDATA *rgn_data;
     DWORD ret, style;
     RECT window_rect;
     ULONG refcount;
     unsigned int i;
+    HWND window;
     HRESULT hr;
     HRGN rgn;
 
@@ -16952,12 +17198,12 @@ static void test_clipper_in_exclusive_fullscreen(void)
     hr = IDirectDraw_CreateClipper(ddraw, 0, &clipper, NULL);
     ok(hr == DD_OK, "got %#lx.\n", hr);
 
-    hr = IDirectDraw_CreateClipper(ddraw, 0, &clipper2, NULL);
-    ok(hr == DD_OK, "got %#lx.\n", hr);
-
     window = CreateWindowA("static", "ddraw_fullscreen", WS_POPUP | WS_VISIBLE, 0, 0, 640, 480, NULL, NULL, NULL, NULL);
-
+    pump_messages();
+    hr = IDirectDraw_SetCooperativeLevel(ddraw, NULL, DDSCL_NORMAL);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
     hr = IDirectDraw_SetCooperativeLevel(ddraw, window, DDSCL_EXCLUSIVE | DDSCL_FULLSCREEN);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
     pump_messages();
 
     rgn = CreateRectRgn(100, 100, 200, 200);
@@ -16967,7 +17213,7 @@ static void test_clipper_in_exclusive_fullscreen(void)
     ret = GetRegionData(rgn, ret, rgn_data);
     ok(!!ret, "Failed to get region data.\n");
     DeleteObject(rgn);
-    hr = IDirectDrawClipper_SetClipList(clipper2, rgn_data, 0);
+    hr = IDirectDrawClipper_SetClipList(clipper, rgn_data, 0);
     ok(hr == DD_OK, "got %#lx.\n", hr);
     free(rgn_data);
 
@@ -16989,50 +17235,20 @@ static void test_clipper_in_exclusive_fullscreen(void)
     {
         winetest_push_context("test %u", i);
         style = tests[i].style;
-        clip_window = CreateWindowA("static", "ddraw_clip", style, 100, 100, 100, 100,
-                tests[i].parent ? window : NULL, NULL, NULL, NULL);
-        ok(!!clip_window, "got error %ld.\n", GetLastError());
-        pump_messages();
-
-        GetWindowRect(clip_window, &window_rect);
-        hr = IDirectDrawClipper_SetHWnd(clipper, 0, clip_window);
-        ok(hr == DD_OK, "got %#lx.\n", hr);
-
-        hr = IDirectDrawClipper_GetClipList(clipper, NULL, NULL, &ret);
-        ok(hr == DD_OK, "got %#lx.\n", hr);
-        rgn_data = malloc(ret);
-        hr = IDirectDrawClipper_GetClipList(clipper, NULL, rgn_data, &ret);
-        ok(hr == DD_OK, "got %#lx.\n", hr);
-        ok(rgn_data->rdh.dwSize == sizeof(rgn_data->rdh), "Got unexpected structure size %#lx.\n", rgn_data->rdh.dwSize);
-        ok(rgn_data->rdh.iType == RDH_RECTANGLES, "Got unexpected type %#lx.\n", rgn_data->rdh.iType);
-        if (style & WS_VISIBLE)
-        {
-            ok(rgn_data->rdh.nCount >= 1, "got %lu.\n", rgn_data->rdh.nCount);
-            if (!(style & WS_CHILD))
-                ok(EqualRect(&rgn_data->rdh.rcBound, &window_rect), "got %s, expected %s.\n",
-                        wine_dbgstr_rect(&rgn_data->rdh.rcBound), wine_dbgstr_rect(&window_rect));
-        }
-        else
-        {
-            ok(!rgn_data->rdh.nCount, "got %lu.\n", rgn_data->rdh.nCount);
-        }
-        free(rgn_data);
 
         winetest_push_context("primary");
-        check_surface_clipper(primary, clipper, clipper2, &window_rect, style);
+        check_surface_clipper(primary, clipper, &window_rect, style);
         winetest_pop_context();
 
         winetest_push_context("offscreen");
-        check_surface_clipper(offscreen, clipper, clipper2, &window_rect, style);
+        check_surface_clipper(offscreen, clipper, &window_rect, style);
         winetest_pop_context();
 
-        hr = IDirectDrawClipper_SetHWnd(clipper, 0, NULL);
-        ok(hr == DD_OK, "got %#lx.\n", hr);
-        DestroyWindow(clip_window);
-        pump_messages();
         winetest_pop_context();
     }
 
+    hr = IDirectDraw_SetCooperativeLevel(ddraw, NULL, DDSCL_NORMAL);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
     IDirectDrawClipper_Release(clipper);
     refcount = IDirectDrawSurface_Release(offscreen);
     ok(!refcount, "Got unexpected refcount %lu.\n", refcount);
@@ -17043,6 +17259,85 @@ static void test_clipper_in_exclusive_fullscreen(void)
     DestroyWindow(window);
     pump_messages();
 }
+
+static void test_sysmem_depth_fill(void)
+{
+    DDSURFACEDESC surface_desc;
+    IDirectDrawSurface *surface;
+    IDirectDraw *ddraw;
+    WORD *data, *data2;
+    HWND window;
+    DDBLTFX fx;
+    HRESULT hr;
+    LONG pitch;
+
+    window = create_window();
+    ddraw = create_ddraw();
+    ok(!!ddraw, "Failed to create a ddraw object.\n");
+    hr = IDirectDraw_SetCooperativeLevel(ddraw, window, DDSCL_NORMAL);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
+    memset(&surface_desc, 0, sizeof(surface_desc));
+    surface_desc.dwSize = sizeof(surface_desc);
+    surface_desc.dwFlags = DDSD_CAPS | DDSD_ZBUFFERBITDEPTH | DDSD_WIDTH | DDSD_HEIGHT;
+    surface_desc.ddsCaps.dwCaps = DDSCAPS_ZBUFFER | DDSCAPS_SYSTEMMEMORY;
+    surface_desc.dwZBufferBitDepth = 16;
+    surface_desc.dwWidth = 64;
+    surface_desc.dwHeight = 64;
+    hr = IDirectDraw_CreateSurface(ddraw, &surface_desc, &surface, NULL);
+    if (FAILED(hr))
+    {
+        skip("Failed to create a system memory depth buffer, hr %#lx.\n", hr);
+        IDirectDraw_Release(ddraw);
+        DestroyWindow(window);
+        return;
+    }
+    memset(&surface_desc, 0, sizeof(surface_desc));
+    surface_desc.dwSize = sizeof(surface_desc);
+    hr = IDirectDrawSurface_Lock(surface, NULL, &surface_desc, DDLOCK_WAIT, NULL);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    data = surface_desc.lpSurface;
+    pitch = surface_desc.lPitch;
+    hr = IDirectDrawSurface_Unlock(surface, NULL);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
+    data[5 * pitch / sizeof(*data) + 3] = 0x1234;
+    memset(&fx, 0, sizeof(fx));
+    fx.dwSize = sizeof(fx);
+    fx.dwFillDepth = 0xffff;
+    hr = IDirectDrawSurface_Blt(surface, NULL, NULL, NULL, DDBLT_DEPTHFILL | DDBLT_WAIT, &fx);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(data[5 * pitch / sizeof(*data) + 3] == 0xffff, "Got unexpected depth %#x.\n",
+            data[5 * pitch / sizeof(*data) + 3]);
+    ok(data[63 * pitch / sizeof(*data) + 63] == 0xffff, "Got unexpected depth %#x.\n",
+            data[63 * pitch / sizeof(*data) + 63]);
+
+    data[5 * pitch / sizeof(*data) + 3] = 0x4321;
+    memset(&surface_desc, 0, sizeof(surface_desc));
+    surface_desc.dwSize = sizeof(surface_desc);
+    hr = IDirectDrawSurface_Lock(surface, NULL, &surface_desc, DDLOCK_WAIT, NULL);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    data2 = surface_desc.lpSurface;
+    ok(data2 == data, "Got unexpected pointer %p, expected %p.\n", data2, data);
+    ok(data2[5 * pitch / sizeof(*data) + 3] == 0x4321, "Got unexpected depth %#x.\n",
+            data2[5 * pitch / sizeof(*data) + 3]);
+    ok(data2[5 * pitch / sizeof(*data) + 4] == 0xffff, "Got unexpected depth %#x.\n",
+            data2[5 * pitch / sizeof(*data) + 4]);
+    hr = IDirectDrawSurface_Unlock(surface, NULL);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
+    fx.dwFillDepth = 0x8000;
+    hr = IDirectDrawSurface_Blt(surface, NULL, NULL, NULL, DDBLT_DEPTHFILL | DDBLT_WAIT, &fx);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(data[5 * pitch / sizeof(*data) + 3] == 0x8000, "Got unexpected depth %#x.\n",
+            data[5 * pitch / sizeof(*data) + 3]);
+    ok(data[0] == 0x8000, "Got unexpected depth %#x.\n", data[0]);
+
+    IDirectDrawSurface_Release(surface);
+    IDirectDraw_Release(ddraw);
+    DestroyWindow(window);
+}
+
 
 START_TEST(ddraw1)
 {
@@ -17152,6 +17447,7 @@ return;
     test_clear();
     test_enum_surfaces();
     test_execute_data();
+    test_execute_buffer_updates();
     test_viewport();
     test_find_device();
     test_killfocus();
@@ -17173,4 +17469,5 @@ return;
     test_yuv_blit();
     test_blit_to_self();
     test_clipper_in_exclusive_fullscreen();
+    test_sysmem_depth_fill();
 }

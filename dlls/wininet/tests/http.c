@@ -172,26 +172,6 @@ static INTERNET_STATUS_CALLBACK (WINAPI *pInternetSetStatusCallbackA)(HINTERNET 
 static INTERNET_STATUS_CALLBACK (WINAPI *pInternetSetStatusCallbackW)(HINTERNET ,INTERNET_STATUS_CALLBACK);
 static BOOL (WINAPI *pInternetGetSecurityInfoByURLA)(LPSTR,PCCERT_CHAIN_CONTEXT*,DWORD*);
 
-static BOOL is_lang_english(void)
-{
-    static HMODULE hkernel32 = NULL;
-    static LANGID (WINAPI *pGetThreadUILanguage)(void) = NULL;
-    static LANGID (WINAPI *pGetUserDefaultUILanguage)(void) = NULL;
-
-    if (!hkernel32)
-    {
-        hkernel32 = GetModuleHandleA("kernel32.dll");
-        pGetThreadUILanguage = (void*)GetProcAddress(hkernel32, "GetThreadUILanguage");
-        pGetUserDefaultUILanguage = (void*)GetProcAddress(hkernel32, "GetUserDefaultUILanguage");
-    }
-    if (pGetThreadUILanguage)
-        return PRIMARYLANGID(pGetThreadUILanguage()) == LANG_ENGLISH;
-    if (pGetUserDefaultUILanguage)
-        return PRIMARYLANGID(pGetUserDefaultUILanguage()) == LANG_ENGLISH;
-
-    return PRIMARYLANGID(GetUserDefaultLangID()) == LANG_ENGLISH;
-}
-
 static int strcmp_wa(LPCWSTR strw, const char *stra)
 {
     WCHAR buf[512];
@@ -588,6 +568,7 @@ static void InternetSetFilePointer_test(const char *host, const char *path)
 {
     BYTE expect_response[8192], buf[8192];
     HINTERNET hi = 0, hic = 0, hor = 0;
+    HANDLE file = INVALID_HANDLE_VALUE;
     BOOL res, expected;
     DWORD count, size, i, pos, err;
 
@@ -707,6 +688,8 @@ static void InternetSetFilePointer_test(const char *host, const char *path)
     expected = pos == INVALID_SET_FILE_POINTER && err == ERROR_INTERNET_INVALID_OPERATION;
     ok(expected, "Expected ERROR_INTERNET_INVALID_OPERATION. Got %lu\n", err);
 
+    SET_EXPECT(INTERNET_STATUS_CLOSING_CONNECTION);
+    SET_EXPECT(INTERNET_STATUS_CONNECTION_CLOSED);
     SET_EXPECT(INTERNET_STATUS_HANDLE_CLOSING);
     InternetCloseHandle(hor);
 
@@ -844,6 +827,88 @@ static void InternetSetFilePointer_test(const char *host, const char *path)
 
     CLEAR_NOTIFIED(INTERNET_STATUS_RECEIVING_RESPONSE);
     CLEAR_NOTIFIED(INTERNET_STATUS_RESPONSE_RECEIVED);
+
+    SET_EXPECT(INTERNET_STATUS_CLOSING_CONNECTION);
+    SET_EXPECT(INTERNET_STATUS_CONNECTION_CLOSED);
+    SET_EXPECT(INTERNET_STATUS_HANDLE_CLOSING);
+    InternetCloseHandle(hor);
+
+    SET_EXPECT(INTERNET_STATUS_HANDLE_CREATED);
+    hor = HttpOpenRequestA(hic, NULL, path, NULL, NULL, NULL,
+                           INTERNET_FLAG_RELOAD,
+                           0xdeadbead);
+    ok(hor != 0x0, "HttpOpenRequest failed: %lu\n", GetLastError());
+    if(hor == 0x0) goto abort;
+    CHECK_NOTIFIED(INTERNET_STATUS_HANDLE_CREATED);
+
+    SET_OPTIONAL(INTERNET_STATUS_CONNECTING_TO_SERVER);
+    SET_OPTIONAL(INTERNET_STATUS_CONNECTED_TO_SERVER);
+
+    SET_EXPECT(INTERNET_STATUS_SENDING_REQUEST);
+    SET_EXPECT(INTERNET_STATUS_REQUEST_SENT);
+    SET_EXPECT(INTERNET_STATUS_RECEIVING_RESPONSE);
+    SET_EXPECT(INTERNET_STATUS_RESPONSE_RECEIVED);
+
+    res = HttpSendRequestA(hor, NULL, 0, NULL, 0);
+    err = !res ? GetLastError() : NO_ERROR;
+    expected = res && err == NO_ERROR;
+    ok(expected, "HttpSendRequest failed: %lu\n", err);
+
+    CHECK_NOTIFIED(INTERNET_STATUS_SENDING_REQUEST);
+    CHECK_NOTIFIED(INTERNET_STATUS_REQUEST_SENT);
+    CHECK_NOTIFIED(INTERNET_STATUS_RECEIVING_RESPONSE);
+    CHECK_NOTIFIED(INTERNET_STATUS_RESPONSE_RECEIVED);
+
+    SetLastError(0xdeadbeef);
+    res = InternetReadFile(hor, buf, 10, &count);
+    err = !res ? GetLastError() : NO_ERROR;
+    ok(res, "InternetReadFile failed: %lu\n", err);
+    ok(count, "InternetReadFile returned no content\n");
+
+    SetLastError(0xdeadbeef);
+    pos = InternetSetFilePointer(hor, INT_MAX, NULL, FILE_BEGIN, 0);
+    err = pos == INVALID_SET_FILE_POINTER ? GetLastError() : NO_ERROR;
+    expected = pos == INT_MAX && err == NO_ERROR;
+    ok(expected, "Expected position %#x. Got %#lx. GetLastError() %lu\n", INT_MAX, pos, err);
+
+    SetLastError(0xdeadbeef);
+    res = InternetReadFile(hor, buf, 1024, &count);
+    err = !res ? GetLastError() : NO_ERROR;
+    ok(!res, "InternetReadFile succeeded unexpectedly\n");
+    ok(err == ERROR_NOACCESS, "InternetReadFile unexpected error %lu\n", err);
+
+    SetLastError(0xdeadbeef);
+    res = InternetReadFile(hor, buf, 1024, &count);
+    err = !res ? GetLastError() : NO_ERROR;
+    ok(!res, "InternetReadFile succeeded unexpectedly\n");
+    ok(err == ERROR_INTERNET_INCORRECT_HANDLE_STATE, "InternetReadFile unexpected error %lu\n", err);
+
+    SetLastError(0xdeadbeef);
+    pos = InternetSetFilePointer(hor, 0, NULL, FILE_BEGIN, 0);
+    err = pos == INVALID_SET_FILE_POINTER ? GetLastError() : NO_ERROR;
+    expected = pos == INVALID_SET_FILE_POINTER && err == ERROR_INTERNET_INVALID_OPERATION;
+    ok(expected, "Expected position %#x. Got %#lx. GetLastError() %lu\n", INVALID_SET_FILE_POINTER, pos, err);
+
+    count = 0;
+    SetLastError(0xdeadbeef);
+    res = InternetQueryDataAvailable(hor, &count, 0x0, 0x0);
+    err = !res ? GetLastError() : NO_ERROR;
+    ok(!res, "InternetQueryDataAvailable succeeded unexpectedly\n");
+    ok(err == ERROR_INTERNET_INCORRECT_HANDLE_STATE, "InternetQueryDataAvailable unexpected error %lu\n", err);
+    ok(count == 0, "InternetQueryDataAvailable unexpected count: %lu\n", count);
+
+    size = ARRAY_SIZE(buf);
+    res = InternetQueryOptionA(hor, INTERNET_OPTION_URL, buf, &size);
+    ok(res, "InternetQueryOptionA(INTERNET_OPTION_URL) failed with error %ld\n", GetLastError());
+
+    res = TRUE;
+    res = InternetSetOptionA(hor, INTERNET_OPTION_HTTP_DECODING, &res, sizeof(res));
+    ok(res, "InternetSetOption(INTERNET_OPTION_HTTP_DECODING) failed: %ld\n", GetLastError());
+
+    res = InternetLockRequestFile(hor, &file);
+    if (res)
+        InternetUnlockRequestFile(file);
+    ok(res, "InternetLockRequestFile failed: %ld\n", GetLastError());
 
 abort:
     SET_OPTIONAL(INTERNET_STATUS_CLOSING_CONNECTION);
@@ -3014,6 +3079,11 @@ static void test_proxy_direct(int port)
     hr = HttpOpenRequestA(hc, NULL, "/test2", NULL, NULL, NULL, 0, 0);
     ok(hr != NULL, "HttpOpenRequest failed\n");
 
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_PROXY_PASSWORD, NULL, NULL);
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+
     sz = 0;
     SetLastError(0xdeadbeef);
     r = InternetQueryOptionA(hr, INTERNET_OPTION_PROXY_PASSWORD, NULL, &sz);
@@ -3021,7 +3091,26 @@ static void test_proxy_direct(int port)
     ok(!r, "unexpected success\n");
     ok(sz == 1, "got %lu\n", sz);
 
+    sz = 0xbeef;
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_PROXY_PASSWORD, NULL, &sz);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+    ok(sz == 1, "got %lu\n", sz);
+
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_PROXY_USERNAME, NULL, NULL);
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+
     sz = 0;
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_PROXY_USERNAME, NULL, &sz);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+    ok(sz == 1, "got %lu\n", sz);
+
+    sz = 0xbeef;
     SetLastError(0xdeadbeef);
     r = InternetQueryOptionA(hr, INTERNET_OPTION_PROXY_USERNAME, NULL, &sz);
     ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
@@ -3040,6 +3129,11 @@ static void test_proxy_direct(int port)
     ok(r, "unexpected failure %lu\n", GetLastError());
     ok(!sz, "got %lu\n", sz);
 
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_PASSWORD, NULL, NULL);
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+
     sz = 0;
     SetLastError(0xdeadbeef);
     r = InternetQueryOptionA(hr, INTERNET_OPTION_PASSWORD, NULL, &sz);
@@ -3047,7 +3141,26 @@ static void test_proxy_direct(int port)
     ok(!r, "unexpected success\n");
     ok(sz == 1, "got %lu\n", sz);
 
+    sz = 0xbeef;
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_PASSWORD, NULL, &sz);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+    ok(sz == 1, "got %lu\n", sz);
+
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_USERNAME, NULL, NULL);
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+
     sz = 0;
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_USERNAME, NULL, &sz);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+    ok(sz == 1, "got %lu\n", sz);
+
+    sz = 0xbeef;
     SetLastError(0xdeadbeef);
     r = InternetQueryOptionA(hr, INTERNET_OPTION_USERNAME, NULL, &sz);
     ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
@@ -3066,7 +3179,19 @@ static void test_proxy_direct(int port)
     ok(r, "unexpected failure %lu\n", GetLastError());
     ok(!sz, "got %lu\n", sz);
 
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_URL, NULL, NULL);
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+
     sz = 0;
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hr, INTERNET_OPTION_URL, NULL, &sz);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+    ok(sz == 34, "got %lu\n", sz);
+
+    sz = 0xbeef;
     SetLastError(0xdeadbeef);
     r = InternetQueryOptionA(hr, INTERNET_OPTION_URL, NULL, &sz);
     ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
@@ -3149,6 +3274,25 @@ static void test_proxy_direct(int port)
 
     r = InternetSetOptionA(hi, INTERNET_OPTION_USER_AGENT, useragent, 1);
     ok(r, "failed to set useragent\n");
+
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hi, INTERNET_OPTION_USER_AGENT, NULL, NULL);
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+
+    sz = 0;
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hi, INTERNET_OPTION_USER_AGENT, NULL, &sz);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+    ok(sz == strlen(useragent) + 1, "got %lu\n", sz);
+
+    sz = 0xbeef;
+    SetLastError(0xdeadbeef);
+    r = InternetQueryOptionA(hi, INTERNET_OPTION_USER_AGENT, NULL, &sz);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
+    ok(!r, "unexpected success\n");
+    ok(sz == strlen(useragent) + 1, "got %lu\n", sz);
 
     buffer[0] = 0;
     sz = 0;
@@ -6994,6 +7138,8 @@ static void test_cert_struct(HINTERNET req, const cert_struct_test_t *test)
     DWORD size;
     BOOL res;
 
+    SetThreadPreferredUILanguages( MUI_LANGUAGE_NAME, L"en-US\0", NULL );
+
     memset(&info, 0x5, sizeof(info));
 
     size = sizeof(info);
@@ -7014,11 +7160,10 @@ static void test_cert_struct(HINTERNET req, const cert_struct_test_t *test)
     ok(!info.lpszProtocolName, "lpszProtocolName = %s\n", info.lpszProtocolName);
     ok(info.dwKeySize >= 128 && info.dwKeySize <= 256, "dwKeySize = %lu\n", info.dwKeySize);
 
-    if (is_lang_english())
-        test_cert_struct_string(req, &info);
-    else
-        skip("Skipping tests that are English-only\n");
+    test_cert_struct_string(req, &info);
     release_cert_info(&info);
+
+    SetThreadPreferredUILanguages( MUI_LANGUAGE_NAME, NULL, NULL );
 }
 
 #define test_security_info(a,b,c) _test_security_info(__LINE__,a,b,c)

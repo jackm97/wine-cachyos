@@ -1,6 +1,9 @@
 MODULE    = user.exe16
 IMPORTS   = mpr user32 gdi32 win32u
+ENABLE_ARCHS = $(WIN16_ARCH)
 EXTRADLLFLAGS = -m16 -Wb,--main-module,user32.dll,--heap,65520
+
+VER_PRODUCTVERSION = 1,0,0,0
 
 SOURCES = \
 	bidi.c \
@@ -10,5 +13,4 @@ SOURCES = \
 	message.c \
 	network.c \
 	user.c \
-	version.rc \
 	window.c

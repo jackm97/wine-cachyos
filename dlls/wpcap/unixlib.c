@@ -23,7 +23,6 @@
 
 #include "config.h"
 
-#ifdef HAVE_PCAP_PCAP_H
 #include <pcap/pcap.h>
 
 #include <assert.h>
@@ -31,7 +30,6 @@
 #include <stdlib.h>
 #include <limits.h>
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
@@ -1050,5 +1048,3 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
 C_ASSERT( ARRAYSIZE(__wine_unix_call_wow64_funcs) == unix_funcs_count );
 
 #endif /* _WIN64 */
-
-#endif /* HAVE_PCAP_PCAP_H */

@@ -33,7 +33,6 @@
 #include <gst/gl/gl.h>
 
 #include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "winternl.h"
 #include "dshow.h"
 

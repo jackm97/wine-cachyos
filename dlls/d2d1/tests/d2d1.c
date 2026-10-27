@@ -139,6 +139,15 @@ static UINT32 _effect_get_bool_prop(ID2D1Effect *effect, UINT32 prop, int line)
     return v;
 }
 
+#define effect_get_mat4x4_prop(a,b,c) _effect_get_mat4x4_prop(a,b,c,__LINE__)
+static void _effect_get_mat4x4_prop(ID2D1Effect *effect, UINT32 prop, D2D1_MATRIX_4X4_F *m, int line)
+{
+    HRESULT hr;
+
+    hr = ID2D1Effect_GetValue(effect, prop, D2D1_PROPERTY_TYPE_MATRIX_4X4, (BYTE *)m, sizeof(*m));
+    ok_(__FILE__, line)(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+}
+
 #define effect_get_mat5x4_prop(a,b,c) _effect_get_mat5x4_prop(a,b,c,__LINE__)
 static void _effect_get_mat5x4_prop(ID2D1Effect *effect, UINT32 prop, D2D1_MATRIX_5X4_F *m, int line)
 {
@@ -4846,6 +4855,14 @@ static void test_path_geometry(BOOL d3d11)
     /* ComputeArea */
     hr = ID2D1Factory_CreatePathGeometry(factory, &geometry);
     ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    area = 123.0f;
+    hr = ID2D1PathGeometry_ComputeArea(geometry, NULL, 1.0f, &area);
+    todo_wine
+    ok(hr == D2DERR_WRONG_STATE, "Got unexpected hr %#lx.\n", hr);
+    todo_wine
+    ok(area == 123.0f, "Unexpected area value %.8e.\n", area);
+
     hr = ID2D1PathGeometry_Open(geometry, &sink);
     ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
 
@@ -14476,6 +14493,143 @@ static void test_effect_scale(BOOL d3d11)
     release_test_context(&ctx);
 }
 
+static void test_effect_premultiply(BOOL d3d11)
+{
+    struct d2d1_test_context ctx;
+    ID2D1DeviceContext *context;
+    ID2D1Effect *effect;
+    unsigned int count;
+    HRESULT hr;
+
+    if (!init_test_context(&ctx, d3d11))
+        return;
+
+    context = ctx.context;
+
+    hr = ID2D1DeviceContext_CreateEffect(context, &CLSID_D2D1Premultiply, &effect);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    check_system_properties(effect);
+
+    count = ID2D1Effect_GetPropertyCount(effect);
+    ok(!count, "Got unexpected property count %u.\n", count);
+
+    ID2D1Effect_Release(effect);
+    release_test_context(&ctx);
+}
+
+static void test_effect_3d_transform(BOOL d3d11)
+{
+    static const struct effect_property properties[] =
+    {
+        { L"InterpolationMode", D2D1_3DTRANSFORM_PROP_INTERPOLATION_MODE, D2D1_PROPERTY_TYPE_ENUM },
+        { L"BorderMode", D2D1_3DTRANSFORM_PROP_BORDER_MODE, D2D1_PROPERTY_TYPE_ENUM },
+        { L"TransformMatrix", D2D1_3DTRANSFORM_PROP_TRANSFORM_MATRIX, D2D1_PROPERTY_TYPE_MATRIX_4X4 },
+    };
+    static const D2D1_MATRIX_4X4_F identity =
+    {
+        ._11 = 1.0f,
+        ._22 = 1.0f,
+        ._33 = 1.0f,
+        ._44 = 1.0f,
+    };
+    struct d2d1_test_context ctx;
+    ID2D1DeviceContext *context;
+    unsigned int count, i;
+    ID2D1Effect *effect;
+    D2D1_MATRIX_4X4_F m;
+    WCHAR name[64];
+    HRESULT hr;
+    UINT32 v;
+
+    if (!init_test_context(&ctx, d3d11))
+        return;
+
+    context = ctx.context;
+
+    hr = ID2D1DeviceContext_CreateEffect(context, &CLSID_D2D13DTransform, &effect);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    check_system_properties(effect);
+
+    count = ID2D1Effect_GetPropertyCount(effect);
+    ok(count == 3, "Got unexpected property count %u.\n", count);
+
+    for (i = 0; i < ARRAY_SIZE(properties); ++i)
+    {
+        hr = ID2D1Effect_GetPropertyName(effect, properties[i].index, name, 64);
+        ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+        ok(!wcscmp(name, properties[i].name), "%u Unexpected name %s.\n", i, wine_dbgstr_w(name));
+    }
+
+    v = effect_get_enum_prop(effect, D2D1_3DTRANSFORM_PROP_INTERPOLATION_MODE);
+    ok(v == D2D1_3DTRANSFORM_INTERPOLATION_MODE_LINEAR, "Unexpected value %#x.\n", v);
+
+    v = effect_get_enum_prop(effect, D2D1_3DTRANSFORM_PROP_BORDER_MODE);
+    ok(v == D2D1_BORDER_MODE_SOFT, "Unexpected value %#x.\n", v);
+
+    effect_get_mat4x4_prop(effect, D2D1_3DTRANSFORM_PROP_TRANSFORM_MATRIX, &m);
+    ok(!memcmp(&m, &identity, sizeof(m)), "Unexpected value.\n");
+
+    ID2D1Effect_Release(effect);
+    release_test_context(&ctx);
+}
+
+static void test_effect_color_management(BOOL d3d11)
+{
+    static const struct effect_property properties[] =
+    {
+        { L"SourceColorContext", D2D1_COLORMANAGEMENT_PROP_SOURCE_COLOR_CONTEXT, D2D1_PROPERTY_TYPE_IUNKNOWN },
+        { L"SourceRenderingIntent", D2D1_COLORMANAGEMENT_PROP_SOURCE_RENDERING_INTENT, D2D1_PROPERTY_TYPE_ENUM },
+        { L"DestinationColorContext", D2D1_COLORMANAGEMENT_PROP_DESTINATION_COLOR_CONTEXT, D2D1_PROPERTY_TYPE_IUNKNOWN },
+        { L"DestinationRenderingIntent", D2D1_COLORMANAGEMENT_PROP_DESTINATION_RENDERING_INTENT, D2D1_PROPERTY_TYPE_ENUM },
+        { L"AlphaMode", D2D1_COLORMANAGEMENT_PROP_ALPHA_MODE, D2D1_PROPERTY_TYPE_ENUM },
+        { L"Quality", D2D1_COLORMANAGEMENT_PROP_QUALITY, D2D1_PROPERTY_TYPE_ENUM },
+    };
+    struct d2d1_test_context ctx;
+    ID2D1DeviceContext *context;
+    unsigned int count, i;
+    ID2D1Effect *effect;
+    WCHAR name[64];
+    HRESULT hr;
+    UINT32 v;
+
+    if (!init_test_context(&ctx, d3d11))
+        return;
+
+    context = ctx.context;
+
+    hr = ID2D1DeviceContext_CreateEffect(context, &CLSID_D2D1ColorManagement, &effect);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    check_system_properties(effect);
+
+    count = ID2D1Effect_GetPropertyCount(effect);
+    ok(count == 6, "Got unexpected property count %u.\n", count);
+
+    for (i = 0; i < ARRAY_SIZE(properties); ++i)
+    {
+        hr = ID2D1Effect_GetPropertyName(effect, properties[i].index, name, 64);
+        ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+        ok(!wcscmp(name, properties[i].name), "%u Unexpected name %s.\n", i, wine_dbgstr_w(name));
+    }
+
+    v = effect_get_enum_prop(effect, D2D1_COLORMANAGEMENT_PROP_SOURCE_RENDERING_INTENT);
+    ok(v == D2D1_COLORMANAGEMENT_RENDERING_INTENT_PERCEPTUAL, "Unexpected value %#x.\n", v);
+
+    v = effect_get_enum_prop(effect, D2D1_COLORMANAGEMENT_PROP_DESTINATION_RENDERING_INTENT);
+    ok(v == D2D1_COLORMANAGEMENT_RENDERING_INTENT_PERCEPTUAL, "Unexpected value %#x.\n", v);
+
+    v = effect_get_enum_prop(effect, D2D1_COLORMANAGEMENT_PROP_ALPHA_MODE);
+    ok(v == D2D1_COLORMANAGEMENT_ALPHA_MODE_PREMULTIPLIED, "Unexpected value %#x.\n", v);
+
+    v = effect_get_enum_prop(effect, D2D1_COLORMANAGEMENT_PROP_QUALITY);
+    ok(v == D2D1_COLORMANAGEMENT_QUALITY_NORMAL, "Unexpected value %#x.\n", v);
+
+    ID2D1Effect_Release(effect);
+    release_test_context(&ctx);
+}
+
 static void test_registered_effects(BOOL d3d11)
 {
     UINT32 ret, count, count2, count3;
@@ -17760,6 +17914,239 @@ static void test_path_geometry_stream(BOOL d3d11)
     release_test_context(&ctx);
 }
 
+static void test_transformed_geometry(BOOL d3d11)
+{
+    ID2D1TransformedGeometry *geometry, *geometry2;
+    ID2D1PathGeometry *path_geometry;
+    struct d2d1_test_context ctx;
+    D2D1_MATRIX_3X2_F matrix;
+    ID2D1GeometrySink *sink;
+    D2D1_POINT_2F point;
+    D2D1_RECT_F bounds;
+    BOOL match;
+    float area;
+    HRESULT hr;
+
+    if (!init_test_context(&ctx, d3d11))
+        return;
+
+    hr = ID2D1Factory_CreatePathGeometry(ctx.factory, &path_geometry);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    /* Path geometry hasn't been populated yet. */
+    set_matrix_identity(&matrix);
+    translate_matrix(&matrix, 240.0f, 720.0f);
+    hr = ID2D1Factory_CreateTransformedGeometry(ctx.factory, (ID2D1Geometry *)path_geometry,
+            &matrix, &geometry);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    translate_matrix(&matrix, 240.0f, 720.0f);
+    hr = ID2D1Factory_CreateTransformedGeometry(ctx.factory, (ID2D1Geometry *)geometry,
+            &matrix, &geometry2);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    set_rect(&bounds, 1.0f, 2.0f, 3.0f, 4.0f);
+    hr = ID2D1TransformedGeometry_GetBounds(geometry, NULL, &bounds);
+    todo_wine
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    if (hr == S_OK)
+    {
+        match = compare_rect(&bounds, INFINITY, INFINITY, FLT_MAX, FLT_MAX, 0);
+        ok(match, "Got unexpected bounds {%.8e, %.8e, %.8e, %.8e}.\n",
+                bounds.left, bounds.top, bounds.right, bounds.bottom);
+    }
+
+    set_rect(&bounds, 1.0f, 2.0f, 3.0f, 4.0f);
+    hr = ID2D1TransformedGeometry_GetBounds(geometry2, NULL, &bounds);
+    todo_wine
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    if (hr == S_OK)
+    {
+        match = compare_rect(&bounds, INFINITY, INFINITY, FLT_MAX, FLT_MAX, 0);
+        ok(match, "Got unexpected bounds {%.8e, %.8e, %.8e, %.8e}.\n",
+                bounds.left, bounds.top, bounds.right, bounds.bottom);
+    }
+
+    set_rect(&bounds, 1.0f, 2.0f, 3.0f, 4.0f);
+    hr = ID2D1PathGeometry_GetBounds(path_geometry, NULL, &bounds);
+    ok(hr == D2DERR_WRONG_STATE, "Got unexpected hr %#lx.\n", hr);
+    match = compare_rect(&bounds, 1.0f, 2.0f, 3.0f, 4.0f, 0);
+    ok(match, "Got unexpected bounds {%.8e, %.8e, %.8e, %.8e}.\n",
+            bounds.left, bounds.top, bounds.right, bounds.bottom);
+
+    area = 123.0f;
+    hr = ID2D1TransformedGeometry_ComputeArea(geometry, NULL, 1.0f, &area);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(area == 0.0f, "Unexpected value %.8e.\n", area);
+
+    area = 123.0f;
+    hr = ID2D1TransformedGeometry_ComputeArea(geometry2, NULL, 1.0f, &area);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(area == 0.0f, "Unexpected value %.8e.\n", area);
+
+    hr = ID2D1PathGeometry_Open(path_geometry, &sink);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    set_point(&point, 0.0f, 0.0f);
+    ID2D1GeometrySink_BeginFigure(sink, point, D2D1_FIGURE_BEGIN_FILLED);
+    line_to(sink, 10.0f, 10.0f);
+    line_to(sink, 0.0f, 10.0f);
+    ID2D1GeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
+    hr = ID2D1GeometrySink_Close(sink);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ID2D1GeometrySink_Release(sink);
+
+    area = 0.0f;
+    hr = ID2D1TransformedGeometry_ComputeArea(geometry, NULL, 0.0f, &area);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(compare_float(area, 50.0f, 0), "Unexpected value %.8e.\n", area);
+
+    area = 0.0f;
+    hr = ID2D1TransformedGeometry_ComputeArea(geometry2, NULL, 0.0f, &area);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(compare_float(area, 50.0f, 0), "Unexpected value %.8e.\n", area);
+
+    set_rect(&bounds, 1.0f, 2.0f, 3.0f, 4.0f);
+    hr = ID2D1TransformedGeometry_GetBounds(geometry, NULL, &bounds);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    match = compare_rect(&bounds, 240.0f, 720.0f, 250.0f, 730.0f, 0);
+    ok(match, "Got unexpected bounds {%.8e, %.8e, %.8e, %.8e}.\n",
+            bounds.left, bounds.top, bounds.right, bounds.bottom);
+
+    set_rect(&bounds, 1.0f, 2.0f, 3.0f, 4.0f);
+    hr = ID2D1TransformedGeometry_GetBounds(geometry2, NULL, &bounds);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    match = compare_rect(&bounds, 720.0f, 2160.0f, 730.0f, 2170.0f, 0);
+    ok(match, "Got unexpected bounds {%.8e, %.8e, %.8e, %.8e}.\n",
+            bounds.left, bounds.top, bounds.right, bounds.bottom);
+
+    ID2D1TransformedGeometry_Release(geometry2);
+    ID2D1TransformedGeometry_Release(geometry);
+    ID2D1PathGeometry_Release(path_geometry);
+
+    release_test_context(&ctx);
+}
+
+static IDWriteFontFace *get_tahoma(IDWriteFactory *factory)
+{
+    IDWriteFontCollection *collection;
+    IDWriteFontFace *fontface = NULL;
+    IDWriteFontFamily *family;
+    IDWriteFont *font;
+    UINT32 index;
+    BOOL exists;
+    HRESULT hr;
+
+    hr = IDWriteFactory_GetSystemFontCollection(factory, &collection, FALSE);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    index = ~0;
+    exists = FALSE;
+    hr = IDWriteFontCollection_FindFamilyName(collection, L"Tahoma", &index, &exists);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    if (!exists) goto not_found;
+
+    hr = IDWriteFontCollection_GetFontFamily(collection, index, &family);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IDWriteFontFamily_GetFirstMatchingFont(family, DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, &font);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IDWriteFont_CreateFontFace(font, &fontface);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IDWriteFont_Release(font);
+
+    IDWriteFontFamily_Release(family);
+not_found:
+    IDWriteFontCollection_Release(collection);
+    return fontface;
+}
+
+static void test_glyph_run_world_bounds(BOOL d3d11)
+{
+    ID2D1DeviceContext *device_context, *device_context2;
+    IDWriteFactory *dwrite_factory;
+    struct d2d1_test_context ctx;
+    D2D1_RECT_F bounds, bounds2;
+    DWRITE_GLYPH_RUN glyph_run;
+    IDWriteFontFace *fontface;
+    D2D1_MATRIX_3X2_F matrix;
+    D2D1_POINT_2F origin;
+    ID2D1Device *device;
+    UINT16 indices[1];
+    HRESULT hr;
+    UINT32 ch;
+
+    if (!init_test_context(&ctx, d3d11))
+        return;
+
+    device_context = ctx.context;
+
+    hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, &IID_IDWriteFactory, (IUnknown **)&dwrite_factory);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    fontface = get_tahoma(dwrite_factory);
+
+    ch = 'A';
+    *indices = 0;
+    hr = IDWriteFontFace_GetGlyphIndices(fontface, &ch, 1, indices);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(!!*indices, "Unexpected index %u.\n", indices[0]);
+
+    glyph_run.fontFace = fontface;
+    glyph_run.fontEmSize = 360.0f;
+    glyph_run.glyphCount = 1;
+    glyph_run.glyphIndices = indices;
+    glyph_run.glyphAdvances = NULL;
+    glyph_run.glyphOffsets = NULL;
+    glyph_run.isSideways = FALSE;
+    glyph_run.bidiLevel = 0;
+
+    set_point(&origin, 0.0f, 0.0f);
+    hr = ID2D1DeviceContext_GetGlyphRunWorldBounds(device_context, origin, &glyph_run,
+            DWRITE_MEASURING_MODE_NATURAL, &bounds);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    set_point(&origin, -1.0f, 2.0f);
+    hr = ID2D1DeviceContext_GetGlyphRunWorldBounds(device_context, origin, &glyph_run,
+            DWRITE_MEASURING_MODE_NATURAL, &bounds2);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(bounds2.left == bounds.left + origin.x, "Unexpected bound %.8e.\n", bounds2.left);
+    ok(bounds2.top == bounds.top + origin.y, "Unexpected bound %.8e %.8e.\n", bounds2.top, bounds.top);
+
+    set_matrix_identity(&matrix);
+    translate_matrix(&matrix, 2.0f, -1.0f);
+    ID2D1DeviceContext_SetTransform(device_context, &matrix);
+
+    set_point(&origin, 0.0f, 0.0f);
+    hr = ID2D1DeviceContext_GetGlyphRunWorldBounds(device_context, origin, &glyph_run,
+            DWRITE_MEASURING_MODE_NATURAL, &bounds2);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(bounds2.left == bounds.left + matrix._31, "Unexpected bound %.8e.\n", bounds2.left);
+    ok(bounds2.top == bounds.top + matrix._32, "Unexpected bound %.8e.\n", bounds2.top);
+
+    /* Without a target */
+    ID2D1DeviceContext_GetDevice(device_context, &device);
+
+    hr = ID2D1Device_CreateDeviceContext(device, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &device_context2);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+
+    set_point(&origin, 0.0f, 0.0f);
+    hr = ID2D1DeviceContext_GetGlyphRunWorldBounds(device_context, origin, &glyph_run,
+            DWRITE_MEASURING_MODE_NATURAL, &bounds);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(!memcmp(&bounds2, &bounds, sizeof(bounds)), "Unexpected bounds.\n");
+
+    ID2D1DeviceContext_Release(device_context2);
+
+    ID2D1Device_Release(device);
+
+    IDWriteFontFace_Release(fontface);
+    IDWriteFactory_Release(dwrite_factory);
+
+    release_test_context(&ctx);
+}
+
 static void test_sprite_batch(BOOL d3d11)
 {
     D2D1_MATRIX_3X2_F transforms[4];
@@ -18008,6 +18395,9 @@ START_TEST(d2d1)
     queue_d3d10_test(test_effect_hue_rotation);
     queue_d3d10_test(test_effect_saturation);
     queue_d3d10_test(test_effect_scale);
+    queue_d3d10_test(test_effect_premultiply);
+    queue_d3d10_test(test_effect_3d_transform);
+    queue_d3d10_test(test_effect_color_management);
     queue_test(test_transform_graph);
     queue_test(test_offset_transform);
     queue_test(test_blend_transform);
@@ -18028,6 +18418,8 @@ START_TEST(d2d1)
     queue_test(test_mesh);
     queue_test(test_geometry_realization);
     queue_d3d10_test(test_path_geometry_stream);
+    queue_d3d10_test(test_transformed_geometry);
+    queue_d3d10_test(test_glyph_run_world_bounds);
     queue_test(test_sprite_batch);
 
     run_queued_tests();

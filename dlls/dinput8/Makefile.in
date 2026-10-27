@@ -5,6 +5,9 @@ EXTRADEFS = -DDIRECTINPUT_VERSION=0x0800
 EXTRADLLFLAGS = -Wb,--prefer-native
 PARENTSRC = ../dinput
 
+VER_FILEDESCRIPTION_STR = "Wine DirectInput 8"
+VER_PRODUCTVERSION      = 5,1,2600,881
+
 SOURCES = \
 	ansi.c \
 	config.c \
@@ -16,5 +19,4 @@ SOURCES = \
 	dinput_main.c \
 	joystick_hid.c \
 	keyboard.c \
-	mouse.c \
-	version.rc
+	mouse.c

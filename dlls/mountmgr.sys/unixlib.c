@@ -29,12 +29,25 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #ifdef HAVE_SYS_STATFS_H
 #include <sys/statfs.h>
 #endif
 #ifdef HAVE_SYS_STATVFS_H
 # include <sys/statvfs.h>
+#endif
+#ifdef MAJOR_IN_MKDEV
+#include <sys/mkdev.h>
+#elif defined(MAJOR_IN_SYSMACROS)
+#include <sys/sysmacros.h>
+#endif
+#ifdef HAVE_LINUX_MAJOR_H
+# include <linux/major.h>
+#endif
+#ifdef __APPLE__
+# include <CoreFoundation/CoreFoundation.h>
+# include <sys/param.h>
 #endif
 #include <unistd.h>
 
@@ -45,7 +58,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(mountmgr);
 
 static struct run_loop_params run_loop_params;
 
-static NTSTATUS errno_to_status( int err )
+NTSTATUS errno_to_status( int err )
 {
     TRACE( "errno = %d\n", err );
     switch (err)
@@ -311,6 +324,35 @@ static NTSTATUS set_dosdev_symlink( void *args )
     return status;
 }
 
+#ifdef __APPLE__
+static LONGLONG get_free_bytes_for_important_data(int fd)
+{
+    CFURLRef url = NULL;
+    CFNumberRef num = NULL;
+    char *path = NULL;
+    LONGLONG space = -1;
+
+    if (!(path = malloc( MAXPATHLEN ))) goto done;
+    if (fcntl( fd, F_GETPATH, path ) == -1) goto done;
+    if (!(url = CFURLCreateFromFileSystemRepresentation( NULL, (UInt8 *)path, strlen( path ), false ))) goto done;
+    if (!CFURLCopyResourcePropertyForKey( url, kCFURLVolumeAvailableCapacityForImportantUsageKey, &num, NULL )) goto done;
+    CFNumberGetValue( num, kCFNumberLongLongType, &space );
+    if (space == 0)
+    {
+        /* It's unlikely that a writeable disk has exactly 0 free bytes. This
+         * probably means the disk is read-only, or is not APFS. Fall back to
+         * statfs. */
+        space = -1;
+    }
+
+done:
+    free( path );
+    if (url) CFRelease( url );
+    if (num) CFRelease( num );
+    return space;
+}
+#endif
+
 static NTSTATUS get_volume_size_info( void *args )
 {
     const struct get_volume_size_info_params *params = args;
@@ -326,6 +368,10 @@ static NTSTATUS get_volume_size_info( void *args )
     struct statvfs stfs;
 #else
     struct statfs stfs;
+#endif
+
+#ifdef __APPLE__
+    LONGLONG important_free_bytes;
 #endif
 
     if (!unix_mount) return STATUS_NO_SUCH_DEVICE;
@@ -365,6 +411,12 @@ static NTSTATUS get_volume_size_info( void *args )
     }
     bsize = stfs.f_bsize;
 #endif
+
+#ifdef __APPLE__
+    important_free_bytes = get_free_bytes_for_important_data( fd );
+    if (important_free_bytes != -1) stfs.f_bavail = stfs.f_bfree = important_free_bytes / bsize;
+#endif
+
     if (bsize == 2048)  /* assume CD-ROM */
     {
         info->bytes_per_sector = 2048;
@@ -450,6 +502,21 @@ static NTSTATUS check_device_access( void *args )
     if (access( unix_device, R_OK )) return STATUS_ACCESS_DENIED;
 #endif
     return STATUS_SUCCESS;
+}
+
+static NTSTATUS dismount( void *args )
+{
+    const struct dismount_params *params = args;
+    NTSTATUS status;
+    int fd;
+
+    if ((fd = open( params->unix_device, O_RDONLY )) < 0)
+        return errno_to_status( errno );
+
+    status = ntdll_unmount_device( fd, params->unix_mount );
+
+    close( fd );
+    return status;
 }
 
 static NTSTATUS detect_serial_ports( void *args )
@@ -579,6 +646,10 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     read_volume_file,
     match_unixdev,
     check_device_access,
+    cdrom_open,
+    cdrom_close,
+    cdrom_ioctl,
+    dismount,
     detect_serial_ports,
     detect_parallel_ports,
     set_shell_folder,

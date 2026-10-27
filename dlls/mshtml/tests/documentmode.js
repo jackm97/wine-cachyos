@@ -2523,7 +2523,9 @@ async_test("weakmap_obj", function() {
 
     r = external.newRefTest();
     ok(r.ref === 1, "wrong ref after newRefTest: " + r.ref);
-    o = { val: r.get(), map: s };
+    o = document.createElement("div");
+    o.val = r.get();
+    o.map = s;
     s.set(o, o);
     ok(r.ref > 1, "map entry released");
 
@@ -2892,7 +2894,6 @@ sync_test("elem_attr", function() {
     ok(r === (v < 9 ? "test" : "string"), "onclick attr = " + r);
     r = elem.removeAttribute("onclick");
     ok(r === (v < 9 ? true : undefined), "removeAttribute returned " + r);
-    todo_wine_if(v >= 9).
     ok(elem.onclick === null, "removed onclick = " + elem.onclick);
 
     elem.setAttribute("ondblclick", arr);
@@ -3168,6 +3169,39 @@ sync_test("elem_attrNS", function() {
     elem.setAttributeNS(svg_ns, "numattr", 13);
     r = elem.getAttributeNS(svg_ns, "numattr");
     ok(r === "13", "numattr = " + r);
+});
+
+
+var rec;
+
+sync_test("event attr", function() {
+    document.body.innerHTML = '<div></div>';
+    var elem = document.body.firstChild, prev;
+    var v = document.documentMode;
+
+    ok(elem.onclick === null, "elem.onclick = " + elem.onclick);
+    elem.setAttribute("onclick", "rec += 'attr';");
+    if (v < 8)
+        ok(elem.onclick === "rec += 'attr';", "elem.onclick = " + elem.onclick);
+    else
+        todo_wine_if(v == 8).
+        ok(typeof(elem.onclick) === "function", "elem.onclick = " + elem.onclick);
+    rec = "";
+    elem.click();
+    todo_wine_if(v == 8).
+    ok(rec === (v < 8 ? "" : "attr"), "unexpected rec = " + rec );
+
+    elem.setAttribute("onclick", "rec += 'attr2';");
+    rec = "";
+    elem.click();
+    todo_wine_if(v == 8).
+    ok(rec === (v < 8 ? "" : "attr2"), "unexpected rec = " + rec );
+
+    elem.onclick = "rec += 'prop';";
+    ok(elem.onclick === (v < 9 ? "rec += 'prop';" : null), "elem.onclick = " + elem.onclick);
+    rec = "";
+    elem.click();
+    ok(rec === "", "unexpected rec = " + rec );
 });
 
 sync_test("builtins_diffs", function() {
@@ -4661,6 +4695,7 @@ sync_test("prototype props", function() {
         ["overrideMimeType",11], "readyState", "removeEventListener", ["response",10], "responseBody", "responseText", ["responseType",10], "responseXML", "send",
         "setRequestHeader", "status", "statusText", "timeout", ["upload",10], ["withCredentials",10]
     ], [ "DONE", "HEADERS_RECEIVED", "LOADING", "OPENED", "UNSENT", ["msCaching",11], ["msCachingEnabled",11] ]);
+    check(XMLSerializer, [ "serializeToString" ]);
 });
 
 sync_test("constructors", function() {
@@ -4871,4 +4906,39 @@ async_test("window own props", function() {
 
     iframe.src = "about:blank";
     document.body.appendChild(iframe);
+});
+
+sync_test("i8 types", function() {
+    var v;
+
+    v = external.getVariant(21, "1");
+    ok(external.getVT(v) === "VT_I4", "VT_UI8 stored as " + external.getVT(v));
+    ok(v === 1, "v = " + v);
+
+    v = external.getVariant(21, "1099511627776");
+    ok(external.getVT(v) === "VT_R8", "VT_UI8 stored as " + external.getVT(v));
+    ok(v === 1099511627776, "v = " + v);
+
+    v = external.getVariant(21, "1152921504606846977");
+    ok(external.getVT(v) === "VT_R8", "VT_UI8 stored as " + external.getVT(v));
+    ok(v === 1152921504606846976, "v = " + v);
+
+    v = external.getVariant(20, "1");
+    ok(external.getVT(v) === "VT_I4", "VT_I8 stored as " + external.getVT(v));
+    ok(v === 1, "v = " + v);
+
+    v = external.getVariant(20, "1099511627776");
+    ok(external.getVT(v) === "VT_R8", "VT_I8 stored as " + external.getVT(v));
+    ok(v === 1099511627776, "v = " + v);
+
+    v = external.getVariant(20, "1152921504606846977");
+    ok(external.getVT(v) === "VT_R8", "VT_I8 stored as " + external.getVT(v));
+    ok(v === 1152921504606846976, "v = " + v);
+});
+
+sync_test("properties enumeration", function() {
+    for (var prop in external)
+    {
+        ok(false, "got property");
+    }
 });
