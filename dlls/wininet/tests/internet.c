@@ -1404,6 +1404,11 @@ static void test_InternetSetOption(void)
     ret = InternetSetOptionA(con, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
     ok(ret == TRUE, "InternetSetOption should've succeeded\n");
 
+    SetLastError(0xdeadbeef);
+    ulArg = 30000;
+    ret = InternetSetOptionA(con, INTERNET_OPTION_LISTEN_TIMEOUT, &ulArg, sizeof(ulArg));
+    ok(ret == TRUE, "InternetSetOption should've succeeded\n");
+
     ret = InternetSetOptionA(ses, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
     ok(ret == TRUE, "InternetSetOption should've succeeded\n");
 
