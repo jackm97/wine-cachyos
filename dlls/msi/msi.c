@@ -2990,6 +2990,7 @@ static UINT query_feature_state( const WCHAR *product, const WCHAR *squashed, co
             return ERROR_SUCCESS;
         }
         path = msi_reg_get_val_str( hkey, squashed );
+        RegCloseKey( hkey );
         if (!path) missing = TRUE;
         else if (lstrlenW( path ) > 2 &&
                  path[0] >= '0' && path[0] <= '9' &&
