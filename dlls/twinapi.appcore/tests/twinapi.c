@@ -273,6 +273,53 @@ static void test_RetailInfo(void)
     ok( ref == 1, "got ref %lu.\n", ref );
 }
 
+static void test_SharedModeSettings(void)
+{
+    static const WCHAR *class_name = RuntimeClass_Windows_System_Profile_SharedModeSettings;
+    ISharedModeSettingsStatics2 *statics2;
+    ISharedModeSettingsStatics *statics;
+    IActivationFactory *factory;
+    HSTRING str;
+    boolean value;
+    HRESULT hr;
+    ULONG ref;
+
+    hr = WindowsCreateString( class_name, wcslen(class_name), &str );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+
+    hr = RoGetActivationFactory( str, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( str );
+    ok( hr == S_OK || broken( hr == REGDB_E_CLASSNOTREG ), "got hr %#lx.\n", hr );
+    if (hr == REGDB_E_CLASSNOTREG)
+    {
+        win_skip( "%s runtimeclass not registered, skipping tests.\n", wine_dbgstr_w(class_name) );
+        return;
+    }
+
+    check_interface( factory, &IID_IUnknown, TRUE );
+    check_interface( factory, &IID_IInspectable, TRUE );
+    check_interface( factory, &IID_IAgileObject, TRUE );
+    check_interface( factory, &IID_ISharedModeSettingsStatics, TRUE );
+    check_interface( factory, &IID_ISharedModeSettingsStatics2, TRUE );
+
+    hr = IActivationFactory_QueryInterface( factory, &IID_ISharedModeSettingsStatics, (void **)&statics );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = ISharedModeSettingsStatics_get_IsEnabled( statics, &value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ref = ISharedModeSettingsStatics_Release( statics );
+    ok( ref == 2, "got ref %lu.\n", ref );
+
+    hr = IActivationFactory_QueryInterface( factory, &IID_ISharedModeSettingsStatics2, (void **)&statics2 );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = ISharedModeSettingsStatics2_get_ShouldAvoidLocalStorage( statics2, &value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ref = ISharedModeSettingsStatics2_Release( statics2 );
+    ok( ref == 2, "got ref %lu.\n", ref );
+
+    ref = IActivationFactory_Release( factory );
+    ok( ref == 1, "got ref %lu.\n", ref );
+}
+
 static void test_AdvertisingManager(void)
 {
     static const WCHAR *class_name = RuntimeClass_Windows_System_UserProfile_AdvertisingManager;
@@ -422,6 +469,7 @@ START_TEST(twinapi)
     test_EasClientDeviceInformation();
     test_AnalyticsVersionInfo();
     test_RetailInfo();
+    test_SharedModeSettings();
     test_AdvertisingManager();
     test_ApplicationView();
     test_CoreApplication();

@@ -30,6 +30,7 @@ import "windows.system.idl";
 
 namespace Windows.System.Profile {
     apicontract ProfileRetailInfoContract;
+    apicontract ProfileSharedModeContract;
     typedef enum PlatformDataCollectionLevel PlatformDataCollectionLevel;
     typedef enum SystemIdentificationSource SystemIdentificationSource;
     interface IAnalyticsInfoStatics;
@@ -40,15 +41,23 @@ namespace Windows.System.Profile {
     interface ISystemIdentificationInfo;
     interface ISystemIdentificationStatics;
     interface IRetailInfoStatics;
+    interface ISharedModeSettingsStatics;
+    interface ISharedModeSettingsStatics2;
     runtimeclass AnalyticsVersionInfo;
     runtimeclass AnalyticsInfo;
     runtimeclass PlatformDiagnosticsAndUsageDataSettings;
     runtimeclass SystemIdentification;
     runtimeclass SystemIdentificationInfo;
     runtimeclass RetailInfo;
+    runtimeclass SharedModeSettings;
 
     [contractversion(1.0)]
     apicontract ProfileRetailInfoContract
+    {
+    }
+
+    [contractversion(2.0)]
+    apicontract ProfileSharedModeContract
     {
     }
 
@@ -143,6 +152,26 @@ namespace Windows.System.Profile {
     }
 
     [
+        contract(Windows.System.Profile.ProfileSharedModeContract, 1.0),
+        exclusiveto(Windows.System.Profile.SharedModeSettings),
+        uuid(893df40e-cad6-4d50-8c49-6fcfc03edb29)
+    ]
+    interface ISharedModeSettingsStatics : IInspectable
+    {
+        [propget] HRESULT IsEnabled([out, retval] boolean *value);
+    }
+
+    [
+        contract(Windows.System.Profile.ProfileSharedModeContract, 2.0),
+        exclusiveto(Windows.System.Profile.SharedModeSettings),
+        uuid(608988a4-ccf1-4ee8-a5e2-fd6a1d0cfac8)
+    ]
+    interface ISharedModeSettingsStatics2 : IInspectable
+    {
+        [propget] HRESULT ShouldAvoidLocalStorage([out, retval] boolean *value);
+    }
+
+    [
         contract(Windows.Foundation.UniversalApiContract, 1.0),
         marshaling_behavior(agile),
         threading(both)
@@ -182,6 +211,19 @@ namespace Windows.System.Profile {
         threading(both)
     ]
     runtimeclass RetailInfo
+    {
+    }
+
+    [
+        contract(Windows.System.Profile.ProfileSharedModeContract, 1.0),
+        marshaling_behavior(agile),
+        static(Windows.System.Profile.ISharedModeSettingsStatics,
+                Windows.System.Profile.ProfileSharedModeContract, 1.0),
+        static(Windows.System.Profile.ISharedModeSettingsStatics2,
+                Windows.System.Profile.ProfileSharedModeContract, 2.0),
+        threading(both)
+    ]
+    runtimeclass SharedModeSettings
     {
     }
 
