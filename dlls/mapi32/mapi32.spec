@@ -14,8 +14,9 @@
  22 stdcall MAPIUninitialize()
  23 stdcall MAPIUninitialize@0() MAPIUninitialize
  24 stub PRProviderInit
- 25 stub LAUNCHWIZARD
- 26 stub LaunchWizard@20
+ 25 stdcall LAUNCHWIZARD(ptr long ptr long ptr) LaunchWizard
+ 26 stdcall LaunchWizard@20(ptr long ptr long ptr) LaunchWizard
+  @ stdcall LaunchWizard(ptr long ptr long ptr)
  27 stdcall -private DllGetClassObject(ptr ptr ptr)
  28 stdcall -private DllCanUnloadNow()
  29 stub MAPIOpenFormMgr

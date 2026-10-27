@@ -57,6 +57,7 @@ typedef struct MAPI_FUNCTIONS {
     HRESULT  (WINAPI *MAPIOpenLocalFormContainer) (LPVOID *);
     HRESULT  (WINAPI *HrThisThreadAdviseSink)     (LPMAPIADVISESINK, LPMAPIADVISESINK*);
     HRESULT  (WINAPI *HrQueryAllRows)             (LPMAPITABLE, LPSPropTagArray, LPSRestriction, LPSSortOrderSet, LONG, LPSRowSet *);
+    HRESULT  (WINAPI *LaunchWizard)               (HWND, ULONG, LPCSTR *, ULONG, LPSTR);
     HRESULT  (WINAPI *OpenStreamOnFile)           (LPALLOCATEBUFFER, LPFREEBUFFER, ULONG, LPWSTR, LPWSTR, LPSTREAM *);
     SCODE    (WINAPI *ScInitMapiUtil)             (ULONG ulReserved);
     HRESULT  (WINAPI *WrapCompressedRTFStream)    (LPSTREAM, ULONG, LPSTREAM *);

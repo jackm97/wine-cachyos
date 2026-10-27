@@ -1102,6 +1102,9 @@ void load_mapi_providers(void)
         mapiFunctions.FGetComponentPath = (void*) GetProcAddress(mapi_ex_provider, "FGetComponentPath");
         mapiFunctions.HrThisThreadAdviseSink = (void*) GetProcAddress(mapi_ex_provider, "HrThisThreadAdviseSink@8");
         mapiFunctions.HrQueryAllRows = (void*) GetProcAddress(mapi_ex_provider, "HrQueryAllRows@24");
+        mapiFunctions.LaunchWizard = (void *)GetProcAddress(mapi_ex_provider, "LaunchWizard");
+        if (!mapiFunctions.LaunchWizard)
+            mapiFunctions.LaunchWizard = (void *)GetProcAddress(mapi_ex_provider, "LaunchWizard@20");
         mapiFunctions.MAPIAdminProfiles = (void*) GetProcAddress(mapi_ex_provider, "MAPIAdminProfiles");
         mapiFunctions.MAPIAllocateBuffer = (void*) GetProcAddress(mapi_ex_provider, "MAPIAllocateBuffer");
         mapiFunctions.MAPIAllocateMore = (void*) GetProcAddress(mapi_ex_provider, "MAPIAllocateMore");
