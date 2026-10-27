@@ -62,6 +62,7 @@ extern IActivationFactory *uiviewsettings_factory;
 extern IActivationFactory *inputpane_factory;
 extern IActivationFactory *corewindow_factory;
 extern IActivationFactory *compositor_factory;
+extern IActivationFactory *effect_source_parameter_factory;
 extern IActivationFactory *compositor_controller_factory;
 extern IActivationFactory *composition_conditional_value_factory;
 extern IActivationFactory *interaction_tracker_factory;

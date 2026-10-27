@@ -56,6 +56,9 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
     if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Compositor ))
         IActivationFactory_QueryInterface( compositor_factory, &IID_IActivationFactory, (void **)factory );
 
+    if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_CompositionEffectSourceParameter ))
+        IActivationFactory_QueryInterface( effect_source_parameter_factory, &IID_IActivationFactory, (void **)factory );
+
     if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Core_CompositorController ))
         IActivationFactory_QueryInterface( compositor_controller_factory, &IID_IActivationFactory, (void **)factory );
 

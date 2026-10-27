@@ -6,6 +6,7 @@ SOURCES = \
 	classes.idl \
 	composition.c \
 	corewindow.c \
+	effect.c \
 	inputpane.c \
 	interactions.c \
 	main.c \
