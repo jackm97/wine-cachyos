@@ -840,6 +840,12 @@ HRESULT d2d_command_list_get_bounds(ID2D1CommandList *iface, struct d2d_device_c
                 D2D1_SIZE_F size = ID2D1Bitmap_GetSize(c->bitmap);
                 D2D1_RECT_F source = {0.0f, 0.0f, size.width, size.height}, destination;
 
+                if (mode == D2D1_UNIT_MODE_PIXELS)
+                {
+                    D2D1_SIZE_U pixels = ID2D1Bitmap_GetPixelSize(c->bitmap);
+                    source.right = pixels.width;
+                    source.bottom = pixels.height;
+                }
                 if (c->perspective_transform) {hr = D2DERR_UNSUPPORTED_OPERATION; goto done;}
                 if (c->src_rect && c->src_rect->left <= c->src_rect->right
                         && c->src_rect->top <= c->src_rect->bottom)
