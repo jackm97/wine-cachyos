@@ -10,6 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "config.h"
+
 #include <libunwind.h>
 
 #ifndef NDEBUG
@@ -19,7 +21,6 @@
 #include <algorithm>
 
 #include "libunwind_ext.h"
-#include "config.h"
 
 #include <stdlib.h>
 

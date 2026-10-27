@@ -13,6 +13,13 @@
 
 #ifndef LIBUNWIND_CONFIG_H
 #define LIBUNWIND_CONFIG_H
+#include <stdbool.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <winternl.h>
+#include <rtlsupportapi.h>
+#endif
 
 #include <assert.h>
 #include <stdio.h>

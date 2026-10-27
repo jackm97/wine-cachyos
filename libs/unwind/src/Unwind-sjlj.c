@@ -10,13 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "config.h"
+
 #include <unwind.h>
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
-
-#include "config.h"
 
 /// With SJLJ based exceptions, any function that has a catch clause or needs to
 /// do any clean up when an exception propagates through it, needs to call

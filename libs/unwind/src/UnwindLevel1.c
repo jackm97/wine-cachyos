@@ -19,6 +19,8 @@
 // to export these functions from libunwind.so as well.
 #define _LIBUNWIND_UNWIND_LEVEL1_EXTERNAL_LINKAGE 1
 
+#include "config.h"
+
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -28,7 +30,6 @@
 
 #include "libunwind.h"
 #include "unwind.h"
-#include "config.h"
 
 #if !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
 
