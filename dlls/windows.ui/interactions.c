@@ -722,6 +722,10 @@ struct interaction_tracker
     struct list bindings;
     IInspectable *position_decay_rate;
     IInspectable *scale_decay_rate;
+    CRITICAL_SECTION animation_cs;
+    IExpressionAnimation *expressions[6];
+    UINT animation_revision;
+    DWORD evaluation_thread;
     struct Vector3 max_position;
     struct Vector3 min_position;
     struct Vector3 position;
@@ -750,6 +754,98 @@ static inline struct interaction_tracker *tracker_from_ICompositionObject( IComp
 static inline struct interaction_tracker *tracker_from_IClosable( IClosable *iface )
 {
     return CONTAINING_RECORD( iface, struct interaction_tracker, IClosable_iface );
+}
+
+static const WCHAR *const tracker_component_names[] =
+{
+    L"MinPosition.X", L"MinPosition.Y", L"MinPosition.Z",
+    L"MaxPosition.X", L"MaxPosition.Y", L"MaxPosition.Z",
+};
+
+static UINT tracker_component_index( HSTRING name )
+{
+    const WCHAR *property = WindowsGetStringRawBuffer( name, NULL );
+    UINT i;
+
+    for (i = 0; i < ARRAY_SIZE(tracker_component_names); ++i)
+        if (!wcscmp( property, tracker_component_names[i] )) break;
+    return i;
+}
+
+static void interaction_tracker_clear_animations( struct interaction_tracker *impl )
+{
+    IExpressionAnimation *previous[6];
+    UINT i;
+
+    EnterCriticalSection( &impl->animation_cs );
+    memcpy( previous, impl->expressions, sizeof(previous) );
+    memset( impl->expressions, 0, sizeof(impl->expressions) );
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
+    for (i = 0; i < ARRAY_SIZE(previous); ++i)
+        if (previous[i]) IExpressionAnimation_Release( previous[i] );
+}
+
+static HRESULT interaction_tracker_evaluate_bounds( struct interaction_tracker *impl )
+{
+    IExpressionAnimation *expressions[6];
+    FLOAT values[6];
+    UINT i, revision;
+    DWORD thread = GetCurrentThreadId();
+    BOOL active = FALSE;
+    HRESULT hr = S_OK, result;
+
+    EnterCriticalSection( &impl->animation_cs );
+    if (impl->evaluation_thread)
+    {
+        hr = impl->evaluation_thread == thread ? E_ILLEGAL_METHOD_CALL : S_FALSE;
+        LeaveCriticalSection( &impl->animation_cs );
+        return hr;
+    }
+    for (i = 0; i < ARRAY_SIZE(expressions); ++i)
+    {
+        expressions[i] = impl->expressions[i];
+        if (expressions[i])
+        {
+            IExpressionAnimation_AddRef( expressions[i] );
+            active = TRUE;
+        }
+    }
+    if (!active)
+    {
+        LeaveCriticalSection( &impl->animation_cs );
+        return S_OK;
+    }
+    values[0] = impl->min_position.X;
+    values[1] = impl->min_position.Y;
+    values[2] = impl->min_position.Z;
+    values[3] = impl->max_position.X;
+    values[4] = impl->max_position.Y;
+    values[5] = impl->max_position.Z;
+    revision = impl->animation_revision;
+    impl->evaluation_thread = thread;
+    LeaveCriticalSection( &impl->animation_cs );
+
+    for (i = 0; i < ARRAY_SIZE(expressions); ++i)
+        if (expressions[i] && FAILED(result = expression_animation_evaluate_scalar( expressions[i],
+                &impl->ICompositionObject_iface, &values[i] ))) hr = result;
+    for (i = 0; i < 3; ++i)
+        if (values[i] > values[i + 3]) hr = E_INVALIDARG;
+
+    EnterCriticalSection( &impl->animation_cs );
+    if (SUCCEEDED(hr) && revision == impl->animation_revision)
+    {
+        impl->min_position = (struct Vector3){values[0], values[1], values[2]};
+        impl->max_position = (struct Vector3){values[3], values[4], values[5]};
+        impl->position.X = min( max( impl->position.X, values[0] ), values[3] );
+        impl->position.Y = min( max( impl->position.Y, values[1] ), values[4] );
+        impl->position.Z = min( max( impl->position.Z, values[2] ), values[5] );
+    }
+    impl->evaluation_thread = 0;
+    LeaveCriticalSection( &impl->animation_cs );
+    for (i = 0; i < ARRAY_SIZE(expressions); ++i)
+        if (expressions[i]) IExpressionAnimation_Release( expressions[i] );
+    return hr;
 }
 
 static struct interaction_tracker_binding *interaction_tracker_find_binding(
@@ -819,6 +915,7 @@ static ULONG WINAPI interaction_tracker_Release( IInteractionTracker *iface )
 
     if (!ref)
     {
+        interaction_tracker_clear_animations( impl );
         interaction_tracker_clear_bindings( impl );
         if (impl->sources) ICompositionInteractionSourceCollection_Release( impl->sources );
         if (impl->properties) ICompositionPropertySet_Release( impl->properties );
@@ -826,6 +923,7 @@ static ULONG WINAPI interaction_tracker_Release( IInteractionTracker *iface )
         if (impl->owner) IInspectable_Release( impl->owner );
         if (impl->position_decay_rate) IInspectable_Release( impl->position_decay_rate );
         if (impl->scale_decay_rate) IInspectable_Release( impl->scale_decay_rate );
+        DeleteCriticalSection( &impl->animation_cs );
         free( impl );
     }
     return ref;
@@ -883,13 +981,20 @@ static HRESULT WINAPI interaction_tracker_get_IsPositionRoundingSuggested(
 #define INTERACTION_TRACKER_PROPERTY(name, type, field) \
     static HRESULT WINAPI interaction_tracker_get_##name( IInteractionTracker *iface, type *value ) \
     { \
+        struct interaction_tracker *impl = impl_from_IInteractionTracker( iface ); \
         if (!value) return E_POINTER; \
-        *value = impl_from_IInteractionTracker( iface )->field; \
+        EnterCriticalSection( &impl->animation_cs ); \
+        *value = impl->field; \
+        LeaveCriticalSection( &impl->animation_cs ); \
         return S_OK; \
     } \
     static HRESULT WINAPI interaction_tracker_put_##name( IInteractionTracker *iface, type value ) \
     { \
-        impl_from_IInteractionTracker( iface )->field = value; \
+        struct interaction_tracker *impl = impl_from_IInteractionTracker( iface ); \
+        EnterCriticalSection( &impl->animation_cs ); \
+        impl->field = value; \
+        ++impl->animation_revision; \
+        LeaveCriticalSection( &impl->animation_cs ); \
         return S_OK; \
     }
 
@@ -901,15 +1006,23 @@ INTERACTION_TRACKER_PROPERTY( MinScale, FLOAT, min_scale )
 static HRESULT WINAPI interaction_tracker_get_NaturalRestingPosition( IInteractionTracker *iface,
         struct Vector3 *value )
 {
+    struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
+
     if (!value) return E_POINTER;
-    *value = impl_from_IInteractionTracker( iface )->position;
+    EnterCriticalSection( &impl->animation_cs );
+    *value = impl->position;
+    LeaveCriticalSection( &impl->animation_cs );
     return S_OK;
 }
 
 static HRESULT WINAPI interaction_tracker_get_NaturalRestingScale( IInteractionTracker *iface, FLOAT *value )
 {
+    struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
+
     if (!value) return E_POINTER;
-    *value = impl_from_IInteractionTracker( iface )->scale;
+    EnterCriticalSection( &impl->animation_cs );
+    *value = impl->scale;
+    LeaveCriticalSection( &impl->animation_cs );
     return S_OK;
 }
 
@@ -925,8 +1038,14 @@ static HRESULT WINAPI interaction_tracker_get_Owner( IInteractionTracker *iface,
 
 static HRESULT WINAPI interaction_tracker_get_Position( IInteractionTracker *iface, struct Vector3 *value )
 {
+    struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
+    HRESULT hr;
+
     if (!value) return E_POINTER;
-    *value = impl_from_IInteractionTracker( iface )->position;
+    if (FAILED(hr = interaction_tracker_evaluate_bounds( impl ))) return hr;
+    EnterCriticalSection( &impl->animation_cs );
+    *value = impl->position;
+    LeaveCriticalSection( &impl->animation_cs );
     return S_OK;
 }
 
@@ -970,8 +1089,12 @@ static HRESULT WINAPI interaction_tracker_get_PositionVelocityInPixelsPerSecond(
 
 static HRESULT WINAPI interaction_tracker_get_Scale( IInteractionTracker *iface, FLOAT *value )
 {
+    struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
+
     if (!value) return E_POINTER;
-    *value = impl_from_IInteractionTracker( iface )->scale;
+    EnterCriticalSection( &impl->animation_cs );
+    *value = impl->scale;
+    LeaveCriticalSection( &impl->animation_cs );
     return S_OK;
 }
 
@@ -1000,7 +1123,10 @@ static HRESULT WINAPI interaction_tracker_AdjustPositionXIfGreaterThanThreshold(
         IInteractionTracker *iface, FLOAT adjustment, FLOAT position_threshold )
 {
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
+    EnterCriticalSection( &impl->animation_cs );
     if (impl->position.X > position_threshold) impl->position.X += adjustment;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
     return S_OK;
 }
 
@@ -1008,7 +1134,10 @@ static HRESULT WINAPI interaction_tracker_AdjustPositionYIfGreaterThanThreshold(
         IInteractionTracker *iface, FLOAT adjustment, FLOAT position_threshold )
 {
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
+    EnterCriticalSection( &impl->animation_cs );
     if (impl->position.Y > position_threshold) impl->position.Y += adjustment;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
     return S_OK;
 }
 
@@ -1030,7 +1159,10 @@ static HRESULT WINAPI interaction_tracker_TryUpdatePosition( IInteractionTracker
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
 
     if (!request_id) return E_POINTER;
+    EnterCriticalSection( &impl->animation_cs );
     impl->position = value;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
     *request_id = interaction_tracker_next_request_id( impl );
     return S_OK;
 }
@@ -1041,9 +1173,12 @@ static HRESULT WINAPI interaction_tracker_TryUpdatePositionBy( IInteractionTrack
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
 
     if (!request_id) return E_POINTER;
+    EnterCriticalSection( &impl->animation_cs );
     impl->position.X += amount.X;
     impl->position.Y += amount.Y;
     impl->position.Z += amount.Z;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
     *request_id = interaction_tracker_next_request_id( impl );
     return S_OK;
 }
@@ -1070,7 +1205,10 @@ static HRESULT WINAPI interaction_tracker_TryUpdateScale( IInteractionTracker *i
     struct interaction_tracker *impl = impl_from_IInteractionTracker( iface );
 
     if (!request_id) return E_POINTER;
+    EnterCriticalSection( &impl->animation_cs );
     impl->scale = value;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
     *request_id = interaction_tracker_next_request_id( impl );
     return S_OK;
 }
@@ -1138,7 +1276,10 @@ static HRESULT WINAPI interaction_tracker5_TryUpdatePositionWithOption( IInterac
     struct interaction_tracker *impl = impl_from_IInteractionTracker5( iface );
 
     if (!request_id) return E_POINTER;
+    EnterCriticalSection( &impl->animation_cs );
     impl->position = value;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
     *request_id = interaction_tracker_next_request_id( impl );
     return S_OK;
 }
@@ -1227,14 +1368,44 @@ static HRESULT WINAPI tracker_composition_object_get_Properties( ICompositionObj
 static HRESULT WINAPI tracker_composition_object_StartAnimation( ICompositionObject *iface,
         HSTRING name, ICompositionAnimation *animation )
 {
+    struct interaction_tracker *impl = tracker_from_ICompositionObject( iface );
+    IExpressionAnimation *expression, *copy, *previous;
+    UINT index;
+    HRESULT hr;
+
     TRACE( "iface %p, name %s, animation %p.\n", iface, debugstr_hstring( name ), animation );
+    if (!name || !animation) return E_INVALIDARG;
+    index = tracker_component_index( name );
+    if (index == ARRAY_SIZE(tracker_component_names)) return E_NOTIMPL;
+    if (FAILED(hr = ICompositionAnimation_QueryInterface( animation, &IID_IExpressionAnimation, (void **)&expression ))) return hr;
+    hr = expression_animation_clone( expression, &copy );
+    IExpressionAnimation_Release( expression );
+    if (FAILED(hr)) return hr;
+    EnterCriticalSection( &impl->animation_cs );
+    previous = impl->expressions[index];
+    impl->expressions[index] = copy;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
+    if (previous) IExpressionAnimation_Release( previous );
     return S_OK;
 }
 
-static HRESULT WINAPI tracker_composition_object_StopAnimation( ICompositionObject *iface,
-        HSTRING name )
+static HRESULT WINAPI tracker_composition_object_StopAnimation( ICompositionObject *iface, HSTRING name )
 {
+    struct interaction_tracker *impl = tracker_from_ICompositionObject( iface );
+    IExpressionAnimation *previous;
+    UINT index;
+
     TRACE( "iface %p, name %s.\n", iface, debugstr_hstring( name ) );
+    if (!name) return E_INVALIDARG;
+    index = tracker_component_index( name );
+    if (index == ARRAY_SIZE(tracker_component_names)) return E_NOTIMPL;
+    EnterCriticalSection( &impl->animation_cs );
+    previous = impl->expressions[index];
+    impl->expressions[index] = NULL;
+    ++impl->animation_revision;
+    LeaveCriticalSection( &impl->animation_cs );
+    if (previous) IExpressionAnimation_Release( previous );
     return S_OK;
 }
 
@@ -1339,6 +1510,7 @@ static HRESULT WINAPI tracker_closable_Close( IClosable *iface )
 
     TRACE( "iface %p.\n", iface );
     impl->owner = NULL;
+    interaction_tracker_clear_animations( impl );
     interaction_tracker_clear_bindings( impl );
     ICompositionInteractionSourceCollection_RemoveAll( impl->sources );
     if (owner) IInspectable_Release( owner );
@@ -1365,6 +1537,7 @@ static HRESULT interaction_tracker_create( ICompositor *compositor, IInspectable
     if (!compositor || !result) return E_INVALIDARG;
     *result = NULL;
     if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+    InitializeCriticalSection( &impl->animation_cs );
     impl->IInteractionTracker_iface.lpVtbl = &interaction_tracker_vtbl;
     impl->IInteractionTracker5_iface.lpVtbl = &interaction_tracker5_vtbl;
     impl->ICompositionObject_iface.lpVtbl = &tracker_composition_object_vtbl;

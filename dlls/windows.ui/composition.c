@@ -46,7 +46,8 @@ static HRESULT vector3_key_frame_animation_get_final_value( ICompositionAnimatio
         struct Vector3 *value );
 
 static HRESULT expression_animation_get_vector( IExpressionAnimation *animation, struct Vector3 *value );
-static HRESULT expression_animation_clone( IExpressionAnimation *animation, IExpressionAnimation **result );
+HRESULT expression_animation_clone( IExpressionAnimation *animation, IExpressionAnimation **result );
+static HRESULT expression_animation_get_scalar( IExpressionAnimation *animation, FLOAT *value );
 
 struct compositor2_iface;
 struct compositor4_iface;
@@ -1457,6 +1458,7 @@ struct sprite_visual
     IExpressionAnimation *scale_expression;
     IExpressionAnimation *offset_expression;
     IExpressionAnimation *center_expression;
+    IExpressionAnimation *component_expressions[11];
     struct Vector2 anchor_point;
     struct Vector2 relative_size_adjustment;
     struct Vector3 center_point;
@@ -1551,6 +1553,8 @@ static ULONG WINAPI sprite_visual_Release( ISpriteVisual *iface )
 
     if (!ref)
     {
+        UINT i;
+
         if (impl->brush)
         {
             ICompositionSurfaceBrush *surface_brush;
@@ -1570,6 +1574,8 @@ static ULONG WINAPI sprite_visual_Release( ISpriteVisual *iface )
             }
             ICompositionBrush_Release( impl->brush );
         }
+        for (i = 0; i < ARRAY_SIZE(impl->component_expressions); ++i)
+            if (impl->component_expressions[i]) IExpressionAnimation_Release( impl->component_expressions[i] );
         if (impl->scale_expression) IExpressionAnimation_Release( impl->scale_expression );
         if (impl->offset_expression) IExpressionAnimation_Release( impl->offset_expression );
         if (impl->center_expression) IExpressionAnimation_Release( impl->center_expression );
@@ -1693,6 +1699,34 @@ static HRESULT WINAPI sprite_visual_composition_object_get_Properties( IComposit
     return S_OK;
 }
 
+static const struct
+{
+    const WCHAR *name;
+    SIZE_T offset;
+} visual_components[] =
+{
+    {L"Offset.X", offsetof(struct sprite_visual, offset.X)},
+    {L"Offset.Y", offsetof(struct sprite_visual, offset.Y)},
+    {L"Offset.Z", offsetof(struct sprite_visual, offset.Z)},
+    {L"Scale.X", offsetof(struct sprite_visual, scale.X)},
+    {L"Scale.Y", offsetof(struct sprite_visual, scale.Y)},
+    {L"Scale.Z", offsetof(struct sprite_visual, scale.Z)},
+    {L"Size.X", offsetof(struct sprite_visual, size.X)},
+    {L"Size.Y", offsetof(struct sprite_visual, size.Y)},
+    {L"CenterPoint.X", offsetof(struct sprite_visual, center_point.X)},
+    {L"CenterPoint.Y", offsetof(struct sprite_visual, center_point.Y)},
+    {L"CenterPoint.Z", offsetof(struct sprite_visual, center_point.Z)},
+};
+
+static UINT visual_component_index( const WCHAR *name )
+{
+    UINT i;
+
+    for (i = 0; i < ARRAY_SIZE(visual_components); ++i)
+        if (!wcscmp( name, visual_components[i].name )) break;
+    return i;
+}
+
 static HRESULT WINAPI sprite_visual_composition_object_StartAnimation( ICompositionObject *iface,
         HSTRING name, ICompositionAnimation *animation )
 {
@@ -1703,10 +1737,32 @@ static HRESULT WINAPI sprite_visual_composition_object_StartAnimation( IComposit
     struct Vector3 vector;
     boolean visible;
     FLOAT value;
+    UINT component;
 
     TRACE( "iface %p, name %s, animation %p.\n", iface, debugstr_hstring( name ), animation );
     if (!name || !animation) return E_INVALIDARG;
     property = WindowsGetStringRawBuffer( name, NULL );
+    component = visual_component_index( property );
+    if (component < ARRAY_SIZE(visual_components))
+    {
+        if (SUCCEEDED(ICompositionAnimation_QueryInterface( animation,
+                &IID_IExpressionAnimation, (void **)&expression )))
+        {
+            hr = expression_animation_clone( expression, &copy );
+            IExpressionAnimation_Release( expression );
+            if (FAILED(hr)) return hr;
+        }
+        else
+        {
+            if (FAILED(hr = scalar_key_frame_animation_get_final_value( animation, &value ))) return hr;
+            copy = NULL;
+            *(FLOAT *)((BYTE *)impl + visual_components[component].offset) = value;
+        }
+        binding = &impl->component_expressions[component];
+        if (*binding) IExpressionAnimation_Release( *binding );
+        *binding = copy;
+        return S_OK;
+    }
     if (!wcscmp( property, L"Scale" )) binding = &impl->scale_expression;
     else if (!wcscmp( property, L"Offset" )) binding = &impl->offset_expression;
     else if (!wcscmp( property, L"CenterPoint" )) binding = &impl->center_expression;
@@ -1747,11 +1803,14 @@ static HRESULT WINAPI sprite_visual_composition_object_StopAnimation( ICompositi
     struct sprite_visual *impl = sprite_visual_from_ICompositionObject( iface );
     IExpressionAnimation **binding = NULL;
     const WCHAR *property;
+    UINT component;
 
     TRACE( "iface %p, name %s.\n", iface, debugstr_hstring( name ) );
     if (!name) return E_INVALIDARG;
     property = WindowsGetStringRawBuffer( name, NULL );
-    if (!wcscmp( property, L"Scale" )) binding = &impl->scale_expression;
+    component = visual_component_index( property );
+    if (component < ARRAY_SIZE(visual_components)) binding = &impl->component_expressions[component];
+    else if (!wcscmp( property, L"Scale" )) binding = &impl->scale_expression;
     else if (!wcscmp( property, L"Offset" )) binding = &impl->offset_expression;
     else if (!wcscmp( property, L"CenterPoint" )) binding = &impl->center_expression;
     if (binding && *binding)
@@ -4178,7 +4237,7 @@ static HRESULT expression_animation_create( HSTRING expression, IExpressionAnima
     return S_OK;
 }
 
-static HRESULT expression_animation_clone( IExpressionAnimation *animation, IExpressionAnimation **result )
+HRESULT expression_animation_clone( IExpressionAnimation *animation, IExpressionAnimation **result )
 {
     struct expression_animation *impl;
     struct expression_animation_reference *reference;
@@ -4266,54 +4325,101 @@ static void expression_skip_space( const WCHAR **cursor )
     while (**cursor == ' ' || **cursor == '\t' || **cursor == '\r' || **cursor == '\n') ++*cursor;
 }
 
-static HRESULT expression_reference_scalar( struct expression_animation *impl,
-        const WCHAR *key, UINT key_length, const WCHAR *property, UINT property_length, FLOAT *value )
+static HRESULT expression_object_scalar( ICompositionObject *object,
+        const WCHAR *property, UINT length, FLOAT *value )
 {
-    struct expression_animation_reference *reference;
     ICompositionPropertySet *properties;
     IInteractionTracker *tracker;
+    IVisual *visual;
     enum CompositionGetValueStatus status;
-    struct Vector3 position;
-    HSTRING name;
-    HRESULT hr;
+    struct Vector3 vector;
+    struct Vector2 vector2;
+    boolean rounding;
+    WCHAR name[64];
+    HSTRING key;
+    HRESULT hr = E_NOTIMPL;
+    UINT index;
 
-    LIST_FOR_EACH_ENTRY( reference, &impl->references, struct expression_animation_reference, entry )
+    if (length < ARRAY_SIZE(name))
     {
-        UINT length;
-        const WCHAR *stored = WindowsGetStringRawBuffer( reference->key, &length );
-        if (length != key_length || wcsncmp( stored, key, length )) continue;
-        if (SUCCEEDED(ICompositionObject_QueryInterface( reference->object,
-                &IID_IInteractionTracker, (void **)&tracker )))
+        memcpy( name, property, length * sizeof(WCHAR) );
+        name[length] = 0;
+        if (SUCCEEDED(ICompositionObject_QueryInterface( object, &IID_IInteractionTracker, (void **)&tracker )))
         {
-            hr = E_NOTIMPL;
-            if (property_length == 5 && !wcsncmp( property, L"Scale", 5 ))
-                hr = IInteractionTracker_get_Scale( tracker, value );
-            else if (property_length == 10 && !wcsncmp( property, L"Position.", 9 ))
+            if (!wcscmp( name, L"Scale" )) hr = IInteractionTracker_get_Scale( tracker, value );
+            else if (!wcscmp( name, L"MinScale" )) hr = IInteractionTracker_get_MinScale( tracker, value );
+            else if (!wcscmp( name, L"MaxScale" )) hr = IInteractionTracker_get_MaxScale( tracker, value );
+            else if (!wcscmp( name, L"IsPositionRoundingSuggested" ))
             {
-                hr = IInteractionTracker_get_Position( tracker, &position );
-                if (SUCCEEDED(hr))
-                {
-                    if (property[9] == 'X') *value = position.X;
-                    else if (property[9] == 'Y') *value = position.Y;
-                    else if (property[9] == 'Z') *value = position.Z;
-                    else hr = E_NOTIMPL;
-                }
+                hr = IInteractionTracker_get_IsPositionRoundingSuggested( tracker, &rounding );
+                if (SUCCEEDED(hr)) *value = rounding;
+            }
+            else if (length >= 2 && name[length - 2] == '.' && name[length - 1] >= 'X' && name[length - 1] <= 'Z')
+            {
+                name[length - 2] = 0;
+                if (!wcscmp( name, L"Position" )) hr = IInteractionTracker_get_Position( tracker, &vector );
+                else if (!wcscmp( name, L"MinPosition" )) hr = IInteractionTracker_get_MinPosition( tracker, &vector );
+                else if (!wcscmp( name, L"MaxPosition" )) hr = IInteractionTracker_get_MaxPosition( tracker, &vector );
+                if (SUCCEEDED(hr)) *value = name[length - 1] == 'X' ? vector.X : name[length - 1] == 'Y' ? vector.Y : vector.Z;
+                name[length - 2] = '.';
             }
             IInteractionTracker_Release( tracker );
             if (hr != E_NOTIMPL) return hr;
         }
-        if (FAILED(hr = ICompositionObject_get_Properties( reference->object, &properties ))) return hr;
-        if (!properties) return E_NOTIMPL;
-        if (FAILED(hr = WindowsCreateString( property, property_length, &name )))
+        if (SUCCEEDED(ICompositionObject_QueryInterface( object, &IID_IVisual, (void **)&visual )))
         {
-            ICompositionPropertySet_Release( properties );
-            return hr;
+            index = visual_component_index( name );
+            if (index < ARRAY_SIZE(visual_components) && visual->lpVtbl == &visual_vtbl)
+            {
+                *value = *(FLOAT *)((BYTE *)sprite_visual_from_IVisual( visual ) + visual_components[index].offset);
+                hr = S_OK;
+            }
+            IVisual_Release( visual );
+            if (hr != E_NOTIMPL) return hr;
         }
-        hr = ICompositionPropertySet_TryGetScalar( properties, name, &value[0], &status );
-        WindowsDeleteString( name );
-        ICompositionPropertySet_Release( properties );
+    }
+    if (FAILED(hr = ICompositionObject_get_Properties( object, &properties ))) return hr;
+    if (!properties) return E_NOTIMPL;
+    if (SUCCEEDED(hr = WindowsCreateString( property, length, &key )))
+    {
+        hr = ICompositionPropertySet_TryGetScalar( properties, key, value, &status );
+        WindowsDeleteString( key );
         if (SUCCEEDED(hr) && status != CompositionGetValueStatus_Succeeded) hr = E_NOTIMPL;
-        return hr;
+    }
+    if (hr == E_NOTIMPL && length >= 2 && property[length - 2] == '.' && property[length - 1] >= 'X' && property[length - 1] <= 'Z')
+    {
+        if (SUCCEEDED(hr = WindowsCreateString( property, length - 2, &key )))
+        {
+            hr = ICompositionPropertySet_TryGetVector3( properties, key, &vector, &status );
+            if (SUCCEEDED(hr) && status == CompositionGetValueStatus_Succeeded)
+                *value = property[length - 1] == 'X' ? vector.X : property[length - 1] == 'Y' ? vector.Y : vector.Z;
+            else if (property[length - 1] != 'Z')
+            {
+                hr = ICompositionPropertySet_TryGetVector2( properties, key, &vector2, &status );
+                if (SUCCEEDED(hr) && status == CompositionGetValueStatus_Succeeded)
+                    *value = property[length - 1] == 'X' ? vector2.X : vector2.Y;
+            }
+            WindowsDeleteString( key );
+            if (SUCCEEDED(hr) && status != CompositionGetValueStatus_Succeeded) hr = E_NOTIMPL;
+        }
+    }
+    ICompositionPropertySet_Release( properties );
+    return hr;
+}
+
+static HRESULT expression_reference_scalar( struct expression_animation *impl, ICompositionObject *target,
+        const WCHAR *key, UINT key_length, const WCHAR *property, UINT property_length, FLOAT *value )
+{
+    struct expression_animation_reference *reference;
+
+    if (key_length == 4 && !wcsncmp( key, L"this", 4 ) && property_length > 7 && !wcsncmp( property, L"target.", 7 ))
+        return target ? expression_object_scalar( target, property + 7, property_length - 7, value ) : E_NOTIMPL;
+    LIST_FOR_EACH_ENTRY( reference, &impl->references, struct expression_animation_reference, entry )
+    {
+        UINT length;
+        const WCHAR *stored = WindowsGetStringRawBuffer( reference->key, &length );
+        if (length == key_length && !wcsncmp( stored, key, length ))
+            return expression_object_scalar( reference->object, property, property_length, value );
     }
     return E_NOTIMPL;
 }
@@ -4324,37 +4430,202 @@ static BOOL expression_identifier_char( WCHAR value )
             (value >= '0' && value <= '9') || value == '_';
 }
 
-static HRESULT expression_scalar( struct expression_animation *impl, const WCHAR **cursor, FLOAT *value )
+struct expression_parser
 {
-    const WCHAR *key, *property;
+    struct expression_animation *animation;
+    ICompositionObject *target;
+    const WCHAR *cursor;
+    UINT depth;
+};
+
+static HRESULT expression_parse( struct expression_parser *parser, UINT precedence, BOOL evaluate, FLOAT *value );
+
+static HRESULT expression_primary( struct expression_parser *parser, BOOL evaluate, FLOAT *value )
+{
+    const WCHAR *name, *property;
+    FLOAT args[3] = {0}, result = 0;
     WCHAR *end;
-    UINT length;
-    FLOAT sign = 1.0f;
+    UINT length, count = 0;
+    HRESULT hr = S_OK;
+
+    expression_skip_space( &parser->cursor );
+    if (++parser->depth > 64) { --parser->depth; return E_INVALIDARG; }
+    if (*parser->cursor == '+' || *parser->cursor == '-' || *parser->cursor == '!')
+    {
+        WCHAR op = *parser->cursor++;
+        hr = expression_primary( parser, evaluate, &result );
+        if (op == '-') result = -result;
+        else if (op == '!') result = !result;
+    }
+    else if (*parser->cursor == '(')
+    {
+        ++parser->cursor;
+        if (SUCCEEDED(hr = expression_parse( parser, 0, evaluate, &result )))
+        {
+            expression_skip_space( &parser->cursor );
+            if (*parser->cursor != ')') hr = E_INVALIDARG;
+            else ++parser->cursor;
+        }
+    }
+    else if ((*parser->cursor >= '0' && *parser->cursor <= '9') || *parser->cursor == '.')
+    {
+        result = wcstod( parser->cursor, &end );
+        if (end == parser->cursor) hr = E_INVALIDARG;
+        else parser->cursor = end;
+    }
+    else
+    {
+        name = parser->cursor;
+        while (expression_identifier_char( *parser->cursor )) ++parser->cursor;
+        length = parser->cursor - name;
+        expression_skip_space( &parser->cursor );
+        if (!length) hr = E_INVALIDARG;
+        else if (*parser->cursor == '(')
+        {
+            ++parser->cursor;
+            do
+            {
+                if (count == ARRAY_SIZE(args)) { hr = E_INVALIDARG; break; }
+                if (FAILED(hr = expression_parse( parser, 0, evaluate, &args[count++] ))) break;
+                expression_skip_space( &parser->cursor );
+                if (*parser->cursor != ',') break;
+                ++parser->cursor;
+            } while (1);
+            if (SUCCEEDED(hr))
+            {
+                if (*parser->cursor != ')') hr = E_INVALIDARG;
+                else ++parser->cursor;
+            }
+            if (SUCCEEDED(hr))
+            {
+                if (length == 3 && !wcsncmp( name, L"Abs", 3 ) && count == 1) result = fabsf( args[0] );
+                else if (length == 4 && !wcsncmp( name, L"Ceil", 4 ) && count == 1) result = ceilf( args[0] );
+                else if (length == 5 && !wcsncmp( name, L"Floor", 5 ) && count == 1) result = floorf( args[0] );
+                else if (length == 5 && !wcsncmp( name, L"Round", 5 ) && count == 1) result = roundf( args[0] );
+                else if (length == 3 && !wcsncmp( name, L"Min", 3 ) && count == 2) result = fminf( args[0], args[1] );
+                else if (length == 3 && !wcsncmp( name, L"Max", 3 ) && count == 2) result = fmaxf( args[0], args[1] );
+                else if (length == 5 && !wcsncmp( name, L"Clamp", 5 ) && count == 3)
+                    result = fminf( fmaxf( args[0], args[1] ), args[2] );
+                else hr = E_NOTIMPL;
+            }
+        }
+        else if (*parser->cursor == '.')
+        {
+            property = ++parser->cursor;
+            while (expression_identifier_char( *parser->cursor ) || *parser->cursor == '.') ++parser->cursor;
+            if (parser->cursor == property) hr = E_INVALIDARG;
+            else if (evaluate) hr = expression_reference_scalar( parser->animation, parser->target, name, length,
+                    property, parser->cursor - property, &result );
+        }
+        else if (length == 4 && !wcsncmp( name, L"true", 4 )) result = 1;
+        else if (length == 5 && !wcsncmp( name, L"false", 5 )) result = 0;
+        else hr = E_NOTIMPL;
+    }
+    --parser->depth;
+    if (SUCCEEDED(hr) && evaluate && !isfinite(result)) hr = E_INVALIDARG;
+    if (SUCCEEDED(hr)) *value = evaluate ? result : 0;
+    return hr;
+}
+
+static HRESULT expression_parse( struct expression_parser *parser, UINT precedence, BOOL evaluate, FLOAT *value )
+{
+    static const struct
+    {
+        const WCHAR *name;
+        UINT precedence;
+    } operators[] =
+    {
+        {L"||", 1}, {L"&&", 2}, {L"==", 3}, {L"!=", 3},
+        {L"<=", 4}, {L">=", 4}, {L"<", 4}, {L">", 4},
+        {L"+", 5}, {L"-", 5}, {L"*", 6}, {L"/", 6}, {L"%", 6},
+    };
+    FLOAT left, right, first, second;
+    BOOL active;
+    UINT i, length;
     HRESULT hr;
 
-    expression_skip_space( cursor );
-    if (**cursor == '+' || **cursor == '-')
+    if (++parser->depth > 64) { --parser->depth; return E_INVALIDARG; }
+    if (FAILED(hr = expression_primary( parser, evaluate, &left ))) goto done;
+    for (;;)
     {
-        if (**cursor == '-') sign = -1.0f;
-        ++*cursor;
-        expression_skip_space( cursor );
+        expression_skip_space( &parser->cursor );
+        for (i = 0; i < ARRAY_SIZE(operators); ++i)
+        {
+            length = wcslen( operators[i].name );
+            if (!wcsncmp( parser->cursor, operators[i].name, length )) break;
+        }
+        if (i == ARRAY_SIZE(operators) || operators[i].precedence < precedence) break;
+        parser->cursor += length;
+        active = evaluate && (i == 0 ? !left : i == 1 ? !!left : TRUE);
+        if (FAILED(hr = expression_parse( parser, operators[i].precedence + 1, active, &right ))) goto done;
+        if (!evaluate) continue;
+        switch (i)
+        {
+            case 0: left = left || right; break;
+            case 1: left = left && right; break;
+            case 2: left = left == right; break;
+            case 3: left = left != right; break;
+            case 4: left = left <= right; break;
+            case 5: left = left >= right; break;
+            case 6: left = left < right; break;
+            case 7: left = left > right; break;
+            case 8: left += right; break;
+            case 9: left -= right; break;
+            case 10: left *= right; break;
+            case 11:
+            case 12:
+                if (!right) { hr = E_INVALIDARG; goto done; }
+                left = i == 11 ? left / right : fmodf( left, right );
+                break;
+        }
+        if (!isfinite(left)) { hr = E_INVALIDARG; goto done; }
     }
-    if ((**cursor >= '0' && **cursor <= '9') || **cursor == '.')
+    if (!precedence && *parser->cursor == '?')
     {
-        *value = wcstod( *cursor, &end ) * sign;
-        if (end == *cursor) return E_NOTIMPL;
-        *cursor = end;
-        return S_OK;
+        ++parser->cursor;
+        if (FAILED(hr = expression_parse( parser, 0, evaluate && left != 0, &first ))) goto done;
+        expression_skip_space( &parser->cursor );
+        if (*parser->cursor != ':') { hr = E_INVALIDARG; goto done; }
+        ++parser->cursor;
+        if (FAILED(hr = expression_parse( parser, 0, evaluate && left == 0, &second ))) goto done;
+        left = left ? first : second;
     }
-    key = *cursor;
-    while (expression_identifier_char( **cursor )) ++*cursor;
-    length = *cursor - key;
-    if (!length || **cursor != '.') return E_NOTIMPL;
-    property = ++*cursor;
-    while (expression_identifier_char( **cursor ) || **cursor == '.') ++*cursor;
-    if (FAILED(hr = expression_reference_scalar( impl, key, length, property, *cursor - property, value ))) return hr;
-    *value *= sign;
+    *value = left;
+    hr = S_OK;
+done:
+    --parser->depth;
+    return hr;
+}
+
+static HRESULT expression_scalar( struct expression_animation *impl, ICompositionObject *target,
+        const WCHAR **cursor, FLOAT *value )
+{
+    struct expression_parser parser = {impl, target, *cursor, 0};
+    HRESULT hr;
+
+    hr = expression_parse( &parser, 0, TRUE, value );
+    *cursor = parser.cursor;
+    return hr;
+}
+
+HRESULT expression_animation_evaluate_scalar( IExpressionAnimation *animation, ICompositionObject *target, FLOAT *value )
+{
+    const WCHAR *cursor;
+    FLOAT result;
+    HRESULT hr;
+
+    if (animation->lpVtbl != &expression_animation_vtbl) return E_NOINTERFACE;
+    cursor = WindowsGetStringRawBuffer( impl_from_IExpressionAnimation( animation )->expression, NULL );
+    if (FAILED(hr = expression_scalar( impl_from_IExpressionAnimation( animation ), target, &cursor, &result ))) return hr;
+    expression_skip_space( &cursor );
+    if (*cursor) return E_INVALIDARG;
+    *value = result;
     return S_OK;
+}
+
+static HRESULT expression_animation_get_scalar( IExpressionAnimation *animation, FLOAT *value )
+{
+    return expression_animation_evaluate_scalar( animation, NULL, value );
 }
 
 static HRESULT expression_animation_get_vector( IExpressionAnimation *animation, struct Vector3 *value )
@@ -4372,13 +4643,13 @@ static HRESULT expression_animation_get_vector( IExpressionAnimation *animation,
     cursor += 7;
     expression_skip_space( &cursor );
     if (*cursor++ != '(') return E_NOTIMPL;
-    if (FAILED(hr = expression_scalar( impl, &cursor, &result.X ))) return hr;
+    if (FAILED(hr = expression_scalar( impl, NULL, &cursor, &result.X ))) return hr;
     expression_skip_space( &cursor );
     if (*cursor++ != ',') return E_NOTIMPL;
-    if (FAILED(hr = expression_scalar( impl, &cursor, &result.Y ))) return hr;
+    if (FAILED(hr = expression_scalar( impl, NULL, &cursor, &result.Y ))) return hr;
     expression_skip_space( &cursor );
     if (*cursor++ != ',') return E_NOTIMPL;
-    if (FAILED(hr = expression_scalar( impl, &cursor, &result.Z ))) return hr;
+    if (FAILED(hr = expression_scalar( impl, NULL, &cursor, &result.Z ))) return hr;
     expression_skip_space( &cursor );
     if (*cursor++ != ')') return E_NOTIMPL;
     expression_skip_space( &cursor );
@@ -6966,6 +7237,16 @@ static HRESULT visual_validate_animation(ICompositionAnimation *animation,HSTRIN
     boolean boolean_value;
     HRESULT hr;
 
+    if (visual_component_index( target ) < ARRAY_SIZE(visual_components))
+    {
+        if (SUCCEEDED(ICompositionAnimation_QueryInterface(animation,&IID_IExpressionAnimation,(void **)&expression)))
+        {
+            hr = expression_animation_get_scalar(expression,&scalar);
+            IExpressionAnimation_Release(expression);
+            return hr;
+        }
+        return scalar_key_frame_animation_get_final_value(animation,&scalar);
+    }
     if (!wcscmp(target,L"Opacity")) return scalar_key_frame_animation_get_final_value(animation,&scalar);
     if (!wcscmp(target,L"IsVisible")) return boolean_key_frame_animation_get_final_value(animation,&boolean_value);
     if (!wcscmp(target,L"Offset") || !wcscmp(target,L"Scale") || !wcscmp(target,L"CenterPoint"))
@@ -11167,6 +11448,10 @@ static HRESULT draw_composition_visual( ID2D1DeviceContext *context, IVisual *vi
         expression_animation_get_vector( impl->offset_expression, &impl->offset );
     if (impl->center_expression)
         expression_animation_get_vector( impl->center_expression, &impl->center_point );
+    for (i = 0; i < ARRAY_SIZE(visual_components); ++i)
+        if (impl->component_expressions[i])
+            expression_animation_evaluate_scalar( impl->component_expressions[i], &impl->ICompositionObject_iface,
+                    (FLOAT *)((BYTE *)impl + visual_components[i].offset) );
     children = impl_from_IVisualCollection( impl->children );
     width = impl->size.X + parent_width * impl->relative_size_adjustment.X;
     height = impl->size.Y + parent_height * impl->relative_size_adjustment.Y;
