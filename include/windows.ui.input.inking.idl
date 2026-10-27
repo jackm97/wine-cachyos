@@ -1,0 +1,133 @@
+/*
+ * Copyright 2026 Mirko Brombin
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
+#ifdef __WIDL__
+#pragma winrt ns_prefix
+#endif
+
+import "inspectable.idl";
+import "windowscontracts.idl";
+import "windows.foundation.idl";
+import "windows.foundation.numerics.idl";
+import "windows.ui.idl";
+
+namespace Windows.UI.Input.Inking {
+    typedef enum PenTipShape PenTipShape;
+    interface IInkPoint;
+    interface IInkPoint2;
+    interface IInkPointFactory;
+    interface IInkPointFactory2;
+    interface IInkDrawingAttributes;
+    interface IInkDrawingAttributes2;
+    interface IInkDrawingAttributes4;
+    runtimeclass InkPoint;
+    runtimeclass InkDrawingAttributes;
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0)]
+    enum PenTipShape
+    {
+        Circle = 0,
+        Rectangle = 1
+    };
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     exclusiveto(Windows.UI.Input.Inking.InkPoint), uuid(9f87272b-858c-46a5-9b41-d195970459fd)]
+    interface IInkPoint : IInspectable
+    {
+        [propget] HRESULT Position([out, retval] Windows.Foundation.Point *value);
+        [propget] HRESULT Pressure([out, retval] FLOAT *value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 4.0),
+     exclusiveto(Windows.UI.Input.Inking.InkPoint), uuid(fba9c3f7-ae56-4d5c-bd2f-0ac45f5e4af9)]
+    interface IInkPoint2 : IInspectable
+    {
+        [propget] HRESULT TiltX([out, retval] FLOAT *value);
+        [propget] HRESULT TiltY([out, retval] FLOAT *value);
+        [propget] HRESULT Timestamp([out, retval] UINT64 *value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     exclusiveto(Windows.UI.Input.Inking.InkPoint), uuid(29e5d51c-c98f-405d-9f3b-e53e31068d4d)]
+    interface IInkPointFactory : IInspectable
+    {
+        HRESULT CreateInkPoint([in] Windows.Foundation.Point position, [in] FLOAT pressure,
+                [out, retval] Windows.UI.Input.Inking.InkPoint **result);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 4.0),
+     exclusiveto(Windows.UI.Input.Inking.InkPoint), uuid(e0145e85-daff-45f2-ad69-050d8256a209)]
+    interface IInkPointFactory2 : IInspectable
+    {
+        HRESULT CreateInkPointWithTiltAndTimestamp([in] Windows.Foundation.Point position,
+                [in] FLOAT pressure, [in] FLOAT tilt_x, [in] FLOAT tilt_y, [in] UINT64 timestamp,
+                [out, retval] Windows.UI.Input.Inking.InkPoint **result);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     exclusiveto(Windows.UI.Input.Inking.InkDrawingAttributes), uuid(97a2176c-6774-48ad-84f0-48f5a9be74f9)]
+    interface IInkDrawingAttributes : IInspectable
+    {
+        [propget] HRESULT Color([out, retval] Windows.UI.Color *value);
+        [propput] HRESULT Color([in] Windows.UI.Color value);
+        [propget] HRESULT PenTip([out, retval] Windows.UI.Input.Inking.PenTipShape *value);
+        [propput] HRESULT PenTip([in] Windows.UI.Input.Inking.PenTipShape value);
+        [propget] HRESULT Size([out, retval] Windows.Foundation.Size *value);
+        [propput] HRESULT Size([in] Windows.Foundation.Size value);
+        [propget] HRESULT IgnorePressure([out, retval] boolean *value);
+        [propput] HRESULT IgnorePressure([in] boolean value);
+        [propget] HRESULT FitToCurve([out, retval] boolean *value);
+        [propput] HRESULT FitToCurve([in] boolean value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     exclusiveto(Windows.UI.Input.Inking.InkDrawingAttributes), uuid(7cab6508-8ec4-42fd-a5a5-e4b7d1d5316d)]
+    interface IInkDrawingAttributes2 : IInspectable
+    {
+        [propget] HRESULT PenTipTransform([out, retval] Windows.Foundation.Numerics.Matrix3x2 *value);
+        [propput] HRESULT PenTipTransform([in] Windows.Foundation.Numerics.Matrix3x2 value);
+        [propget] HRESULT DrawAsHighlighter([out, retval] boolean *value);
+        [propput] HRESULT DrawAsHighlighter([in] boolean value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 4.0),
+     exclusiveto(Windows.UI.Input.Inking.InkDrawingAttributes), uuid(ef65dc25-9f19-456d-91a3-bc3a3d91c5fb)]
+    interface IInkDrawingAttributes4 : IInspectable
+    {
+        [propget] HRESULT IgnoreTilt([out, retval] boolean *value);
+        [propput] HRESULT IgnoreTilt([in] boolean value);
+    }
+
+    [activatable(Windows.UI.Input.Inking.IInkPointFactory, Windows.Foundation.UniversalApiContract, 1.0),
+     activatable(Windows.UI.Input.Inking.IInkPointFactory2, Windows.Foundation.UniversalApiContract, 4.0),
+     contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile), threading(both)]
+    runtimeclass InkPoint
+    {
+        [default] interface Windows.UI.Input.Inking.IInkPoint;
+        [contract(Windows.Foundation.UniversalApiContract, 4.0)] interface Windows.UI.Input.Inking.IInkPoint2;
+    }
+
+    [activatable(Windows.Foundation.UniversalApiContract, 1.0),
+     contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile), threading(both)]
+    runtimeclass InkDrawingAttributes
+    {
+        [default] interface Windows.UI.Input.Inking.IInkDrawingAttributes;
+        interface Windows.UI.Input.Inking.IInkDrawingAttributes2;
+        [contract(Windows.Foundation.UniversalApiContract, 4.0)] interface Windows.UI.Input.Inking.IInkDrawingAttributes4;
+    }
+}

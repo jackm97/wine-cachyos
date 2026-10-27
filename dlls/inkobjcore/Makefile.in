@@ -1,6 +1,10 @@
 MODULE = inkobjcore.dll
-IMPORTS = ole32 uuid
+IMPORTS = combase ole32 uuid
 
 SOURCES = \
+	classes.idl \
+	drawing.c \
+	factory.c \
 	inkobjcore.rc \
-	main.c
+	main.c \
+	point.c

@@ -48,7 +48,8 @@ struct desktop_host
     BOOL stopping;
 };
 
-static LONG object_count, factory_refs, server_locks;
+LONG ink_object_count, ink_factory_refs;
+static LONG server_locks;
 
 static struct desktop_host *impl_from_IInkDesktopHost(IInkDesktopHost *iface)
 {
@@ -97,7 +98,7 @@ static ULONG WINAPI desktop_host_Release(IInkDesktopHost *iface)
         if (host->event) CloseHandle(host->event);
         if (host->ready) CloseHandle(host->ready);
         DeleteCriticalSection(&host->lock);
-        InterlockedDecrement(&object_count);
+        InterlockedDecrement(&ink_object_count);
         free(host);
     }
     return ref;
@@ -202,7 +203,7 @@ static HRESULT desktop_host_create(REFIID iid, void **out)
     host->ref = 1;
     InitializeCriticalSection(&host->lock);
     list_init(&host->queue);
-    InterlockedIncrement(&object_count);
+    InterlockedIncrement(&ink_object_count);
     host->event = CreateEventW(NULL, TRUE, FALSE, NULL);
     host->ready = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (!host->event || !host->ready)
@@ -249,12 +250,12 @@ static HRESULT WINAPI factory_QueryInterface(IClassFactory *iface, REFIID iid, v
 
 static ULONG WINAPI factory_AddRef(IClassFactory *iface)
 {
-    return InterlockedIncrement(&factory_refs);
+    return InterlockedIncrement(&ink_factory_refs);
 }
 
 static ULONG WINAPI factory_Release(IClassFactory *iface)
 {
-    return InterlockedDecrement(&factory_refs);
+    return InterlockedDecrement(&ink_factory_refs);
 }
 
 static HRESULT WINAPI factory_CreateInstance(IClassFactory *iface, IUnknown *outer, REFIID iid, void **out)
@@ -293,7 +294,7 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void **out)
 
 HRESULT WINAPI DllCanUnloadNow(void)
 {
-    return InterlockedCompareExchange(&object_count, 0, 0)
-            || InterlockedCompareExchange(&factory_refs, 0, 0)
+    return InterlockedCompareExchange(&ink_object_count, 0, 0)
+            || InterlockedCompareExchange(&ink_factory_refs, 0, 0)
             || InterlockedCompareExchange(&server_locks, 0, 0) ? S_FALSE : S_OK;
 }

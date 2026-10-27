@@ -1109,6 +1109,7 @@ SOURCES = \
 	windows.ui.core.idl \
 	windows.ui.idl \
 	windows.ui.input.idl \
+	windows.ui.input.inking.idl \
 	windows.ui.notifications.idl \
 	windows.ui.text.core.idl \
 	windows.ui.text.idl \
