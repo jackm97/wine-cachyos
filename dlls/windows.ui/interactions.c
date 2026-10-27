@@ -723,6 +723,7 @@ struct interaction_tracker_binding
 struct interaction_tracker
 {
     IInteractionTracker IInteractionTracker_iface;
+    IInteractionTracker4 IInteractionTracker4_iface;
     IInteractionTracker5 IInteractionTracker5_iface;
     ICompositionObject ICompositionObject_iface;
     IClosable IClosable_iface;
@@ -755,6 +756,11 @@ struct interaction_tracker
 static inline struct interaction_tracker *impl_from_IInteractionTracker( IInteractionTracker *iface )
 {
     return CONTAINING_RECORD( iface, struct interaction_tracker, IInteractionTracker_iface );
+}
+
+static inline struct interaction_tracker *impl_from_IInteractionTracker4( IInteractionTracker4 *iface )
+{
+    return CONTAINING_RECORD( iface, struct interaction_tracker, IInteractionTracker4_iface );
 }
 
 static inline struct interaction_tracker *impl_from_IInteractionTracker5( IInteractionTracker5 *iface )
@@ -1193,6 +1199,8 @@ static HRESULT WINAPI interaction_tracker_QueryInterface( IInteractionTracker *i
     if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
         IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID_IInteractionTracker ))
         *out = iface;
+    else if (IsEqualGUID( iid, &IID_IInteractionTracker4 ))
+        *out = &impl_from_IInteractionTracker( iface )->IInteractionTracker4_iface;
     else if (IsEqualGUID( iid, &IID_IInteractionTracker5 ))
         *out = &impl_from_IInteractionTracker( iface )->IInteractionTracker5_iface;
     else if (IsEqualGUID( iid, &IID_ICompositionObject ))
@@ -1240,12 +1248,13 @@ static HRESULT WINAPI interaction_tracker_GetIids( IInteractionTracker *iface, U
     IID *values;
 
     if (!count || !iids) return E_POINTER;
-    if (!(values = CoTaskMemAlloc( 4 * sizeof(*values) ))) return E_OUTOFMEMORY;
+    if (!(values = CoTaskMemAlloc( 5 * sizeof(*values) ))) return E_OUTOFMEMORY;
     values[0] = IID_IInteractionTracker;
     values[1] = IID_IInteractionTracker5;
     values[2] = IID_ICompositionObject;
     values[3] = IID_IClosable;
-    *count = 4;
+    values[4] = IID_IInteractionTracker4;
+    *count = 5;
     *iids = values;
     return S_OK;
 }
@@ -1936,6 +1945,7 @@ static HRESULT interaction_tracker_create( ICompositor *compositor, IInteraction
     if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
     InitializeCriticalSection( &impl->animation_cs );
     impl->IInteractionTracker_iface.lpVtbl = &interaction_tracker_vtbl;
+    impl->IInteractionTracker4_iface.lpVtbl = &interaction_tracker4_vtbl;
     impl->IInteractionTracker5_iface.lpVtbl = &interaction_tracker5_vtbl;
     impl->ICompositionObject_iface.lpVtbl = &tracker_composition_object_vtbl;
     impl->IClosable_iface.lpVtbl = &tracker_closable_vtbl;
@@ -2258,6 +2268,88 @@ static HRESULT WINAPI interaction_tracker_statics2_GetBindingMode( IInteractionT
     LeaveCriticalSection( &tracker_binding_cs );
     return S_OK;
 }
+
+static HRESULT WINAPI interaction_tracker4_QueryInterface( IInteractionTracker4 *iface,
+        REFIID iid, void **out )
+{
+    struct interaction_tracker *impl = impl_from_IInteractionTracker4( iface );
+    return IInteractionTracker_QueryInterface( &impl->IInteractionTracker_iface, iid, out );
+}
+
+static ULONG WINAPI interaction_tracker4_AddRef( IInteractionTracker4 *iface )
+{
+    struct interaction_tracker *impl = impl_from_IInteractionTracker4( iface );
+    return IInteractionTracker_AddRef( &impl->IInteractionTracker_iface );
+}
+
+static ULONG WINAPI interaction_tracker4_Release( IInteractionTracker4 *iface )
+{
+    struct interaction_tracker *impl = impl_from_IInteractionTracker4( iface );
+    return IInteractionTracker_Release( &impl->IInteractionTracker_iface );
+}
+
+static HRESULT WINAPI interaction_tracker4_GetIids( IInteractionTracker4 *iface,
+        ULONG *count, IID **iids )
+{
+    struct interaction_tracker *impl = impl_from_IInteractionTracker4( iface );
+    return IInteractionTracker_GetIids( &impl->IInteractionTracker_iface, count, iids );
+}
+
+static HRESULT WINAPI interaction_tracker4_GetRuntimeClassName( IInteractionTracker4 *iface,
+        HSTRING *name )
+{
+    struct interaction_tracker *impl = impl_from_IInteractionTracker4( iface );
+    return IInteractionTracker_GetRuntimeClassName( &impl->IInteractionTracker_iface, name );
+}
+
+static HRESULT WINAPI interaction_tracker4_GetTrustLevel( IInteractionTracker4 *iface,
+        TrustLevel *level )
+{
+    struct interaction_tracker *impl = impl_from_IInteractionTracker4( iface );
+    return IInteractionTracker_GetTrustLevel( &impl->IInteractionTracker_iface, level );
+}
+
+static HRESULT WINAPI interaction_tracker4_TryUpdatePositionWithOption( IInteractionTracker4 *iface,
+        struct Vector3 value, enum InteractionTrackerClampingOption option, INT32 *request_id )
+{
+    struct interaction_tracker *impl = impl_from_IInteractionTracker4( iface );
+
+    return interaction_tracker5_TryUpdatePositionWithOption( &impl->IInteractionTracker5_iface,
+            value, option, InteractionTrackerPositionUpdateOption_Default, request_id );
+}
+
+static HRESULT WINAPI interaction_tracker4_TryUpdatePositionByWithOption( IInteractionTracker4 *iface,
+        struct Vector3 amount, enum InteractionTrackerClampingOption option, INT32 *request_id )
+{
+    struct interaction_tracker *impl = impl_from_IInteractionTracker4( iface );
+
+    if (!request_id) return E_POINTER;
+    if (option != InteractionTrackerClampingOption_Auto && option != InteractionTrackerClampingOption_Disabled)
+        return E_INVALIDARG;
+    return interaction_tracker_update_position( impl, amount, TRUE,
+            option == InteractionTrackerClampingOption_Auto, request_id );
+}
+
+static HRESULT WINAPI interaction_tracker4_get_IsInertiaFromImpulse( IInteractionTracker4 *iface,
+        boolean *value )
+{
+    if (!value) return E_POINTER;
+    *value = FALSE;
+    return S_OK;
+}
+
+static const IInteractionTracker4Vtbl interaction_tracker4_vtbl =
+{
+    interaction_tracker4_QueryInterface,
+    interaction_tracker4_AddRef,
+    interaction_tracker4_Release,
+    interaction_tracker4_GetIids,
+    interaction_tracker4_GetRuntimeClassName,
+    interaction_tracker4_GetTrustLevel,
+    interaction_tracker4_TryUpdatePositionWithOption,
+    interaction_tracker4_TryUpdatePositionByWithOption,
+    interaction_tracker4_get_IsInertiaFromImpulse,
+};
 
 static const IInteractionTrackerStatics2Vtbl interaction_tracker_statics2_vtbl =
 {
