@@ -33,12 +33,14 @@
 #define WIDL_using_Windows_Foundation_Collections
 #include "windows.foundation.h"
 #define WIDL_using_Windows_ApplicationModel
+#define WIDL_using_Windows_ApplicationModel_Core
 #define WIDL_using_Windows_Storage
 #include "windows.applicationmodel.h"
 
 extern IActivationFactory *package_factory;
 extern IActivationFactory *design_mode_factory;
 extern IActivationFactory *limited_access_features_factory;
+extern IActivationFactory *core_application_factory;
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

@@ -3,6 +3,7 @@ IMPORTS = combase kernelbase
 
 SOURCES = \
 	classes.idl \
+	core.c \
 	designmode.c \
 	limited_access.c \
 	main.c \
