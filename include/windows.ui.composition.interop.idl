@@ -21,10 +21,12 @@
 #endif
 
 import "windows.ui.composition.idl";
+import "windows.ui.composition.desktop.idl";
 import "sdkddkver.h";
 
 namespace Windows.UI.Composition {
     interface ICompositorInterop;
+    interface ICompositionDrawingSurfaceInterop;
 
     [
         object,
@@ -36,5 +38,51 @@ namespace Windows.UI.Composition {
         HRESULT CreateCompositionSurfaceForHandle([in] HANDLE swapchain, [out, retval] ICompositionSurface **result);
         HRESULT CreateCompositionSurfaceForSwapChain([in] IUnknown *swapchain, [out, retval] ICompositionSurface **result);
         HRESULT CreateGraphicsDevice([in] IUnknown *device, [out, retval] ICompositionGraphicsDevice **result);
+    };
+
+    [
+        object,
+        uuid(fd04e6e3-fe0c-4c3c-ab19-a07601a576ee),
+        pointer_default(unique)
+    ]
+    interface ICompositionDrawingSurfaceInterop : IUnknown
+    {
+        HRESULT BeginDraw([in] const RECT *update_rect, [in] REFIID iid,
+                [out, iid_is(iid)] void **update_object, [out] POINT *update_offset);
+        HRESULT EndDraw();
+        HRESULT Resize([in] SIZE size);
+        HRESULT Scroll([in] const RECT *scroll_rect, [in] const RECT *clip_rect,
+                [in] INT offset_x, [in] INT offset_y);
+        HRESULT ResumeDraw();
+        HRESULT SuspendDraw();
+    };
+}
+
+namespace Windows.UI.Composition.Desktop {
+    interface ICompositorDesktopInterop;
+    interface IDesktopWindowTargetInterop;
+
+    [
+        object,
+        uuid(29e691fa-4567-4dca-b319-d0f207eb6807),
+        pointer_default(unique)
+    ]
+    interface ICompositorDesktopInterop : IUnknown
+    {
+        HRESULT CreateDesktopWindowTarget(
+            [in] HWND hwnd, [in] BOOL topmost,
+            [out, retval] Windows.UI.Composition.Desktop.IDesktopWindowTarget **result
+        );
+        HRESULT EnsureOnThread([in] DWORD thread_id);
+    };
+
+    [
+        object,
+        uuid(35dbf59e-e3f9-45b0-81e7-fe75f4145dc9),
+        pointer_default(unique)
+    ]
+    interface IDesktopWindowTargetInterop : IUnknown
+    {
+        [propget] HRESULT Hwnd([out, retval] HWND *value);
     };
 }

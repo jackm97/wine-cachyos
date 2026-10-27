@@ -1101,6 +1101,9 @@ SOURCES = \
 	windows.system.threading.idl \
 	windows.system.userprofile.idl \
 	windows.ui.composition.idl \
+	windows.ui.composition.core.idl \
+	windows.ui.composition.desktop.idl \
+	windows.ui.composition.interactions.idl \
 	windows.ui.composition.interop.idl \
 	windows.ui.core.idl \
 	windows.ui.idl \

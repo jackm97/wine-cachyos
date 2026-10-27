@@ -1,11 +1,13 @@
 MODULE  = windows.ui.dll
-IMPORTS = combase advapi32 user32
+IMPORTS = dcomp combase advapi32 user32
 
 SOURCES = \
 	accessibilitysettings.c \
 	classes.idl \
+	composition.c \
 	corewindow.c \
 	inputpane.c \
+	interactions.c \
 	main.c \
 	uisettings.c \
 	uiviewsettings.c \

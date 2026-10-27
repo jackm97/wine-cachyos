@@ -1,0 +1,408 @@
+/*
+ * Windows.UI.Composition.Interactions definitions
+ *
+ * Copyright 2026 Mirko Brombin
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ */
+
+#ifdef __WIDL__
+#pragma winrt ns_prefix
+#endif
+
+import "inspectable.idl";
+import "windowscontracts.idl";
+import "windows.foundation.idl";
+import "windows.foundation.numerics.idl";
+import "windows.ui.composition.idl";
+import "windows.ui.input.idl";
+
+namespace Windows.UI.Composition.Interactions
+{
+    typedef enum InteractionBindingAxisModes InteractionBindingAxisModes;
+    typedef enum InteractionChainingMode InteractionChainingMode;
+    typedef enum InteractionSourceMode InteractionSourceMode;
+    typedef enum InteractionTrackerClampingOption InteractionTrackerClampingOption;
+    typedef enum InteractionTrackerPositionUpdateOption InteractionTrackerPositionUpdateOption;
+    typedef enum VisualInteractionSourceRedirectionMode VisualInteractionSourceRedirectionMode;
+
+    [contract(Windows.Foundation.UniversalApiContract, 8.0)]
+    [flags]
+    enum InteractionBindingAxisModes
+    {
+        None = 0,
+        PositionX = 1,
+        PositionY = 2,
+        Scale = 4,
+    };
+
+    enum InteractionChainingMode
+    {
+        Auto = 0,
+        Always = 1,
+        Never = 2,
+    };
+
+    enum InteractionSourceMode
+    {
+        Disabled = 0,
+        EnabledWithInertia = 1,
+        EnabledWithoutInertia = 2,
+    };
+
+    enum InteractionTrackerClampingOption
+    {
+        Auto = 0,
+        Disabled = 1,
+    };
+
+    enum InteractionTrackerPositionUpdateOption
+    {
+        Default = 0,
+        AllowActiveCustomScaleAnimation = 1,
+    };
+
+    enum VisualInteractionSourceRedirectionMode
+    {
+        Off = 0,
+        CapableTouchpadOnly = 1,
+        PointerWheelOnly = 2,
+        CapableTouchpadAndPointerWheel = 3,
+    };
+
+    interface ICompositionInteractionSource;
+    interface ICompositionInteractionSourceCollection;
+    interface ICompositionConditionalValue;
+    interface ICompositionConditionalValueStatics;
+    interface IInteractionTracker;
+    interface IInteractionTracker5;
+    interface IInteractionTrackerStatics;
+    interface IInteractionTrackerStatics2;
+    interface IVisualInteractionSource;
+    interface IVisualInteractionSource2;
+    interface IVisualInteractionSource3;
+    interface IVisualInteractionSourceStatics;
+    runtimeclass CompositionInteractionSourceCollection;
+    runtimeclass CompositionConditionalValue;
+    runtimeclass InteractionTracker;
+    runtimeclass VisualInteractionSource;
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.UI.Composition.Interactions.CompositionConditionalValue),
+        uuid(43250538-eb73-4561-a71d-1a43eaeb7a9b)
+    ]
+    interface ICompositionConditionalValue : IInspectable
+    {
+        [propget] HRESULT Condition([out, retval] Windows.UI.Composition.ExpressionAnimation **value);
+        [propput] HRESULT Condition([in] Windows.UI.Composition.ExpressionAnimation *value);
+        [propget] HRESULT Value([out, retval] Windows.UI.Composition.ExpressionAnimation **value);
+        [propput] HRESULT Value([in] Windows.UI.Composition.ExpressionAnimation *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.UI.Composition.Interactions.CompositionConditionalValue),
+        uuid(090c4b72-8467-4d0a-9065-ac46b80a5522)
+    ]
+    interface ICompositionConditionalValueStatics : IInspectable
+    {
+        HRESULT Create(
+            [in] Windows.UI.Composition.Compositor *compositor,
+            [out, retval] Windows.UI.Composition.Interactions.CompositionConditionalValue **result
+        );
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        marshaling_behavior(agile),
+        static(Windows.UI.Composition.Interactions.ICompositionConditionalValueStatics,
+               Windows.Foundation.UniversalApiContract, 2.0),
+        threading(both)
+    ]
+    runtimeclass CompositionConditionalValue : Windows.UI.Composition.CompositionObject
+    {
+        [default] interface Windows.UI.Composition.Interactions.ICompositionConditionalValue;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTracker),
+        uuid(2a8e8cb1-1000-4416-8363-cc27fb877308)
+    ]
+    interface IInteractionTracker : IInspectable
+    {
+        [propget] HRESULT InteractionSources(
+            [out, retval] Windows.UI.Composition.Interactions.ICompositionInteractionSourceCollection **value
+        );
+        [propget] HRESULT IsPositionRoundingSuggested([out, retval] boolean *value);
+        [propget] HRESULT MaxPosition([out, retval] Windows.Foundation.Numerics.Vector3 *value);
+        [propput] HRESULT MaxPosition([in] Windows.Foundation.Numerics.Vector3 value);
+        [propget] HRESULT MaxScale([out, retval] FLOAT *value);
+        [propput] HRESULT MaxScale([in] FLOAT value);
+        [propget] HRESULT MinPosition([out, retval] Windows.Foundation.Numerics.Vector3 *value);
+        [propput] HRESULT MinPosition([in] Windows.Foundation.Numerics.Vector3 value);
+        [propget] HRESULT MinScale([out, retval] FLOAT *value);
+        [propput] HRESULT MinScale([in] FLOAT value);
+        [propget] HRESULT NaturalRestingPosition([out, retval] Windows.Foundation.Numerics.Vector3 *value);
+        [propget] HRESULT NaturalRestingScale([out, retval] FLOAT *value);
+        [propget] HRESULT Owner([out, retval] IInspectable **value);
+        [propget] HRESULT Position([out, retval] Windows.Foundation.Numerics.Vector3 *value);
+        [propget] HRESULT PositionInertiaDecayRate([out, retval] IInspectable **value);
+        [propput] HRESULT PositionInertiaDecayRate([in] IInspectable *value);
+        [propget] HRESULT PositionVelocityInPixelsPerSecond(
+            [out, retval] Windows.Foundation.Numerics.Vector3 *value
+        );
+        [propget] HRESULT Scale([out, retval] FLOAT *value);
+        [propget] HRESULT ScaleInertiaDecayRate([out, retval] IInspectable **value);
+        [propput] HRESULT ScaleInertiaDecayRate([in] IInspectable *value);
+        [propget] HRESULT ScaleVelocityInPercentPerSecond([out, retval] FLOAT *value);
+        HRESULT AdjustPositionXIfGreaterThanThreshold([in] FLOAT adjustment, [in] FLOAT position_threshold);
+        HRESULT AdjustPositionYIfGreaterThanThreshold([in] FLOAT adjustment, [in] FLOAT position_threshold);
+        HRESULT ConfigurePositionXInertiaModifiers([in] IInspectable *modifiers);
+        HRESULT ConfigurePositionYInertiaModifiers([in] IInspectable *modifiers);
+        HRESULT ConfigureScaleInertiaModifiers([in] IInspectable *modifiers);
+        HRESULT TryUpdatePosition(
+            [in] Windows.Foundation.Numerics.Vector3 value, [out, retval] INT32 *request_id
+        );
+        HRESULT TryUpdatePositionBy(
+            [in] Windows.Foundation.Numerics.Vector3 amount, [out, retval] INT32 *request_id
+        );
+        HRESULT TryUpdatePositionWithAnimation(
+            [in] IInspectable *animation, [out, retval] INT32 *request_id
+        );
+        HRESULT TryUpdatePositionWithAdditionalVelocity(
+            [in] Windows.Foundation.Numerics.Vector3 velocity, [out, retval] INT32 *request_id
+        );
+        HRESULT TryUpdateScale(
+            [in] FLOAT value,
+            [in] Windows.Foundation.Numerics.Vector3 center_point,
+            [out, retval] INT32 *request_id
+        );
+        HRESULT TryUpdateScaleWithAnimation(
+            [in] IInspectable *animation,
+            [in] Windows.Foundation.Numerics.Vector3 center_point,
+            [out, retval] INT32 *request_id
+        );
+        HRESULT TryUpdateScaleWithAdditionalVelocity(
+            [in] FLOAT velocity,
+            [in] Windows.Foundation.Numerics.Vector3 center_point,
+            [out, retval] INT32 *request_id
+        );
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 10.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTracker),
+        uuid(d3ef5da2-a254-40e4-88d5-44e4e16b5809)
+    ]
+    interface IInteractionTracker5 : IInspectable
+    {
+        HRESULT TryUpdatePositionWithOption(
+            [in] Windows.Foundation.Numerics.Vector3 value,
+            [in] Windows.UI.Composition.Interactions.InteractionTrackerClampingOption option,
+            [in] Windows.UI.Composition.Interactions.InteractionTrackerPositionUpdateOption position_update_option,
+            [out, retval] INT32 *request_id
+        );
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        uuid(1b468e4b-a5bf-47d8-a547-3894155a158c)
+    ]
+    interface ICompositionInteractionSourceCollection : IInspectable
+    {
+        [propget] HRESULT Count([out, retval] INT32 *value);
+        HRESULT Add([in] Windows.UI.Composition.Interactions.ICompositionInteractionSource *value);
+        HRESULT Remove([in] Windows.UI.Composition.Interactions.ICompositionInteractionSource *value);
+        HRESULT RemoveAll();
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        marshaling_behavior(agile),
+        threading(both)
+    ]
+    runtimeclass CompositionInteractionSourceCollection
+    {
+        [default] interface Windows.UI.Composition.Interactions.ICompositionInteractionSourceCollection;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTracker),
+        uuid(bba5d7b7-6590-4498-8d6c-eb62b514c92a)
+    ]
+    interface IInteractionTrackerStatics : IInspectable
+    {
+        HRESULT Create(
+            [in] Windows.UI.Composition.Compositor *compositor,
+            [out, retval] Windows.UI.Composition.Interactions.IInteractionTracker **result
+        );
+        HRESULT CreateWithOwner(
+            [in] Windows.UI.Composition.Compositor *compositor,
+            [in] IInspectable *owner,
+            [out, retval] Windows.UI.Composition.Interactions.IInteractionTracker **result
+        );
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTracker),
+        uuid(35e53720-46b7-5cb0-b505-f3d6884a6163)
+    ]
+    interface IInteractionTrackerStatics2 : IInspectable
+    {
+        HRESULT SetBindingMode(
+            [in] Windows.UI.Composition.Interactions.IInteractionTracker *bound_tracker1,
+            [in] Windows.UI.Composition.Interactions.IInteractionTracker *bound_tracker2,
+            [in] Windows.UI.Composition.Interactions.InteractionBindingAxisModes axis_mode
+        );
+        HRESULT GetBindingMode(
+            [in] Windows.UI.Composition.Interactions.IInteractionTracker *bound_tracker1,
+            [in] Windows.UI.Composition.Interactions.IInteractionTracker *bound_tracker2,
+            [out, retval] Windows.UI.Composition.Interactions.InteractionBindingAxisModes *axis_mode
+        );
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        marshaling_behavior(agile),
+        static(Windows.UI.Composition.Interactions.IInteractionTrackerStatics,
+               Windows.Foundation.UniversalApiContract, 2.0),
+        static(Windows.UI.Composition.Interactions.IInteractionTrackerStatics2,
+               Windows.Foundation.UniversalApiContract, 8.0),
+        threading(both)
+    ]
+    runtimeclass InteractionTracker
+    {
+        [default] interface Windows.UI.Composition.Interactions.IInteractionTracker;
+        interface Windows.UI.Composition.Interactions.IInteractionTracker5;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        uuid(043b2431-06e3-495a-ba54-409f0017fac0)
+    ]
+    interface ICompositionInteractionSource : IInspectable
+    {
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.UI.Composition.Interactions.VisualInteractionSource),
+        uuid(ca0e8a86-d8d6-4111-b088-70347bd2b0ed)
+    ]
+    interface IVisualInteractionSource : IInspectable
+    {
+        [propget] HRESULT IsPositionXRailsEnabled([out, retval] boolean *value);
+        [propput] HRESULT IsPositionXRailsEnabled([in] boolean value);
+        [propget] HRESULT IsPositionYRailsEnabled([out, retval] boolean *value);
+        [propput] HRESULT IsPositionYRailsEnabled([in] boolean value);
+        [propget] HRESULT ManipulationRedirectionMode(
+            [out, retval] Windows.UI.Composition.Interactions.VisualInteractionSourceRedirectionMode *value
+        );
+        [propput] HRESULT ManipulationRedirectionMode(
+            [in] Windows.UI.Composition.Interactions.VisualInteractionSourceRedirectionMode value
+        );
+        [propget] HRESULT PositionXChainingMode(
+            [out, retval] Windows.UI.Composition.Interactions.InteractionChainingMode *value
+        );
+        [propput] HRESULT PositionXChainingMode(
+            [in] Windows.UI.Composition.Interactions.InteractionChainingMode value
+        );
+        [propget] HRESULT PositionXSourceMode(
+            [out, retval] Windows.UI.Composition.Interactions.InteractionSourceMode *value
+        );
+        [propput] HRESULT PositionXSourceMode(
+            [in] Windows.UI.Composition.Interactions.InteractionSourceMode value
+        );
+        [propget] HRESULT PositionYChainingMode(
+            [out, retval] Windows.UI.Composition.Interactions.InteractionChainingMode *value
+        );
+        [propput] HRESULT PositionYChainingMode(
+            [in] Windows.UI.Composition.Interactions.InteractionChainingMode value
+        );
+        [propget] HRESULT PositionYSourceMode(
+            [out, retval] Windows.UI.Composition.Interactions.InteractionSourceMode *value
+        );
+        [propput] HRESULT PositionYSourceMode(
+            [in] Windows.UI.Composition.Interactions.InteractionSourceMode value
+        );
+        [propget] HRESULT ScaleChainingMode(
+            [out, retval] Windows.UI.Composition.Interactions.InteractionChainingMode *value
+        );
+        [propput] HRESULT ScaleChainingMode(
+            [in] Windows.UI.Composition.Interactions.InteractionChainingMode value
+        );
+        [propget] HRESULT ScaleSourceMode(
+            [out, retval] Windows.UI.Composition.Interactions.InteractionSourceMode *value
+        );
+        [propput] HRESULT ScaleSourceMode(
+            [in] Windows.UI.Composition.Interactions.InteractionSourceMode value
+        );
+        [propget] HRESULT Source([out, retval] Windows.UI.Composition.Visual **value);
+        HRESULT TryRedirectForManipulation([in] Windows.UI.Input.PointerPoint *pointer);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 4.0),
+        exclusiveto(Windows.UI.Composition.Interactions.VisualInteractionSource),
+        uuid(aa914893-a73c-414d-80d0-249bad2fbd93)
+    ]
+    interface IVisualInteractionSource2 : IInspectable
+    {
+        [propget] HRESULT DeltaPosition([out, retval] Windows.Foundation.Numerics.Vector3 *value);
+        [propget] HRESULT DeltaScale([out, retval] FLOAT *value);
+        [propget] HRESULT Position([out, retval] Windows.Foundation.Numerics.Vector3 *value);
+        [propget] HRESULT PositionVelocity([out, retval] Windows.Foundation.Numerics.Vector3 *value);
+        [propget] HRESULT Scale([out, retval] FLOAT *value);
+        [propget] HRESULT ScaleVelocity([out, retval] FLOAT *value);
+        HRESULT ConfigureCenterPointXModifiers([in] IInspectable *values);
+        HRESULT ConfigureCenterPointYModifiers([in] IInspectable *values);
+        HRESULT ConfigureDeltaPositionXModifiers([in] IInspectable *values);
+        HRESULT ConfigureDeltaPositionYModifiers([in] IInspectable *values);
+        HRESULT ConfigureDeltaScaleModifiers([in] IInspectable *values);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 7.0),
+        exclusiveto(Windows.UI.Composition.Interactions.VisualInteractionSource),
+        uuid(d941ef2a-0d5c-4057-92d7-c9711533204f)
+    ]
+    interface IVisualInteractionSource3 : IInspectable
+    {
+        [propget] HRESULT PointerWheelConfig([out, retval] IInspectable **value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.UI.Composition.Interactions.VisualInteractionSource),
+        uuid(369965e1-8645-4f75-ba00-6479cd10c8e6)
+    ]
+    interface IVisualInteractionSourceStatics : IInspectable
+    {
+        HRESULT Create(
+            [in] Windows.UI.Composition.Visual *source,
+            [out, retval] Windows.UI.Composition.Interactions.VisualInteractionSource **result
+        );
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        marshaling_behavior(agile),
+        static(Windows.UI.Composition.Interactions.IVisualInteractionSourceStatics,
+               Windows.Foundation.UniversalApiContract, 2.0),
+        threading(both)
+    ]
+    runtimeclass VisualInteractionSource : Windows.UI.Composition.CompositionObject
+    {
+        [default] interface Windows.UI.Composition.Interactions.IVisualInteractionSource;
+        interface Windows.UI.Composition.Interactions.IVisualInteractionSource2;
+        interface Windows.UI.Composition.Interactions.IVisualInteractionSource3;
+        interface Windows.UI.Composition.Interactions.ICompositionInteractionSource;
+    }
+}

@@ -601,6 +601,17 @@ namespace Windows.UI.Composition {
     }
 
     [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.UI.Composition.CompositionSurfaceBrush),
+        uuid(550bb289-1fe0-42e5-8195-1eefa87ff08e)
+    ]
+    interface ICompositionSurfaceBrush3 : IInspectable
+    {
+        [propget] HRESULT SnapToPixels([out, retval] boolean *value);
+        [propput] HRESULT SnapToPixels([in] boolean value);
+    }
+
+    [
         contract(Windows.Foundation.UniversalApiContract, 2.0),
         exclusiveto(Windows.UI.Composition.CompositionTarget),
         uuid(a1bea8ba-d726-4663-8129-6b5e7927ffa6)
@@ -872,6 +883,21 @@ namespace Windows.UI.Composition {
         [propput] HRESULT Size([in] Windows.Foundation.Numerics.Vector2 value);
         [propget] HRESULT TransformMatrix([out, retval] Windows.Foundation.Numerics.Matrix4x4 *value);
         [propput] HRESULT TransformMatrix([in] Windows.Foundation.Numerics.Matrix4x4 value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 4.0),
+        exclusiveto(Windows.UI.Composition.Visual),
+        uuid(3052b611-56c3-4c3e-8bf3-f6e1ad473f06)
+    ]
+    interface IVisual2 : IInspectable
+    {
+        [propget] HRESULT ParentForTransform([out, retval] Windows.UI.Composition.Visual **value);
+        [propput] HRESULT ParentForTransform([in] Windows.UI.Composition.Visual *value);
+        [propget] HRESULT RelativeOffsetAdjustment([out, retval] Windows.Foundation.Numerics.Vector3 *value);
+        [propput] HRESULT RelativeOffsetAdjustment([in] Windows.Foundation.Numerics.Vector3 value);
+        [propget] HRESULT RelativeSizeAdjustment([out, retval] Windows.Foundation.Numerics.Vector2 *value);
+        [propput] HRESULT RelativeSizeAdjustment([in] Windows.Foundation.Numerics.Vector2 value);
     }
 
     [
