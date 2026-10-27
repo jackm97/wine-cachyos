@@ -83,7 +83,10 @@ namespace Windows.UI.Composition.Interactions
     interface IInteractionTrackerOwner;
     interface IInteractionTrackerCustomAnimationStateEnteredArgs;
     interface IInteractionTrackerIdleStateEnteredArgs;
+    interface IInteractionTrackerIdleStateEnteredArgs2;
     interface IInteractionTrackerInertiaStateEnteredArgs;
+    interface IInteractionTrackerInertiaStateEnteredArgs3;
+    interface IInteractionTrackerInertiaStateEnteredArgs2;
     interface IInteractionTrackerInteractingStateEnteredArgs;
     interface IInteractionTrackerRequestIgnoredArgs;
     interface IInteractionTrackerValuesChangedArgs;
@@ -135,6 +138,16 @@ namespace Windows.UI.Composition.Interactions
     }
 
     [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTrackerIdleStateEnteredArgs),
+        uuid(f2e771ed-b803-5137-9435-1c96e48721e9)
+    ]
+    interface IInteractionTrackerIdleStateEnteredArgs2 : IInspectable
+    {
+        [propget] HRESULT IsFromBinding([out, retval] boolean *value);
+    }
+
+    [
         contract(Windows.Foundation.UniversalApiContract, 3.0),
         marshaling_behavior(agile),
         threading(both)
@@ -142,6 +155,7 @@ namespace Windows.UI.Composition.Interactions
     runtimeclass InteractionTrackerIdleStateEnteredArgs
     {
         [default] interface Windows.UI.Composition.Interactions.IInteractionTrackerIdleStateEnteredArgs;
+        interface Windows.UI.Composition.Interactions.IInteractionTrackerIdleStateEnteredArgs2;
     }
 
     [
@@ -161,6 +175,26 @@ namespace Windows.UI.Composition.Interactions
     }
 
     [
+        contract(Windows.Foundation.UniversalApiContract, 7.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTrackerInertiaStateEnteredArgs),
+        uuid(b1eb32f6-c26c-41f6-a189-fabc22b323cc)
+    ]
+    interface IInteractionTrackerInertiaStateEnteredArgs2 : IInspectable
+    {
+        [propget] HRESULT IsInertiaFromImpulse([out, retval] boolean *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTrackerInertiaStateEnteredArgs),
+        uuid(48ac1c2f-47bd-59af-a58c-79bd2eb9ef71)
+    ]
+    interface IInteractionTrackerInertiaStateEnteredArgs3 : IInspectable
+    {
+        [propget] HRESULT IsFromBinding([out, retval] boolean *value);
+    }
+
+    [
         contract(Windows.Foundation.UniversalApiContract, 3.0),
         marshaling_behavior(agile),
         threading(both)
@@ -168,6 +202,8 @@ namespace Windows.UI.Composition.Interactions
     runtimeclass InteractionTrackerInertiaStateEnteredArgs
     {
         [default] interface Windows.UI.Composition.Interactions.IInteractionTrackerInertiaStateEnteredArgs;
+        interface Windows.UI.Composition.Interactions.IInteractionTrackerInertiaStateEnteredArgs3;
+        interface Windows.UI.Composition.Interactions.IInteractionTrackerInertiaStateEnteredArgs2;
     }
 
     [
