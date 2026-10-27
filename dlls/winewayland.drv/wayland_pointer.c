@@ -122,6 +122,15 @@ static HWND wayland_pointer_get_focused_hwnd(void)
     return hwnd;
 }
 
+/* Hit testing skips disabled child windows, so their input belongs to the
+ * window beneath them: let the server find it from the position. */
+static HWND get_input_hwnd(HWND hwnd)
+{
+    if ((NtUserGetWindowLongW(hwnd, GWL_STYLE) & (WS_CHILD | WS_DISABLED)) == (WS_CHILD | WS_DISABLED))
+        return 0;
+    return hwnd;
+}
+
 static void pointer_handle_motion_internal(wl_fixed_t sx, wl_fixed_t sy)
 {
     INPUT input = {0};
@@ -162,7 +171,7 @@ static void pointer_handle_motion_internal(wl_fixed_t sx, wl_fixed_t sy)
           hwnd, wl_fixed_to_double(sx), wl_fixed_to_double(sy),
           screen.x, screen.y);
 
-    NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
+    NtUserSendHardwareInput(get_input_hwnd(hwnd), SEND_HWMSG_RAWINPUT, &input, 0);
 }
 
 static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
@@ -269,7 +278,7 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
 
     TRACE("hwnd=%p button=%#x state=%u\n", hwnd, button, state);
 
-    NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
+    NtUserSendHardwareInput(get_input_hwnd(hwnd), SEND_HWMSG_RAWINPUT, &input, 0);
 }
 
 static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer,
@@ -319,7 +328,7 @@ static void pointer_handle_axis_value120(void *data, struct wl_pointer *wl_point
 
     TRACE("hwnd=%p axis=%u value120=%d\n", hwnd, axis, value120);
 
-    NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
+    NtUserSendHardwareInput(get_input_hwnd(hwnd), SEND_HWMSG_RAWINPUT, &input, 0);
 }
 
 static void pointer_handle_axis_discrete(void *data, struct wl_pointer *wl_pointer,
@@ -408,7 +417,7 @@ static void relative_pointer_v1_relative_motion(void *private,
           hwnd, wl_fixed_to_double(dx), wl_fixed_to_double(dy), input.mi.dx, input.mi.dy,
           wl_fixed_to_double(dx_unaccel), wl_fixed_to_double(dy_unaccel), raw.data[0].x, raw.data[0].y);
 
-    NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, (LPARAM)&raw);
+    NtUserSendHardwareInput(get_input_hwnd(hwnd), SEND_HWMSG_RAWINPUT, &input, (LPARAM)&raw);
 }
 
 static const struct zwp_relative_pointer_v1_listener relative_pointer_v1_listener =
