@@ -35,6 +35,7 @@ namespace Windows.Media.ClosedCaptioning {
     typedef enum ClosedCaptionStyle ClosedCaptionStyle;
 
     interface IClosedCaptionPropertiesStatics;
+    interface IClosedCaptionPropertiesStatics2;
 
     runtimeclass ClosedCaptionProperties;
 
@@ -128,9 +129,24 @@ namespace Windows.Media.ClosedCaptioning {
     }
 
     [
+        contract(Windows.Foundation.UniversalApiContract, 15.0),
+        exclusiveto(Windows.Media.ClosedCaptioning.ClosedCaptionProperties),
+        uuid(9de26870-37de-4197-8845-9a48dc5ac317)
+    ]
+    interface IClosedCaptionPropertiesStatics2 : IInspectable
+    {
+        [eventadd] HRESULT PropertiesChanged(
+            [in] Windows.Foundation.EventHandler<IInspectable *> *handler,
+            [out, retval] EventRegistrationToken *token
+        );
+        [eventremove] HRESULT PropertiesChanged([in] EventRegistrationToken token);
+    }
+
+    [
         contract(Windows.Foundation.UniversalApiContract, 1.0),
         marshaling_behavior(agile),
         static(Windows.Media.ClosedCaptioning.IClosedCaptionPropertiesStatics, Windows.Foundation.UniversalApiContract, 1.0),
+        static(Windows.Media.ClosedCaptioning.IClosedCaptionPropertiesStatics2, Windows.Foundation.UniversalApiContract, 15.0),
         threading(both)
     ]
     runtimeclass ClosedCaptionProperties
