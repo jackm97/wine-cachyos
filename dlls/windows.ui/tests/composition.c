@@ -30,11 +30,14 @@
 #include "windows.foundation.h"
 #define WIDL_using_Windows_Foundation_Numerics
 #include "windows.foundation.numerics.h"
+#define WIDL_using_Windows_Graphics
+#include "windows.graphics.h"
 #define WIDL_using_Windows_UI
 #include "windows.ui.h"
 #define WIDL_using_Windows_UI_Core
 #define WIDL_using_Windows_UI_Composition
 #include "windows.ui.composition.h"
+#include "windows.ui.composition.interop.h"
 #define WIDL_using_Windows_UI_Composition_Core
 #include "windows.ui.composition.core.h"
 #define WIDL_using_Windows_UI_Composition_Interactions
@@ -48,6 +51,8 @@ static const GUID compositor5_iid =
     {0x48ea31ad, 0x7fcd, 0x4076, {0xa7, 0x9c, 0x90, 0xcc, 0x4b, 0x85, 0x2c, 0x9b}};
 static const GUID compositor_controller_iid =
     {0x2d75f35a, 0x70a7, 0x4395, {0xba, 0x2d, 0xce, 0xf0, 0xb1, 0x83, 0x99, 0xf9}};
+static const GUID compositor_interop_iid =
+    {0x25297d5c, 0x3ad4, 0x4c9c, {0xb5, 0xcf, 0xe3, 0x6a, 0x38, 0x51, 0x23, 0x30}};
 static const GUID interaction_tracker_statics_iid =
     {0xbba5d7b7, 0x6590, 0x4498, {0x8d, 0x6c, 0xeb, 0x62, 0xb5, 0x14, 0xc9, 0x2a}};
 static const GUID interaction_tracker_statics2_iid =
@@ -165,6 +170,58 @@ done:
     WindowsDeleteString( value );
     WindowsDeleteString( comment );
     if (compositor5) compositor5->lpVtbl->Release( compositor5 );
+    ICompositor_Release( compositor );
+}
+
+static void test_composition_graphics_device2(void)
+{
+    struct SizeInt32 size = {640, 480};
+    ICompositionVirtualDrawingSurface *virtual_surface = (void *)0xdeadbeef;
+    ICompositionDrawingSurface *surface = (void *)0xdeadbeef;
+    ICompositionGraphicsDevice2 *device2 = NULL;
+    ICompositionGraphicsDevice *device = NULL;
+    ICompositorInterop *interop = NULL;
+    ICompositor *compositor;
+    IID *iids = NULL;
+    ULONG count = 0;
+    HRESULT hr;
+
+    if (!(compositor = create_compositor())) return;
+    hr = ICompositor_QueryInterface( compositor, &compositor_interop_iid, (void **)&interop );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (FAILED(hr)) goto done;
+
+    hr = ICompositorInterop_CreateGraphicsDevice( interop, (IUnknown *)compositor, &device );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (FAILED(hr)) goto done;
+
+    hr = ICompositionGraphicsDevice_QueryInterface( device, &IID_ICompositionGraphicsDevice2,
+            (void **)&device2 );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (FAILED(hr)) goto done;
+
+    hr = ICompositionGraphicsDevice2_GetIids( device2, &count, &iids );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    ok( count == 2, "Got count %lu.\n", count );
+    ok( IsEqualGUID( &iids[0], &IID_ICompositionGraphicsDevice ), "Unexpected first IID.\n" );
+    ok( IsEqualGUID( &iids[1], &IID_ICompositionGraphicsDevice2 ), "Unexpected second IID.\n" );
+
+    hr = ICompositionGraphicsDevice2_CreateDrawingSurface2( device2, size,
+            DirectXPixelFormat_B8G8R8A8UIntNormalized, DirectXAlphaMode_Premultiplied, &surface );
+    ok( hr == E_NOINTERFACE, "Got hr %#lx.\n", hr );
+    ok( surface == NULL, "Got surface %p.\n", surface );
+
+    hr = ICompositionGraphicsDevice2_CreateVirtualDrawingSurface( device2, size,
+            DirectXPixelFormat_B8G8R8A8UIntNormalized, DirectXAlphaMode_Premultiplied,
+            &virtual_surface );
+    ok( hr == E_NOINTERFACE, "Got hr %#lx.\n", hr );
+    ok( virtual_surface == NULL, "Got surface %p.\n", virtual_surface );
+
+done:
+    CoTaskMemFree( iids );
+    if (device2) ICompositionGraphicsDevice2_Release( device2 );
+    if (device) ICompositionGraphicsDevice_Release( device );
+    if (interop) ICompositorInterop_Release( interop );
     ICompositor_Release( compositor );
 }
 
@@ -569,6 +626,7 @@ START_TEST(composition)
     ok( hr == S_OK, "RoInitialize failed, hr %#lx.\n", hr );
 
     test_compositor_interfaces();
+    test_composition_graphics_device2();
     test_compositor_controller_async();
     test_compositor_animation();
     test_visual_collection_iterable();
