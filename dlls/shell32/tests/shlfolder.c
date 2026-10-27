@@ -213,10 +213,10 @@ static struct
     {L"test\\", 0x80070002},
     {L"sub\\dir", 0x80070002},
     {L"sub/dir", E_INVALIDARG, 1},
-    {L"http:", S_OK, 1},
-    {L"http:test", S_OK, 1},
-    {L"http:\\test", S_OK, 1},
-    {L"xx:", S_OK, 1},
+    {L"http:", S_OK},
+    {L"http:test", S_OK},
+    {L"http:\\test", S_OK},
+    {L"xx:", S_OK},
 };
 
 static void test_ParseDisplayName(void)
@@ -4576,6 +4576,29 @@ if (0)
         ok(ret == FALSE, "expected different idls\n");
         ILFree(pidl1);
         ILFree(pidl2);
+    }
+
+    /* internet URL */
+    {
+        static const WCHAR urlW[] = L"https://www.winehq.org/about";
+        WCHAR *name;
+
+        hr = SHParseDisplayName(urlW, NULL, &pidl1, 0, NULL);
+        ok(hr == S_OK, "failed %08lx\n", hr);
+        if (hr == S_OK)
+        {
+            hr = SHGetNameFromIDList(pidl1, SIGDN_DESKTOPABSOLUTEPARSING, &name);
+            ok(hr == S_OK, "failed %08lx\n", hr);
+            if (hr == S_OK)
+            {
+                ok(!lstrcmpW(name, urlW), "got %s\n", wine_dbgstr_w(name));
+                CoTaskMemFree(name);
+            }
+
+            hr = SHGetNameFromIDList(pidl1, SIGDN_FILESYSPATH, &name);
+            ok(FAILED(hr), "got %08lx\n", hr);
+            ILFree(pidl1);
+        }
     }
 
     IShellFolder_Release(desktop);

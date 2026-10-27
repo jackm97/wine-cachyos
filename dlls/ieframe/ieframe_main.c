@@ -178,6 +178,16 @@ static const IClassFactoryVtbl CUrlHistoryFactoryVtbl = {
 
 static IClassFactory CUrlHistoryFactory = { &CUrlHistoryFactoryVtbl };
 
+static const IClassFactoryVtbl InternetFolderFactoryVtbl = {
+    ClassFactory_QueryInterface,
+    ClassFactory_AddRef,
+    ClassFactory_Release,
+    InternetFolder_Create,
+    ClassFactory_LockServer
+};
+
+static IClassFactory InternetFolderFactory = { &InternetFolderFactoryVtbl };
+
 /******************************************************************
  *              DllMain (ieframe.@)
  */
@@ -224,6 +234,11 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
     if(IsEqualGUID(&CLSID_CUrlHistory, rclsid)) {
         TRACE("(CLSID_CUrlHistory %s %p)\n", debugstr_guid(riid), ppv);
         return IClassFactory_QueryInterface(&CUrlHistoryFactory, riid, ppv);
+    }
+
+    if(IsEqualGUID(&CLSID_Internet, rclsid)) {
+        TRACE("(CLSID_Internet %s %p)\n", debugstr_guid(riid), ppv);
+        return IClassFactory_QueryInterface(&InternetFolderFactory, riid, ppv);
     }
 
     FIXME("%s %s %p\n", debugstr_guid(rclsid), debugstr_guid(riid), ppv);

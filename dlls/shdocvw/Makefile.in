@@ -1,7 +1,7 @@
 MODULE    = shdocvw.dll
 IMPORTLIB = shdocvw
 IMPORTS   = uuid shlwapi advapi32
-DELAYIMPORTS = version ole32 oleaut32 ieframe
+DELAYIMPORTS = version ole32 oleaut32 ieframe shell32
 
 VER_PRODUCTVERSION  = 6,0,2900,2180
 VER_OLESELFREGISTER = 1

@@ -599,6 +599,27 @@ static BOOL shell_item_exists(IShellItem* shellitem)
     return result;
 }
 
+static HRESULT parse_url(FileDialogImpl *This, const WCHAR *url, LPITEMIDLIST *pidl)
+{
+    BIND_OPTS opts = { sizeof(opts) };
+    IBindCtx *bind_ctx;
+    HRESULT hr;
+
+    /* An item being saved does not have to exist yet. */
+    if(This->dlg_type != ITEMDLG_TYPE_SAVE)
+        return SHParseDisplayName(url, NULL, pidl, 0, NULL);
+
+    hr = CreateBindCtx(0, &bind_ctx);
+    if(FAILED(hr))
+        return hr;
+
+    opts.grfMode = STGM_CREATE;
+    IBindCtx_SetBindOptions(bind_ctx, &opts);
+    hr = SHParseDisplayName(url, bind_ctx, pidl, 0, NULL);
+    IBindCtx_Release(bind_ctx);
+    return hr;
+}
+
 static HRESULT on_default_action(FileDialogImpl *This)
 {
     IShellFolder *psf_parent, *psf_desktop;
@@ -606,6 +627,7 @@ static HRESULT on_default_action(FileDialogImpl *This)
     LPITEMIDLIST current_folder;
     LPWSTR fn_iter, files = NULL, tmp_files, filter = NULL;
     UINT file_count = 0, len, i;
+    BOOL new_url_items = FALSE;
     int open_action;
     HRESULT hr, ret = E_FAIL;
 
@@ -635,20 +657,31 @@ static HRESULT on_default_action(FileDialogImpl *This)
     for(i = 0; i < file_count && open_action == ONOPEN_OPEN; i++)
     {
         WCHAR canon_filename[MAX_PATH];
+        BOOL is_url;
         psf_parent = NULL;
 
-        COMDLG32_GetCanonicalPath(current_folder, fn_iter, canon_filename);
-
-        if( (This->options & FOS_NOVALIDATE) &&
-            !(This->options & FOS_FILEMUSTEXIST) )
+        /* Internet URLs are not relative to the current folder. */
+        is_url = PathIsURLW(fn_iter) && !UrlIsFileUrlW(fn_iter);
+        if(is_url)
+        {
+            lstrcpynW(canon_filename, fn_iter, MAX_PATH);
             open_action = ONOPEN_OPEN;
+        }
         else
-            open_action = ONOPEN_BROWSE;
+        {
+            COMDLG32_GetCanonicalPath(current_folder, fn_iter, canon_filename);
 
-        open_action = FILEDLG95_ValidatePathAction(canon_filename, &psf_parent, This->dlg_hwnd,
-                                                   This->options & ~FOS_FILEMUSTEXIST,
-                                                   (This->dlg_type == ITEMDLG_TYPE_SAVE),
-                                                   open_action);
+            if( (This->options & FOS_NOVALIDATE) &&
+                !(This->options & FOS_FILEMUSTEXIST) )
+                open_action = ONOPEN_OPEN;
+            else
+                open_action = ONOPEN_BROWSE;
+
+            open_action = FILEDLG95_ValidatePathAction(canon_filename, &psf_parent, This->dlg_hwnd,
+                                                       This->options & ~FOS_FILEMUSTEXIST,
+                                                       (This->dlg_type == ITEMDLG_TYPE_SAVE),
+                                                       open_action);
+        }
 
         /* Add the proper extension */
         if(open_action == ONOPEN_OPEN)
@@ -667,7 +700,7 @@ static HRESULT on_default_action(FileDialogImpl *This)
                 newext = extbuf;
             }
 
-            if(This->dlg_type == ITEMDLG_TYPE_SAVE)
+            if(This->dlg_type == ITEMDLG_TYPE_SAVE && !(This->options & FOS_PICKFOLDERS))
             {
                 if(newext)
                 {
@@ -678,7 +711,7 @@ static HRESULT on_default_action(FileDialogImpl *This)
             }
             else
             {
-                if( !(This->options & FOS_NOVALIDATE) && (This->options & FOS_FILEMUSTEXIST) &&
+                if( !is_url && !(This->options & FOS_NOVALIDATE) && (This->options & FOS_FILEMUSTEXIST) &&
                     !PathFileExistsW(canon_filename))
                 {
                     if(newext)
@@ -702,7 +735,10 @@ static HRESULT on_default_action(FileDialogImpl *This)
             filter = fn_iter;
         }
 
-        pidla[i] = SHSimpleIDListFromPath(canon_filename);
+        if(is_url && SUCCEEDED(parse_url(This, canon_filename, &pidla[i])))
+            new_url_items |= (This->dlg_type == ITEMDLG_TYPE_SAVE);
+        else
+            pidla[i] = SHSimpleIDListFromPath(canon_filename);
 
         if(psf_parent && !(open_action == ONOPEN_BROWSE))
             IShellFolder_Release(psf_parent);
@@ -746,7 +782,8 @@ static HRESULT on_default_action(FileDialogImpl *This)
             if(FAILED(hr))
                 break;
 
-            if(This->options & FOS_PICKFOLDERS)
+            /* Items created from a typed URL do not exist yet, so they cannot report being a folder. */
+            if((This->options & FOS_PICKFOLDERS) && !new_url_items)
             {
                 SFGAOF attributes;
                 hr = IShellItemArray_GetAttributes(This->psia_results, SIATTRIBFLAGS_AND, SFGAO_FOLDER, &attributes);
