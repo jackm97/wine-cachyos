@@ -124,11 +124,32 @@ typedef struct PACKAGE_ID
 }
 PACKAGE_ID;
 
+#define PACKAGE_PROPERTY_FRAMEWORK 0x00000001
+#define PACKAGE_PROPERTY_RESOURCE 0x00000002
+#define PACKAGE_PROPERTY_BUNDLE 0x00000004
+#define PACKAGE_PROPERTY_OPTIONAL 0x00000008
+#define PACKAGE_FILTER_HEAD 0x00000010
+#define PACKAGE_FILTER_DIRECT 0x00000020
+#define PACKAGE_FILTER_RESOURCE 0x00000040
+#define PACKAGE_FILTER_BUNDLE 0x00000080
+#define PACKAGE_INFORMATION_BASIC 0x00000000
+#define PACKAGE_INFORMATION_FULL 0x00000100
+#define PACKAGE_PROPERTY_DEVELOPMENT_MODE 0x00010000
+#define PACKAGE_FILTER_OPTIONAL 0x00020000
+#define PACKAGE_PROPERTY_IS_IN_RELATED_SET 0x00040000
+#define PACKAGE_FILTER_IS_IN_RELATED_SET PACKAGE_PROPERTY_IS_IN_RELATED_SET
+#define PACKAGE_PROPERTY_STATIC 0x00080000
+#define PACKAGE_FILTER_STATIC PACKAGE_PROPERTY_STATIC
+#define PACKAGE_PROPERTY_DYNAMIC 0x00100000
+#define PACKAGE_FILTER_DYNAMIC PACKAGE_PROPERTY_DYNAMIC
+
 LONG WINAPI AppPolicyGetMediaFoundationCodecLoading(HANDLE token, AppPolicyMediaFoundationCodecLoading *policy);
 LONG WINAPI AppPolicyGetProcessTerminationMethod(HANDLE token, AppPolicyProcessTerminationMethod *policy);
 LONG WINAPI AppPolicyGetShowDeveloperDiagnostic(HANDLE token, AppPolicyShowDeveloperDiagnostic *policy);
 LONG WINAPI AppPolicyGetThreadInitializationType(HANDLE token, AppPolicyThreadInitializationType *policy);
 LONG WINAPI AppPolicyGetWindowingModel(HANDLE processToken, AppPolicyWindowingModel *policy);
+LONG WINAPI FindPackagesByPackageFamily(const WCHAR *family_name, UINT32 filters, UINT32 *count,
+        WCHAR **full_names, UINT32 *buffer_length, WCHAR *buffer, UINT32 *properties);
 LONG WINAPI GetPackagePath(const PACKAGE_ID *package_id, const UINT32 reserved, UINT32 *length, WCHAR *path);
 LONG WINAPI GetPackagesByPackageFamily(const WCHAR *family_name, UINT32 *count, WCHAR **full_names,
         UINT32 *buffer_length, WCHAR *buffer);

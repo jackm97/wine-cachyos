@@ -24,5 +24,7 @@
 import "windows.management.deployment.idl";
 
 namespace Windows.Management.Deployment {
+    runtimeclass AddPackageOptions;
     runtimeclass PackageManager;
+    runtimeclass StagePackageOptions;
 }

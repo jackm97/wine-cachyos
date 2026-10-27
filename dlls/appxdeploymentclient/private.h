@@ -36,7 +36,9 @@
 #define WIDL_using_Windows_ApplicationModel
 #include "windows.management.deployment.h"
 
+extern IActivationFactory *add_package_options_factory;
 extern IActivationFactory *package_manager_factory;
+extern IActivationFactory *stage_package_options_factory;
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

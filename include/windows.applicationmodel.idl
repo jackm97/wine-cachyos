@@ -33,6 +33,7 @@ namespace Windows.ApplicationModel.Core {
 
 namespace Windows.ApplicationModel {
     typedef enum AppExecutionContext AppExecutionContext;
+    typedef enum LimitedAccessFeatureStatus LimitedAccessFeatureStatus;
     typedef struct PackageVersion PackageVersion;
 
     interface IAppDisplayInfo;
@@ -45,9 +46,12 @@ namespace Windows.ApplicationModel {
     interface IDesignModeStatics2;
     interface IEnteredBackgroundEventArgs;
     interface ILeavingBackgroundEventArgs;
+    interface ILimitedAccessFeatureRequestResult;
+    interface ILimitedAccessFeaturesStatics;
     interface IPackage;
     interface IPackage2;
     interface IPackage3;
+    interface IPackage8;
     interface IPackageStatus;
     interface IPackageId;
     interface IPackageIdWithMetadata;
@@ -61,6 +65,8 @@ namespace Windows.ApplicationModel {
     runtimeclass DesignMode;
     runtimeclass EnteredBackgroundEventArgs;
     runtimeclass LeavingBackgroundEventArgs;
+    runtimeclass LimitedAccessFeatureRequestResult;
+    runtimeclass LimitedAccessFeatures;
     runtimeclass Package;
     runtimeclass PackageId;
     runtimeclass PackageStatus;
@@ -94,6 +100,61 @@ namespace Windows.ApplicationModel {
         Host    = 1,
         Guest   = 2,
     };
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 7.0)
+    ]
+    enum LimitedAccessFeatureStatus
+    {
+        Unavailable          = 0,
+        Available            = 1,
+        AvailableWithoutToken = 2,
+        Unknown              = 3,
+    };
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 7.0),
+        exclusiveto(Windows.ApplicationModel.LimitedAccessFeatureRequestResult),
+        uuid(d45156a6-1e24-5ddd-abb4-6188aba4d5bf)
+    ]
+    interface ILimitedAccessFeatureRequestResult : IInspectable
+    {
+        [propget] HRESULT FeatureId([out, retval] HSTRING *value);
+        [propget] HRESULT Status([out, retval] Windows.ApplicationModel.LimitedAccessFeatureStatus *value);
+        [propget] HRESULT EstimatedRemovalDate([out, retval]
+                Windows.Foundation.IReference<Windows.Foundation.DateTime> **value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 7.0),
+        exclusiveto(Windows.ApplicationModel.LimitedAccessFeatures),
+        uuid(8be612d4-302b-5fbf-a632-1a99e43e8925)
+    ]
+    interface ILimitedAccessFeaturesStatics : IInspectable
+    {
+        HRESULT TryUnlockFeature([in] HSTRING feature_id, [in] HSTRING token, [in] HSTRING attestation,
+                [out, retval] Windows.ApplicationModel.LimitedAccessFeatureRequestResult **result);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 7.0),
+        marshaling_behavior(agile)
+    ]
+    runtimeclass LimitedAccessFeatureRequestResult
+    {
+        [default] interface Windows.ApplicationModel.ILimitedAccessFeatureRequestResult;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 7.0),
+        marshaling_behavior(agile),
+        static(Windows.ApplicationModel.ILimitedAccessFeaturesStatics,
+                Windows.Foundation.UniversalApiContract, 7.0),
+        threading(both)
+    ]
+    runtimeclass LimitedAccessFeatures
+    {
+    }
 
     [
         contract(Windows.Foundation.UniversalApiContract, 1.0)
@@ -251,6 +312,28 @@ namespace Windows.ApplicationModel {
         [propget] HRESULT Status([out, retval] Windows.ApplicationModel.PackageStatus **value);
         [propget] HRESULT InstalledDate([out, retval] Windows.Foundation.DateTime *value);
         HRESULT GetAppListEntriesAsync([out, retval] Windows.Foundation.IAsyncOperation<Windows.Foundation.Collections.IVectorView<Windows.ApplicationModel.Core.AppListEntry *> *> **operation);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 10.0),
+        exclusiveto(Windows.ApplicationModel.Package),
+        uuid(2c584f7b-ce2a-4be6-a093-77cfbb2a7ea1)
+    ]
+    interface IPackage8 : IInspectable
+    {
+        [propget] HRESULT EffectiveExternalLocation([out, retval] Windows.Storage.StorageFolder **value);
+        [propget] HRESULT MachineExternalLocation([out, retval] Windows.Storage.StorageFolder **value);
+        [propget] HRESULT UserExternalLocation([out, retval] Windows.Storage.StorageFolder **value);
+        [propget] HRESULT InstalledPath([out, retval] HSTRING *value);
+        [propget] HRESULT MutablePath([out, retval] HSTRING *value);
+        [propget] HRESULT EffectivePath([out, retval] HSTRING *value);
+        [propget] HRESULT EffectiveExternalPath([out, retval] HSTRING *value);
+        [propget] HRESULT MachineExternalPath([out, retval] HSTRING *value);
+        [propget] HRESULT UserExternalPath([out, retval] HSTRING *value);
+        HRESULT GetLogoAsRandomAccessStreamReference([in] Windows.Foundation.Size size,
+            [out, retval] Windows.Storage.Streams.RandomAccessStreamReference **result);
+        HRESULT GetAppListEntries([out, retval]
+            Windows.Foundation.Collections.IVectorView<Windows.ApplicationModel.Core.AppListEntry *> **result);
     }
 
     [
