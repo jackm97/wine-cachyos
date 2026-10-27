@@ -498,14 +498,464 @@ static HRESULT STDMETHODCALLTYPE d2d_command_list_Stream(ID2D1CommandList *iface
     return ID2D1CommandSink_EndDraw(sink);
 }
 
-HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *context)
+static HRESULT d2d_command_list_glyph_bounds(struct d2d_command_list *list,
+        const struct d2d_command_draw_glyph_run *command, const D2D1_MATRIX_3X2_F *transform,
+        float dpi_x, float dpi_y, D2D1_UNIT_MODE output_mode, D2D1_TEXT_ANTIALIAS_MODE aa_mode,
+        IDWriteRenderingParams *params, D2D1_RECT_F *rect)
 {
+    DWRITE_TEXT_ANTIALIAS_MODE text_aa = DWRITE_TEXT_ANTIALIAS_MODE_GRAYSCALE;
+    DWRITE_RENDERING_MODE rendering_mode = DWRITE_RENDERING_MODE_DEFAULT;
+    IDWriteRenderingParams *default_params = NULL;
+    IDWriteGlyphRunAnalysis *analysis;
+    D2D1_MATRIX_3X2_F matrix = *transform;
+    IDWriteFactory2 *factory;
+    float scale_x = output_mode == D2D1_UNIT_MODE_DIPS ? dpi_x / 96.0f : 1.0f;
+    float scale_y = output_mode == D2D1_UNIT_MODE_DIPS ? dpi_y / 96.0f : 1.0f;
+    RECT bounds;
+    HRESULT hr;
+
+    if (FAILED(hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+            &IID_IDWriteFactory2, (IUnknown **)&factory))) return hr;
+    if (!params)
+    {
+        if (FAILED(hr = IDWriteFactory2_CreateRenderingParams(factory, &default_params))) goto done;
+        params = default_params;
+    }
+    if (aa_mode == D2D1_TEXT_ANTIALIAS_MODE_ALIASED)
+        rendering_mode = DWRITE_RENDERING_MODE_ALIASED;
+    else if (FAILED(hr = IDWriteFontFace_GetRecommendedRenderingMode(command->run.fontFace,
+            command->run.fontEmSize, max(dpi_x, dpi_y) / 96.0f,
+            command->measuring_mode, params, &rendering_mode))) goto done;
+    if (aa_mode == D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE
+            || (aa_mode == D2D1_TEXT_ANTIALIAS_MODE_DEFAULT
+            && IDWriteRenderingParams_GetClearTypeLevel(params) > 0.0f))
+        text_aa = DWRITE_TEXT_ANTIALIAS_MODE_CLEARTYPE;
+
+    if (rendering_mode == DWRITE_RENDERING_MODE_OUTLINE)
+    {
+        ID2D1PathGeometry *geometry;
+        ID2D1GeometrySink *sink;
+
+        if (FAILED(hr = ID2D1Factory_CreatePathGeometry(list->factory, &geometry))) goto done;
+        if (SUCCEEDED(hr = ID2D1PathGeometry_Open(geometry, &sink)))
+        {
+            hr = IDWriteFontFace_GetGlyphRunOutline(command->run.fontFace, command->run.fontEmSize,
+                    command->run.glyphIndices, command->run.glyphAdvances, command->run.glyphOffsets,
+                    command->run.glyphCount, command->run.isSideways, command->run.bidiLevel & 1,
+                    (IDWriteGeometrySink *)sink);
+            if (SUCCEEDED(hr)) hr = ID2D1GeometrySink_Close(sink);
+            ID2D1GeometrySink_Release(sink);
+            matrix._31 += command->origin.x * matrix._11 + command->origin.y * matrix._21;
+            matrix._32 += command->origin.x * matrix._12 + command->origin.y * matrix._22;
+            if (SUCCEEDED(hr)) hr = ID2D1PathGeometry_GetBounds(geometry, &matrix, rect);
+        }
+        ID2D1PathGeometry_Release(geometry);
+        goto done;
+    }
+    matrix._11 *= scale_x; matrix._21 *= scale_x; matrix._31 *= scale_x;
+    matrix._12 *= scale_y; matrix._22 *= scale_y; matrix._32 *= scale_y;
+    hr = IDWriteFactory2_CreateGlyphRunAnalysis(factory, &command->run, (DWRITE_MATRIX *)&matrix,
+            rendering_mode, command->measuring_mode, DWRITE_GRID_FIT_MODE_DEFAULT, text_aa,
+            command->origin.x, command->origin.y, &analysis);
+    if (FAILED(hr)) goto done;
+    hr = IDWriteGlyphRunAnalysis_GetAlphaTextureBounds(analysis,
+            rendering_mode == DWRITE_RENDERING_MODE_ALIASED || text_aa == DWRITE_TEXT_ANTIALIAS_MODE_GRAYSCALE
+            ? DWRITE_TEXTURE_ALIASED_1x1 : DWRITE_TEXTURE_CLEARTYPE_3x1, &bounds);
+    IDWriteGlyphRunAnalysis_Release(analysis);
+    if (SUCCEEDED(hr))
+    {
+        rect->left = bounds.left / scale_x;
+        rect->top = bounds.top / scale_y;
+        rect->right = bounds.right / scale_x;
+        rect->bottom = bounds.bottom / scale_y;
+    }
+done:
+    if (default_params) IDWriteRenderingParams_Release(default_params);
+    IDWriteFactory2_Release(factory);
+    return hr;
+}
+
+struct d2d_command_bounds_sink
+{
+    ID2D1SimplifiedGeometrySink ID2D1SimplifiedGeometrySink_iface;
+    D2D1_RECT_F bounds;
+    BOOL empty;
+};
+
+static HRESULT STDMETHODCALLTYPE d2d_command_bounds_QueryInterface(ID2D1SimplifiedGeometrySink *iface,
+        REFIID iid, void **object)
+{
+    if (IsEqualGUID(iid, &IID_IUnknown) || IsEqualGUID(iid, &IID_ID2D1SimplifiedGeometrySink))
+    {
+        *object = iface;
+        return S_OK;
+    }
+    *object = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE d2d_command_bounds_AddRef(ID2D1SimplifiedGeometrySink *iface)
+{
+    return 2;
+}
+
+static ULONG STDMETHODCALLTYPE d2d_command_bounds_Release(ID2D1SimplifiedGeometrySink *iface)
+{
+    return 1;
+}
+
+static void STDMETHODCALLTYPE d2d_command_bounds_SetFillMode(ID2D1SimplifiedGeometrySink *iface, D2D1_FILL_MODE mode) {}
+static void STDMETHODCALLTYPE d2d_command_bounds_SetSegmentFlags(ID2D1SimplifiedGeometrySink *iface, D2D1_PATH_SEGMENT flags) {}
+
+static void STDMETHODCALLTYPE d2d_command_bounds_AddLines(ID2D1SimplifiedGeometrySink *iface,
+        const D2D1_POINT_2F *points, UINT32 count)
+{
+    struct d2d_command_bounds_sink *sink = CONTAINING_RECORD(iface,
+            struct d2d_command_bounds_sink, ID2D1SimplifiedGeometrySink_iface);
+    UINT32 i;
+
+    for (i = 0; i < count; ++i)
+    {
+        if (sink->empty)
+        {
+            sink->bounds.left = sink->bounds.right = points[i].x;
+            sink->bounds.top = sink->bounds.bottom = points[i].y;
+            sink->empty = FALSE;
+        }
+        else d2d_rect_expand(&sink->bounds, &points[i]);
+    }
+}
+
+static void STDMETHODCALLTYPE d2d_command_bounds_BeginFigure(ID2D1SimplifiedGeometrySink *iface,
+        D2D1_POINT_2F start, D2D1_FIGURE_BEGIN begin)
+{
+    d2d_command_bounds_AddLines(iface, &start, 1);
+}
+
+static void STDMETHODCALLTYPE d2d_command_bounds_AddBeziers(ID2D1SimplifiedGeometrySink *iface,
+        const D2D1_BEZIER_SEGMENT *segments, UINT32 count)
+{
+    UINT32 i;
+
+    for (i = 0; i < count; ++i)
+    {
+        d2d_command_bounds_AddLines(iface, &segments[i].point1, 1);
+        d2d_command_bounds_AddLines(iface, &segments[i].point2, 1);
+        d2d_command_bounds_AddLines(iface, &segments[i].point3, 1);
+    }
+}
+
+static void STDMETHODCALLTYPE d2d_command_bounds_EndFigure(ID2D1SimplifiedGeometrySink *iface, D2D1_FIGURE_END end) {}
+static HRESULT STDMETHODCALLTYPE d2d_command_bounds_Close(ID2D1SimplifiedGeometrySink *iface) {return S_OK;}
+
+static const ID2D1SimplifiedGeometrySinkVtbl d2d_command_bounds_vtbl =
+{
+    d2d_command_bounds_QueryInterface,
+    d2d_command_bounds_AddRef,
+    d2d_command_bounds_Release,
+    d2d_command_bounds_SetFillMode,
+    d2d_command_bounds_SetSegmentFlags,
+    d2d_command_bounds_BeginFigure,
+    d2d_command_bounds_AddLines,
+    d2d_command_bounds_AddBeziers,
+    d2d_command_bounds_EndFigure,
+    d2d_command_bounds_Close,
+};
+
+static float d2d_command_list_stroke_width(float width, ID2D1StrokeStyle *style,
+        const D2D1_MATRIX_3X2_F *transform)
+{
+    struct d2d_stroke_style *impl = unsafe_impl_from_ID2D1StrokeStyle(style);
+
+    if (impl && impl->desc.transformType == D2D1_STROKE_TRANSFORM_TYPE_FIXED)
+        width /= transform->_11;
+    return width;
+}
+
+static HRESULT d2d_command_list_stroke_bounds(ID2D1Geometry *geometry, float width,
+        ID2D1StrokeStyle *style, const D2D1_MATRIX_3X2_F *matrix, D2D1_RECT_F *bounds)
+{
+    struct d2d_command_bounds_sink sink = {{&d2d_command_bounds_vtbl}, {0}, TRUE};
+    float radius, x, y;
+    HRESULT hr;
+
+    hr = ID2D1Geometry_GetWidenedBounds(geometry, width, style, matrix,
+            D2D1_DEFAULT_FLATTENING_TOLERANCE, bounds);
+    if (hr != E_NOTIMPL) return hr;
+    hr = ID2D1Geometry_Simplify(geometry, D2D1_GEOMETRY_SIMPLIFICATION_OPTION_CUBICS_AND_LINES,
+            matrix, D2D1_DEFAULT_FLATTENING_TOLERANCE, &sink.ID2D1SimplifiedGeometrySink_iface);
+    if (FAILED(hr)) return hr;
+    *bounds = sink.bounds;
+    if (sink.empty) return S_OK;
+    /* Control points enclose curves; include caps and miter joins around them. */
+    radius = fabsf(width) * 0.5f * max(1.414213562f,
+            style ? ID2D1StrokeStyle_GetMiterLimit(style) : 10.0f);
+    x = radius * hypotf(matrix->_11, matrix->_21);
+    y = radius * hypotf(matrix->_12, matrix->_22);
+    bounds->left -= x;
+    bounds->right += x;
+    bounds->top -= y;
+    bounds->bottom += y;
+    return S_OK;
+}
+
+HRESULT d2d_command_list_get_bounds(ID2D1CommandList *iface, struct d2d_device_context *context,
+        const struct d2d_effect_frame *parent, D2D1_UNIT_MODE output_mode, D2D1_RECT_F *bounds)
+{
+    struct d2d_command_list *list = impl_from_ID2D1CommandList(iface);
+    D2D1_MATRIX_3X2_F transform = {._11 = 1.0f, ._22 = 1.0f}, matrix;
+    D2D1_UNIT_MODE mode = D2D1_UNIT_MODE_DIPS;
+    const struct d2d_effect_frame *ancestor;
+    struct d2d_effect_frame frame = {NULL, parent, iface};
+    struct {D2D1_RECT_F rect; BOOL layer;} *clips = NULL;
+    D2D1_RECT_F rect;
+    D2D1_TEXT_ANTIALIAS_MODE text_aa = D2D1_TEXT_ANTIALIAS_MODE_DEFAULT;
+    IDWriteRenderingParams *text_params = NULL;
+    size_t clip_count = 0, clip_capacity = 0;
+    ID2D1RectangleGeometry *rectangle;
+    const void *data, *end;
+    float dpi_x, dpi_y, scale_x, scale_y;
+    BOOL have_bounds = FALSE;
+    HRESULT hr = S_OK;
+
+    if (list->state != D2D_COMMAND_LIST_STATE_CLOSED) return D2DERR_WRONG_STATE;
+    for (ancestor = parent; ancestor; ancestor = ancestor->parent)
+        if (ancestor->commands == iface) return D2DERR_CYCLIC_GRAPH;
+    dpi_x = context->desc.dpiX;
+    dpi_y = context->desc.dpiY;
+    memset(bounds, 0, sizeof(*bounds));
+    data = list->data;
+    end = (char *)list->data + list->size;
+    while (data < end)
+    {
+        const struct d2d_command *command = data;
+        BOOL layer = command->op == D2D_COMMAND_PUSH_LAYER;
+        BOOL clip = command->op == D2D_COMMAND_PUSH_CLIP || layer;
+
+        matrix = transform;
+        scale_x = mode == output_mode ? 1.0f : mode == D2D1_UNIT_MODE_DIPS ? dpi_x / 96.0f : 96.0f / dpi_x;
+        scale_y = mode == output_mode ? 1.0f : mode == D2D1_UNIT_MODE_DIPS ? dpi_y / 96.0f : 96.0f / dpi_y;
+        matrix._11 *= scale_x; matrix._21 *= scale_x; matrix._31 *= scale_x;
+        matrix._12 *= scale_y; matrix._22 *= scale_y; matrix._32 *= scale_y;
+        switch (command->op)
+        {
+            case D2D_COMMAND_SET_TRANSFORM:
+                transform = ((const struct d2d_command_set_transform *)data)->transform;
+                goto next;
+            case D2D_COMMAND_SET_UNIT_MODE:
+                mode = ((const struct d2d_command_set_unit_mode *)data)->mode;
+                goto next;
+            case D2D_COMMAND_SET_ANTIALIAS_MODE:
+            case D2D_COMMAND_SET_TAGS:
+            case D2D_COMMAND_SET_PRIMITIVE_BLEND:
+                goto next;
+            case D2D_COMMAND_SET_TEXT_ANTIALIAS_MODE:
+                text_aa = ((const struct d2d_command_set_text_antialias_mode *)data)->mode;
+                goto next;
+            case D2D_COMMAND_SET_TEXT_RENDERING_PARAMS:
+                text_params = ((const struct d2d_command_set_text_rendering_params *)data)->params;
+                goto next;
+            case D2D_COMMAND_DRAW_GLYPH_RUN:
+                if (FAILED(hr = d2d_command_list_glyph_bounds(list, data, &matrix,
+                        dpi_x, dpi_y, output_mode, text_aa, text_params, &rect))) goto done;
+                break;
+            case D2D_COMMAND_POP_LAYER:
+            case D2D_COMMAND_POP_CLIP:
+                if (!clip_count || clips[clip_count - 1].layer != (command->op == D2D_COMMAND_POP_LAYER)) {hr = D2DERR_PUSH_POP_UNBALANCED; goto done;}
+                --clip_count;
+                goto next;
+            case D2D_COMMAND_PUSH_LAYER:
+            case D2D_COMMAND_PUSH_CLIP:
+            case D2D_COMMAND_FILL_RECTANGLE:
+            case D2D_COMMAND_DRAW_RECTANGLE:
+            {
+                const D2D1_RECT_F *source;
+                if (layer) source = &((const struct d2d_command_push_layer *)data)->params.contentBounds;
+                else if (clip) source = &((const struct d2d_command_push_clip *)data)->rect;
+                else if (command->op == D2D_COMMAND_FILL_RECTANGLE)
+                    source = &((const struct d2d_command_fill_rectangle *)data)->rect;
+                else source = &((const struct d2d_command_draw_rectangle *)data)->rect;
+                if (FAILED(hr = ID2D1Factory_CreateRectangleGeometry(list->factory, source, &rectangle))) goto done;
+                if (command->op == D2D_COMMAND_DRAW_RECTANGLE)
+                {
+                    const struct d2d_command_draw_rectangle *c = data;
+                    hr = d2d_command_list_stroke_bounds((ID2D1Geometry *)rectangle,
+                            d2d_command_list_stroke_width(c->stroke_width, c->stroke_style, &transform),
+                            c->stroke_style, &matrix, &rect);
+                }
+                else hr = ID2D1RectangleGeometry_GetBounds(rectangle, &matrix, &rect);
+                ID2D1RectangleGeometry_Release(rectangle);
+                if (FAILED(hr)) goto done;
+                break;
+            }
+            case D2D_COMMAND_DRAW_IMAGE:
+            {
+                const struct d2d_command_draw_image *c = data;
+                ID2D1Bitmap *bitmap;
+                D2D1_RECT_F source;
+                BOOL is_bitmap;
+
+                if (c->composite_mode != D2D1_COMPOSITE_MODE_SOURCE_OVER)
+                {hr = D2DERR_UNSUPPORTED_OPERATION; goto done;}
+                if (FAILED(hr = d2d_effect_image_bounds(context, c->image, &frame, mode, &source))) goto done;
+                is_bitmap = SUCCEEDED(ID2D1Image_QueryInterface(c->image, &IID_ID2D1Bitmap, (void **)&bitmap));
+                if (is_bitmap) ID2D1Bitmap_Release(bitmap);
+                if (c->image_rect)
+                {
+                    source.left = max(source.left, c->image_rect->left);
+                    source.top = max(source.top, c->image_rect->top);
+                    source.right = min(source.right, c->image_rect->right);
+                    source.bottom = min(source.bottom, c->image_rect->bottom);
+                }
+                if (source.right <= source.left || source.bottom <= source.top) goto next;
+                if (is_bitmap)
+                {
+                    source.right -= source.left;
+                    source.bottom -= source.top;
+                    source.left = source.top = 0.0f;
+                }
+                else if (c->image_rect)
+                {
+                    source.left -= c->image_rect->left;
+                    source.right -= c->image_rect->left;
+                    source.top -= c->image_rect->top;
+                    source.bottom -= c->image_rect->top;
+                }
+                if (c->target_offset)
+                {
+                    source.left += c->target_offset->x;
+                    source.right += c->target_offset->x;
+                    source.top += c->target_offset->y;
+                    source.bottom += c->target_offset->y;
+                }
+                if (FAILED(hr = ID2D1Factory_CreateRectangleGeometry(list->factory, &source, &rectangle))) goto done;
+                hr = ID2D1RectangleGeometry_GetBounds(rectangle, &matrix, &rect);
+                ID2D1RectangleGeometry_Release(rectangle);
+                if (FAILED(hr)) goto done;
+                break;
+            }
+            case D2D_COMMAND_DRAW_BITMAP:
+            {
+                const struct d2d_command_draw_bitmap *c = data;
+                D2D1_SIZE_F size = ID2D1Bitmap_GetSize(c->bitmap);
+                D2D1_RECT_F source = {0.0f, 0.0f, size.width, size.height}, destination;
+
+                if (c->perspective_transform) {hr = D2DERR_UNSUPPORTED_OPERATION; goto done;}
+                if (c->src_rect && c->src_rect->left <= c->src_rect->right
+                        && c->src_rect->top <= c->src_rect->bottom)
+                {
+                    source.left = max(source.left, c->src_rect->left);
+                    source.top = max(source.top, c->src_rect->top);
+                    source.right = min(source.right, c->src_rect->right);
+                    source.bottom = min(source.bottom, c->src_rect->bottom);
+                }
+                if (source.left >= source.right || source.top >= source.bottom) goto next;
+                if (c->dst_rect)
+                {
+                    destination.left = min(c->dst_rect->left, c->dst_rect->right);
+                    destination.right = max(c->dst_rect->left, c->dst_rect->right);
+                    destination.top = min(c->dst_rect->top, c->dst_rect->bottom);
+                    destination.bottom = max(c->dst_rect->top, c->dst_rect->bottom);
+                }
+                else
+                {
+                    destination.left = destination.top = 0.0f;
+                    destination.right = source.right - source.left;
+                    destination.bottom = source.bottom - source.top;
+                }
+                if (FAILED(hr = ID2D1Factory_CreateRectangleGeometry(list->factory, &destination, &rectangle))) goto done;
+                hr = ID2D1RectangleGeometry_GetBounds(rectangle, &matrix, &rect);
+                ID2D1RectangleGeometry_Release(rectangle);
+                if (FAILED(hr)) goto done;
+                break;
+            }
+            case D2D_COMMAND_FILL_GEOMETRY:
+            {
+                const struct d2d_command_fill_geometry *c = data;
+                if (FAILED(hr = ID2D1Geometry_GetBounds(c->geometry, &matrix, &rect))) goto done;
+                break;
+            }
+            case D2D_COMMAND_DRAW_LINE:
+            {
+                const struct d2d_command_draw_line *c = data;
+                D2D1_POINT_2F p0, p1;
+                float radius = fabsf(d2d_command_list_stroke_width(c->stroke_width, c->stroke_style,
+                        &transform)) * 0.707106781f;
+                float x = radius * hypotf(matrix._11, matrix._21);
+                float y = radius * hypotf(matrix._12, matrix._22);
+
+                /* Include square and round caps as well as the line segment. */
+                d2d_point_transform(&p0, &matrix, c->p0.x, c->p0.y);
+                d2d_point_transform(&p1, &matrix, c->p1.x, c->p1.y);
+                rect.left = min(p0.x, p1.x) - x;
+                rect.right = max(p0.x, p1.x) + x;
+                rect.top = min(p0.y, p1.y) - y;
+                rect.bottom = max(p0.y, p1.y) + y;
+                break;
+            }
+            case D2D_COMMAND_DRAW_GEOMETRY:
+            {
+                const struct d2d_command_draw_geometry *c = data;
+                if (FAILED(hr = d2d_command_list_stroke_bounds(c->geometry,
+                        d2d_command_list_stroke_width(c->stroke_width, c->stroke_style, &transform),
+                        c->stroke_style, &matrix, &rect))) goto done;
+                break;
+            }
+            case D2D_COMMAND_CLEAR:
+                rect.left = rect.top = -INFINITY;
+                rect.right = rect.bottom = INFINITY;
+                break;
+            default:
+                hr = D2DERR_UNSUPPORTED_OPERATION;
+                goto done;
+        }
+        if (clip_count)
+        {
+            rect.left = max(rect.left, clips[clip_count - 1].rect.left);
+            rect.top = max(rect.top, clips[clip_count - 1].rect.top);
+            rect.right = min(rect.right, clips[clip_count - 1].rect.right);
+            rect.bottom = min(rect.bottom, clips[clip_count - 1].rect.bottom);
+        }
+        if (clip)
+        {
+            if (!d2d_array_reserve((void **)&clips, &clip_capacity, clip_count + 1, sizeof(*clips)))
+            {hr = E_OUTOFMEMORY; goto done;}
+            clips[clip_count].rect = rect;
+            clips[clip_count++].layer = layer;
+        }
+        else if (rect.left < rect.right && rect.top < rect.bottom)
+        {
+            if (!have_bounds) *bounds = rect;
+            else
+            {
+                bounds->left = min(bounds->left, rect.left);
+                bounds->top = min(bounds->top, rect.top);
+                bounds->right = max(bounds->right, rect.right);
+                bounds->bottom = max(bounds->bottom, rect.bottom);
+            }
+            have_bounds = TRUE;
+        }
+next:
+        data = (char *)data + command->size;
+    }
+    if (clip_count) hr = D2DERR_PUSH_POP_UNBALANCED;
+done:
+    free(clips);
+    return hr;
+}
+
+HRESULT d2d_command_list_replay(ID2D1CommandList *iface, struct d2d_device_context *target)
+{
+    ID2D1DeviceContext *context = (ID2D1DeviceContext *)&target->ID2D1DeviceContext6_iface;
     struct d2d_command_list *command_list = impl_from_ID2D1CommandList(iface);
     ID2D1DrawingStateBlock *state;
-    D2D1_MATRIX_3X2_F base_transform;
+    D2D1_MATRIX_3X2_F base_transform, recorded_transform = {._11 = 1.0f, ._22 = 1.0f};
+    D2D1_UNIT_MODE base_mode, mode;
+    float dpi_x, dpi_y;
     ID2D1Factory *factory;
     const void *data, *end;
-    unsigned int clip_count = 0;
+    BOOL *scopes = NULL;
+    size_t scope_count = 0, scope_capacity = 0;
     HRESULT hr;
 
     if (command_list->state != D2D_COMMAND_LIST_STATE_CLOSED) return D2DERR_WRONG_STATE;
@@ -516,12 +966,15 @@ HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *con
     if (FAILED(hr)) return hr;
     ID2D1DeviceContext_SaveDrawingState(context, state);
     ID2D1DeviceContext_GetTransform(context, &base_transform);
+    base_mode = mode = ID2D1DeviceContext_GetUnitMode(context);
+    ID2D1DeviceContext_GetDpi(context, &dpi_x, &dpi_y);
 
     data = command_list->data;
     end = (char *)command_list->data + command_list->size;
     while (data < end)
     {
         const struct d2d_command *command = data;
+        BOOL update_transform = FALSE;
 
         switch (command->op)
         {
@@ -538,19 +991,17 @@ HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *con
                         ((const struct d2d_command_set_text_rendering_params *)data)->params);
                 break;
             case D2D_COMMAND_SET_TRANSFORM:
-            {
-                D2D1_MATRIX_3X2_F transform = ((const struct d2d_command_set_transform *)data)->transform;
-                d2d_matrix_multiply(&transform, &base_transform);
-                ID2D1DeviceContext_SetTransform(context, &transform);
+                recorded_transform = ((const struct d2d_command_set_transform *)data)->transform;
+                update_transform = TRUE;
                 break;
-            }
             case D2D_COMMAND_SET_PRIMITIVE_BLEND:
                 ID2D1DeviceContext_SetPrimitiveBlend(context,
                         ((const struct d2d_command_set_primitive_blend *)data)->primitive_blend);
                 break;
             case D2D_COMMAND_SET_UNIT_MODE:
-                ID2D1DeviceContext_SetUnitMode(context,
-                        ((const struct d2d_command_set_unit_mode *)data)->mode);
+                mode = ((const struct d2d_command_set_unit_mode *)data)->mode;
+                ID2D1DeviceContext_SetUnitMode(context, mode);
+                update_transform = TRUE;
                 break;
             case D2D_COMMAND_SET_TAGS:
             {
@@ -612,37 +1063,66 @@ HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *con
                 ID2D1DeviceContext_FillRectangle(context, &c->rect, c->brush);
                 break;
             }
+            case D2D_COMMAND_PUSH_LAYER:
             case D2D_COMMAND_PUSH_CLIP:
-            {
-                const struct d2d_command_push_clip *c = data;
-                ID2D1DeviceContext_PushAxisAlignedClip(context, &c->rect, c->mode);
-                ++clip_count;
-                break;
-            }
-            case D2D_COMMAND_POP_CLIP:
-                if (!clip_count)
+                if (!d2d_array_reserve((void **)&scopes, &scope_capacity, scope_count + 1, sizeof(*scopes)))
+                {hr = E_OUTOFMEMORY; goto done;}
+                if (command->op == D2D_COMMAND_PUSH_LAYER)
                 {
-                    hr = D2DERR_PUSH_POP_UNBALANCED;
-                    goto done;
+                    const struct d2d_command_push_layer *c = data;
+                    struct d2d_layer_frame *previous = target->layers;
+
+                    ID2D1DeviceContext_PushLayer(context, &c->params, c->layer);
+                    if (target->layers != previous) scopes[scope_count++] = TRUE;
+                    if (FAILED(hr = target->error.code)) goto done;
                 }
-                ID2D1DeviceContext_PopAxisAlignedClip(context);
-                --clip_count;
+                else
+                {
+                    const struct d2d_command_push_clip *c = data;
+                    unsigned int previous = target->clip_stack.count;
+
+                    ID2D1DeviceContext_PushAxisAlignedClip(context, &c->rect, c->mode);
+                    if (target->clip_stack.count == previous) {hr = E_OUTOFMEMORY; goto done;}
+                    scopes[scope_count++] = FALSE;
+                }
+                break;
+            case D2D_COMMAND_POP_LAYER:
+            case D2D_COMMAND_POP_CLIP:
+                if (!scope_count || scopes[scope_count - 1] != (command->op == D2D_COMMAND_POP_LAYER))
+                {hr = D2DERR_PUSH_POP_UNBALANCED; goto done;}
+                if (scopes[--scope_count]) ID2D1DeviceContext_PopLayer(context);
+                else ID2D1DeviceContext_PopAxisAlignedClip(context);
                 break;
             default:
                 FIXME("Unhandled command %u.\n", command->op);
                 hr = E_NOTIMPL;
                 goto done;
         }
+        if (update_transform)
+        {
+            D2D1_MATRIX_3X2_F base = base_transform, transform = recorded_transform;
+            float x = base_mode == mode ? 1.0f : base_mode == D2D1_UNIT_MODE_DIPS ? dpi_x / 96.0f : 96.0f / dpi_x;
+            float y = base_mode == mode ? 1.0f : base_mode == D2D1_UNIT_MODE_DIPS ? dpi_y / 96.0f : 96.0f / dpi_y;
+
+            base._12 *= y / x;
+            base._21 *= x / y;
+            base._31 *= x;
+            base._32 *= y;
+            d2d_matrix_multiply(&transform, &base);
+            ID2D1DeviceContext_SetTransform(context, &transform);
+        }
         data = (char *)data + command->size;
     }
-    hr = clip_count ? D2DERR_PUSH_POP_UNBALANCED : S_OK;
+    hr = scope_count ? D2DERR_PUSH_POP_UNBALANCED : S_OK;
 done:
-    while (clip_count)
+    while (scope_count)
     {
-        ID2D1DeviceContext_PopAxisAlignedClip(context);
-        --clip_count;
+        if (scopes[--scope_count]) ID2D1DeviceContext_PopLayer(context);
+        else ID2D1DeviceContext_PopAxisAlignedClip(context);
     }
+    free(scopes);
     ID2D1DeviceContext_RestoreDrawingState(context, state);
+    ID2D1DeviceContext_SetUnitMode(context, base_mode);
     ID2D1DrawingStateBlock_Release(state);
     return hr;
 }
