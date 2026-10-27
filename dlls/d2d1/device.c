@@ -1487,9 +1487,9 @@ static HRESULT d2d_device_context_update_ps_cb(struct d2d_device_context *contex
     }
     if (context->arithmetic_coefficients)
         cb_data->coefficients = *context->arithmetic_coefficients;
-    if (!d2d_brush_fill_cb(brush, &cb_data->colour_brush))
+    if (!d2d_brush_fill_cb(brush, &cb_data->colour_brush, context->drawing_state.unitMode))
         WARN("Failed to initialize colour brush buffer.\n");
-    if (!d2d_brush_fill_cb(opacity_brush, &cb_data->opacity_brush))
+    if (!d2d_brush_fill_cb(opacity_brush, &cb_data->opacity_brush, context->drawing_state.unitMode))
         WARN("Failed to initialize opacity brush buffer.\n");
 
     ID3D11DeviceContext_Unmap(d3d_context, (ID3D11Resource *)context->ps_cb, 0);
@@ -1930,6 +1930,15 @@ static void d2d_device_context_draw_bitmap(struct d2d_device_context *context, I
     brush_desc.transform._12 = 0.0f;
     brush_desc.transform._22 = fabsf((d.bottom - d.top) / (s.bottom - s.top));
     brush_desc.transform._32 = min(d.top, d.bottom) - min(s.top, s.bottom) * brush_desc.transform._22;
+
+    if (context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS)
+    {
+        float dpi_x, dpi_y;
+
+        ID2D1Bitmap_GetDpi(bitmap, &dpi_x, &dpi_y);
+        brush_desc.transform._11 *= 96.0f / dpi_x;
+        brush_desc.transform._22 *= 96.0f / dpi_y;
+    }
 
     if (FAILED(hr = d2d_bitmap_brush_create(context->factory, bitmap, &bitmap_brush_desc, &brush_desc, &brush)))
     {
@@ -3847,7 +3856,6 @@ static HRESULT d2d_device_context_draw_arithmetic(struct d2d_device_context *con
     BOOL clamp;
     HRESULT hr;
     unsigned int i;
-    float dpi_x, dpi_y;
 
     for (ancestor = parent; ancestor; ancestor = ancestor->parent)
         if (ancestor->effect == effect) return D2DERR_CYCLIC_GRAPH;
@@ -3893,12 +3901,6 @@ static HRESULT d2d_device_context_draw_arithmetic(struct d2d_device_context *con
     {
         brush_desc.transform._31 = destination.left - source.left + inputs[i].left;
         brush_desc.transform._32 = destination.top - source.top + inputs[i].top;
-        if (context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS)
-        {
-            ID2D1Bitmap_GetDpi(bitmaps[i], &dpi_x, &dpi_y);
-            brush_desc.transform._11 = dpi_x / 96.0f;
-            brush_desc.transform._22 = dpi_y / 96.0f;
-        }
         if (FAILED(hr = d2d_bitmap_brush_create(context->factory, bitmaps[i], &bitmap_desc,
                 &brush_desc, &brushes[i]))) goto done;
     }
@@ -4002,7 +4004,7 @@ static HRESULT d2d_shadow_pass(struct d2d_device_context *context, ID2D1Bitmap *
     ID2D1DeviceContext6 *iface = NULL;
     struct d2d_device_context *child;
     struct d2d_brush *brush = NULL;
-    D2D1_SIZE_F input_size = ID2D1Bitmap_GetSize(input);
+    D2D1_SIZE_U input_size = ID2D1Bitmap_GetPixelSize(input);
     D2D1_SIZE_U size;
     D2D1_RECT_F rect;
     D2D1_VECTOR_4F kernel;
