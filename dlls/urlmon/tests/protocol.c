@@ -2993,6 +2993,58 @@ static void test_file_protocol_url(LPCWSTR url)
     IClassFactory_Release(factory);
 }
 
+static void test_file_protocol_delete(void)
+{
+    static const char html_doc[] = "<HTML></HTML>";
+    IInternetProtocol *protocol;
+    BYTE buf[sizeof(html_doc) - 1];
+    DWORD size;
+    ULONG read;
+    HANDLE file;
+    HRESULT hres;
+    BOOL ret;
+
+    file = CreateFileW(L"delete.html", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL, NULL);
+    ok(file != INVALID_HANDLE_VALUE, "CreateFile failed: %lu\n", GetLastError());
+    if(file == INVALID_HANDLE_VALUE)
+        return;
+
+    ret = WriteFile(file, html_doc, sizeof(html_doc) - 1, &size, NULL);
+    ok(ret, "WriteFile failed: %lu\n", GetLastError());
+    CloseHandle(file);
+
+    file_name = L"delete.html";
+    bindf = 0;
+    hres = CoCreateInstance(&CLSID_FileProtocol, NULL, CLSCTX_INPROC_SERVER | CLSCTX_INPROC_HANDLER,
+            &IID_IInternetProtocol, (void **)&protocol);
+    ok(hres == S_OK, "CoCreateInstance failed: %08lx\n", hres);
+    if(SUCCEEDED(hres)) {
+        if(file_protocol_start(protocol, L"file:delete.html", NULL, NULL, TRUE)) {
+            hres = IInternetProtocol_Read(protocol, buf, sizeof(buf), &read);
+            ok(hres == S_OK, "Read failed: %08lx\n", hres);
+            ok(read == sizeof(buf), "read %lu bytes\n", read);
+
+            hres = IInternetProtocol_Read(protocol, buf, sizeof(buf), &read);
+            ok(hres == S_FALSE, "Read failed: %08lx\n", hres);
+            ok(!read, "read %lu bytes\n", read);
+
+            SetLastError(0xdeadbeef);
+            ret = DeleteFileW(L"delete.html");
+            ok(ret, "DeleteFile failed: %lu\n", GetLastError());
+
+            file = CreateFileW(L"delete.html", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL, NULL);
+            ok(file != INVALID_HANDLE_VALUE, "CreateFile failed: %lu\n", GetLastError());
+            if(file != INVALID_HANDLE_VALUE)
+                CloseHandle(file);
+        }
+        IInternetProtocol_Release(protocol);
+    }
+
+    DeleteFileW(L"delete.html");
+}
+
 static void test_file_protocol_fail(void)
 {
     IInternetProtocol *protocol;
@@ -3164,6 +3216,9 @@ static void test_file_protocol(void) {
 
     file_with_hash = TRUE;
     test_file_protocol_url(buf);
+
+    init_test(FILE_TEST, 0);
+    test_file_protocol_delete();
 
     DeleteFileW(L"index.html#frag#abc");
     DeleteFileW(L"index.html");
