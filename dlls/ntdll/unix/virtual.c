@@ -355,6 +355,9 @@ static const size_t view_block_size = 0x100000;
 #endif
 static BOOL force_exec_prot;  /* whether to force PROT_EXEC on all PROT_READ mmaps */
 static BOOL enable_write_exceptions;  /* raise exception on writes to executable memory */
+#ifdef MADV_HUGEPAGE
+static BOOL use_transparent_huge_pages;
+#endif
 
 static UINT_PTR *mem_areas;
 static const UINT_PTR initial_mem_areas[] = { 0, ~(UINT_PTR)0 };
@@ -3515,6 +3518,13 @@ void virtual_init(void)
     assert( view_block_start != MAP_FAILED );
     wine_rb_init( &views_tree, compare_view );
     kernel_writewatch_init();
+
+#ifdef MADV_HUGEPAGE
+    {
+        const char *thp = getenv( "SODA_USE_THP" );
+        if (thp) use_transparent_huge_pages = !strcmp( thp, "1" );
+    }
+#endif
 }
 
 
@@ -5117,6 +5127,11 @@ static NTSTATUS allocate_virtual_memory( void **ret, SIZE_T *size_ptr, ULONG typ
             if (status == STATUS_SUCCESS)
             {
                 base = view->base;
+#ifdef MADV_HUGEPAGE
+                if (use_transparent_huge_pages && is_view_valloc( view ) &&
+                    !(view->protect & (VPROT_WRITEWATCH | VPROT_PLACEHOLDER)))
+                    madvise( view->base, view->size, MADV_HUGEPAGE );
+#endif
                 if (vprot & VPROT_EXEC || force_exec_prot) mprotect_range( base, size, 0, 0 );
             }
         }
