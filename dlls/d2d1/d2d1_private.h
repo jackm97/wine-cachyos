@@ -674,6 +674,8 @@ void d2d_transformed_geometry_init(struct d2d_geometry *geometry, ID2D1Factory *
 HRESULT d2d_geometry_group_init(struct d2d_geometry *geometry, ID2D1Factory *factory,
         D2D1_FILL_MODE fill_mode, ID2D1Geometry **src_geometries, unsigned int geometry_count);
 struct d2d_geometry *unsafe_impl_from_ID2D1Geometry(ID2D1Geometry *iface);
+HRESULT d2d_geometry_create_dashed(ID2D1Geometry *geometry, const struct d2d_stroke_style *style,
+        float width, float tolerance, ID2D1PathGeometry **ret);
 
 struct d2d_geometry_realization
 {
