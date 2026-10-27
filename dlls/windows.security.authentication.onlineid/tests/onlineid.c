@@ -347,15 +347,16 @@ static void test_web_authentication_core(void)
     IWebTokenRequest *request = NULL;
     IMap_HSTRING_HSTRING *properties;
     IIterable_IKeyValuePair_HSTRING_HSTRING *property_iterable = NULL;
+    IWebProviderError *response_error = NULL;
     IWebTokenRequestResult *result = NULL;
     IVectorView_WebTokenResponse *responses = NULL;
     IWebTokenResponse *response = NULL;
     WebTokenRequestStatus response_status;
     IActivationFactory *factory = NULL;
     HSTRING name = NULL, provider_id = NULL, authority = NULL, scope = NULL, client_id = NULL, token = NULL;
-    HSTRING response_authority = NULL;
+    HSTRING response_authority = NULL, error_message = NULL;
     AsyncStatus status;
-    UINT32 size;
+    UINT32 size, error_code;
     boolean is_system_provider;
     HRESULT hr;
 
@@ -525,6 +526,23 @@ static void test_web_authentication_core(void)
     else
         ok( response_status == WebTokenRequestStatus_UserInteractionRequired,
             "got response status %u.\n", response_status );
+    hr = IWebTokenRequestResult_get_ResponseError( result, &response_error );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    if (response_status == WebTokenRequestStatus_Success)
+        ok( !response_error, "got unexpected provider error %p.\n", response_error );
+    else
+    {
+        ok( !!response_error, "missing provider error.\n" );
+        if (response_error)
+        {
+            hr = IWebProviderError_get_ErrorCode( response_error, &error_code );
+            ok( hr == S_OK && error_code, "got hr %#lx, error code %#x.\n", hr, error_code );
+            hr = IWebProviderError_get_ErrorMessage( response_error, &error_message );
+            ok( hr == S_OK && !WindowsIsStringEmpty(error_message), "got hr %#lx.\n", hr );
+            WindowsDeleteString( error_message );
+            IWebProviderError_Release( response_error );
+        }
+    }
     IWebTokenRequestResult_Release( result );
     IAsyncOperation_WebTokenRequestResult_Release( token_operation );
 

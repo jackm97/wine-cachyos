@@ -744,6 +744,7 @@ static const IWebProviderErrorVtbl provider_error_vtbl =
 
 HRESULT web_provider_error_create( HRESULT error, HSTRING message, IWebProviderError **out )
 {
+    static const WCHAR fallback[] = L"Identity provider request failed.";
     struct web_provider_error *impl;
     HRESULT hr;
 
@@ -753,14 +754,20 @@ HRESULT web_provider_error_create( HRESULT error, HSTRING message, IWebProviderE
     impl->IWebProviderError_iface.lpVtbl = &provider_error_vtbl;
     impl->ref = 1;
     impl->error = error;
-    if (FAILED(hr = WindowsDuplicateString( message, &impl->message )) ||
-        FAILED(hr = string_map_create( &impl->properties )))
-    {
-        provider_error_Release( &impl->IWebProviderError_iface );
-        return hr;
-    }
+    if ((!message || WindowsIsStringEmpty(message)) &&
+        FAILED(hr = WindowsCreateString( fallback, ARRAY_SIZE(fallback) - 1, &impl->message )))
+        goto failed;
+    if (message && !WindowsIsStringEmpty(message) &&
+        FAILED(hr = WindowsDuplicateString( message, &impl->message )))
+        goto failed;
+    if (FAILED(hr = string_map_create( &impl->properties )))
+        goto failed;
     *out = &impl->IWebProviderError_iface;
     return S_OK;
+
+failed:
+    provider_error_Release( &impl->IWebProviderError_iface );
+    return hr;
 }
 
 struct response_view
@@ -1099,8 +1106,8 @@ HRESULT web_token_result_create( IWebAccountProvider *provider, const struct ide
     impl->IWebTokenRequestResult_iface.lpVtbl = &result_vtbl;
     impl->ref = 1;
     impl->status = status;
-    if (status == WebTokenRequestStatus_ProviderError &&
-        FAILED(hr = web_provider_error_create( reply ? reply->error : E_FAIL,
+    if (status != WebTokenRequestStatus_Success &&
+        FAILED(hr = web_provider_error_create( reply && FAILED(reply->error) ? reply->error : E_FAIL,
                                                 reply ? reply->error_message : NULL, &impl->error )))
         goto failed;
     if (status == WebTokenRequestStatus_Success)

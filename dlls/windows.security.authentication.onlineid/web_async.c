@@ -432,9 +432,9 @@ static HRESULT token_worker( struct web_async_operation *impl, IInspectable **re
     if (SUCCEEDED(hr))
         hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_Success, &token_result );
     else if (hr == HRESULT_FROM_WIN32( ERROR_CANCELLED ))
-        hr = web_token_result_create( provider, NULL, WebTokenRequestStatus_UserCancel, &token_result );
+        hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_UserCancel, &token_result );
     else if (impl->u.token.silent)
-        hr = web_token_result_create( provider, NULL, WebTokenRequestStatus_UserInteractionRequired, &token_result );
+        hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_UserInteractionRequired, &token_result );
     else
         hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_ProviderError, &token_result );
 
