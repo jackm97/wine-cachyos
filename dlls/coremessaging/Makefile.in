@@ -1,9 +1,10 @@
 MODULE    = coremessaging.dll
-IMPORTS   = combase
+IMPORTS   = combase advapi32 uuid
 IMPORTLIB = coremessaging
 
 SOURCES = \
 	async.c \
 	async_private.idl \
 	classes.idl \
-	main.c
+	main.c \
+	weakref.c
