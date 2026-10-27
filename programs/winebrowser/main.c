@@ -111,6 +111,34 @@ static int launch_app( const WCHAR *candidates, const WCHAR *argv1 )
     return 1;
 }
 
+static int launch_portal( const WCHAR *url )
+{
+    const char *argv[13];
+    char *url_unix;
+    int ret;
+
+    if (!(url_unix = strdup_unixcp( url ))) return 1;
+
+    argv[0] = "/usr/bin/gdbus";
+    argv[1] = "call";
+    argv[2] = "--session";
+    argv[3] = "--dest";
+    argv[4] = "org.freedesktop.portal.Desktop";
+    argv[5] = "--object-path";
+    argv[6] = "/org/freedesktop/portal/desktop";
+    argv[7] = "--method";
+    argv[8] = "org.freedesktop.portal.OpenURI.OpenURI";
+    argv[9] = "";
+    argv[10] = url_unix;
+    argv[11] = "{}";
+    argv[12] = NULL;
+
+    restore_system_environment();
+    ret = __wine_unix_spawnvp( (char **)argv, TRUE );
+    free( url_unix );
+    return ret;
+}
+
 static LSTATUS get_commands( HKEY key, const WCHAR *value, WCHAR *buffer, DWORD size )
 {
     DWORD type;
@@ -148,7 +176,10 @@ static int open_http_url( const WCHAR *url )
         RegCloseKey( key );
     }
     if (r != ERROR_SUCCESS)
+    {
+        if (!launch_portal( url )) return 0;
         memcpy( browsers, defaultbrowsers, sizeof(defaultbrowsers) );
+    }
 
     return launch_app( browsers, url );
 }
@@ -172,7 +203,10 @@ static int open_mailto_url( const WCHAR *url )
         RegCloseKey( key );
     }
     if (r != ERROR_SUCCESS)
+    {
+        if (!launch_portal( url )) return 0;
         memcpy( mailers, defaultmailers, sizeof(defaultmailers) );
+    }
 
     return launch_app( mailers, url );
 }
