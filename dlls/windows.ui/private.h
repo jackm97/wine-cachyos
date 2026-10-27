@@ -65,6 +65,7 @@ extern IActivationFactory *compositor_factory;
 extern IActivationFactory *effect_source_parameter_factory;
 extern IActivationFactory *compositor_controller_factory;
 extern IActivationFactory *composition_conditional_value_factory;
+extern IActivationFactory *inertia_resting_value_factory;
 extern IActivationFactory *interaction_tracker_factory;
 extern IActivationFactory *visual_interaction_source_factory;
 
