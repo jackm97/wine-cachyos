@@ -1,6 +1,7 @@
 MODULE    = dsound.dll
 IMPORTLIB = dsound
 IMPORTS   = dxguid uuid winmm ole32 advapi32 user32
+EXTRADLLFLAGS = -Wb,--prefer-native
 
 VER_FILEDESCRIPTION_STR = "Wine DirectSound"
 VER_PRODUCTVERSION      = 5,3,1,904
