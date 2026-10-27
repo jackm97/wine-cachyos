@@ -2719,6 +2719,10 @@ static HRESULT WINAPI tracker_composition_object_StartAnimation( ICompositionObj
 
     TRACE( "iface %p, name %s, animation %p.\n", iface, debugstr_hstring( name ), animation );
     if (!name || !animation) return E_INVALIDARG;
+    EnterCriticalSection( &impl->animation_cs );
+    hr = impl->notifications_closed ? RO_E_CLOSED : S_OK;
+    LeaveCriticalSection( &impl->animation_cs );
+    if (FAILED(hr)) return hr;
     index = tracker_component_index( name );
     if (index == ARRAY_SIZE(tracker_component_names)) return E_NOTIMPL;
     if (FAILED(hr = ICompositionAnimation_QueryInterface( animation, &IID_IExpressionAnimation, (void **)&expression ))) return hr;
@@ -2726,6 +2730,12 @@ static HRESULT WINAPI tracker_composition_object_StartAnimation( ICompositionObj
     IExpressionAnimation_Release( expression );
     if (FAILED(hr)) return hr;
     EnterCriticalSection( &impl->animation_cs );
+    if (impl->notifications_closed)
+    {
+        LeaveCriticalSection( &impl->animation_cs );
+        IExpressionAnimation_Release( copy );
+        return RO_E_CLOSED;
+    }
     previous = impl->expressions[index];
     impl->expressions[index] = copy;
     ++impl->animation_revision;
@@ -2745,6 +2755,11 @@ static HRESULT WINAPI tracker_composition_object_StopAnimation( ICompositionObje
     index = tracker_component_index( name );
     if (index == ARRAY_SIZE(tracker_component_names)) return E_NOTIMPL;
     EnterCriticalSection( &impl->animation_cs );
+    if (impl->notifications_closed)
+    {
+        LeaveCriticalSection( &impl->animation_cs );
+        return RO_E_CLOSED;
+    }
     previous = impl->expressions[index];
     impl->expressions[index] = NULL;
     ++impl->animation_revision;
