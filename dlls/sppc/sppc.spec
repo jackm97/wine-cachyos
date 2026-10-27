@@ -37,16 +37,16 @@
 @ stub SLGetInstalledProductKeyIds
 @ stub SLGetLicense
 @ stub SLGetLicenseFileId
-@ stub SLGetLicenseInformation
+@ stdcall SLGetLicenseInformation(ptr ptr wstr ptr ptr ptr)
 @ stdcall SLGetLicensingStatusInformation(ptr ptr ptr wstr ptr ptr)
 @ stub SLGetPKeyId
 @ stub SLGetPKeyInformation
 @ stub SLGetPolicyInformation
 @ stub SLGetPolicyInformationDWORD
 @ stub SLGetProductSkuInformation
-@ stub SLGetSLIDList
+@ stdcall SLGetSLIDList(ptr long ptr long ptr ptr)
 @ stub SLGetServiceInformation
-@ stub SLInstallLicense
+@ stdcall SLInstallLicense(ptr long ptr ptr)
 @ stub SLInstallProofOfPurchase
 @ stub SLInstallProofOfPurchaseEx
 @ stub SLIsGenuineLocalEx
