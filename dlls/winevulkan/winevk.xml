@@ -16,11 +16,11 @@
         </type>
         <type category="funcpointer">
             <proto><type>VkResult</type> <name>PFN_vkCreateInstanceCallbackWINE</name></proto>
-            <param>const <type>void</type>* create_info</param>
-            <param>const <type>void</type>* allocator</param>
-            <param><type>VkInstance</type>* instance</param>
-            <param><type>PFN_vkGetInstanceProcAddrWINE</type> get_instance_proc_addr</param>
-            <param><type>void</type>* context</param>
+            <param>const <type>void</type>* <name>create_info</name></param>
+            <param>const <type>void</type>* <name>allocator</name></param>
+            <param><type>VkInstance</type>* <name>instance</name></param>
+            <param><type>PFN_vkGetInstanceProcAddrWINE</type> <name>get_instance_proc_addr</name></param>
+            <param><type>void</type>* <name>context</name></param>
         </type>
         <type category="struct" name="VkCreateInfoWineInstanceCallback" structextends="VkInstanceCreateInfo">
             <member values="VK_STRUCTURE_TYPE_CREATE_INFO_WINE_INSTANCE_CALLBACK"><type>VkStructureType</type> <name>sType</name></member>
