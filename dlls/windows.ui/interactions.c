@@ -3180,6 +3180,13 @@ static HRESULT WINAPI interaction_tracker_statics2_SetBindingMode( IInteractionT
     if (tracker1->compositor != tracker2->compositor) return E_INVALIDARG;
 
     EnterCriticalSection( &tracker_binding_cs );
+    EnterCriticalSection( &tracker1->animation_cs );
+    if (tracker1->notifications_closed) hr = RO_E_CLOSED;
+    LeaveCriticalSection( &tracker1->animation_cs );
+    EnterCriticalSection( &tracker2->animation_cs );
+    if (tracker2->notifications_closed) hr = RO_E_CLOSED;
+    LeaveCriticalSection( &tracker2->animation_cs );
+    if (FAILED(hr)) goto done;
     binding1 = interaction_tracker_find_binding( tracker1, tracker2 );
     binding2 = interaction_tracker_find_binding( tracker2, tracker1 );
     if (axis_mode == InteractionBindingAxisModes_None)
