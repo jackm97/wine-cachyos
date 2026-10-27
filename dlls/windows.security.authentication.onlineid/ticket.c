@@ -1,103 +1,199 @@
-/* WinRT Windows.Security.Authentication.Onlineid Implementation
+/* WinRT Windows.Security.Authentication.OnlineId ticket objects
  *
  * Copyright (C) 2024 Mohamad Al-Jaf
+ * Copyright (C) 2026 Mirko Brombin
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
 #include "private.h"
-#include "wine/debug.h"
+struct ticket_request
+{
+    IOnlineIdServiceTicketRequest IOnlineIdServiceTicketRequest_iface;
+    LONG ref;
+    HSTRING service;
+    HSTRING policy;
+};
 
-WINE_DEFAULT_DEBUG_CHANNEL(onlineid);
+static inline struct ticket_request *impl_from_IOnlineIdServiceTicketRequest( IOnlineIdServiceTicketRequest *iface )
+{
+    return CONTAINING_RECORD( iface, struct ticket_request, IOnlineIdServiceTicketRequest_iface );
+}
 
-struct ticket_request_factory_statics
+static HRESULT WINAPI service_request_QueryInterface( IOnlineIdServiceTicketRequest *iface, REFIID iid, void **out )
+{
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID_IOnlineIdServiceTicketRequest ))
+    {
+        *out = iface;
+        IOnlineIdServiceTicketRequest_AddRef( iface );
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI service_request_AddRef( IOnlineIdServiceTicketRequest *iface )
+{
+    return InterlockedIncrement( &impl_from_IOnlineIdServiceTicketRequest( iface )->ref );
+}
+
+static ULONG WINAPI service_request_Release( IOnlineIdServiceTicketRequest *iface )
+{
+    struct ticket_request *impl = impl_from_IOnlineIdServiceTicketRequest( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+
+    if (!ref)
+    {
+        WindowsDeleteString( impl->service );
+        WindowsDeleteString( impl->policy );
+        free( impl );
+    }
+    return ref;
+}
+
+static HRESULT WINAPI service_request_GetIids( IOnlineIdServiceTicketRequest *iface, ULONG *count, IID **iids )
+{
+    if (!count || !iids) return E_POINTER;
+    *count = 1;
+    if (!(*iids = CoTaskMemAlloc( sizeof(**iids) ))) return E_OUTOFMEMORY;
+    **iids = IID_IOnlineIdServiceTicketRequest;
+    return S_OK;
+}
+
+static HRESULT WINAPI service_request_GetRuntimeClassName( IOnlineIdServiceTicketRequest *iface, HSTRING *name )
+{
+    const WCHAR *class_name = RuntimeClass_Windows_Security_Authentication_OnlineId_OnlineIdServiceTicketRequest;
+    if (!name) return E_POINTER;
+    return WindowsCreateString( class_name, wcslen( class_name ), name );
+}
+
+static HRESULT WINAPI service_request_GetTrustLevel( IOnlineIdServiceTicketRequest *iface, TrustLevel *level )
+{
+    if (!level) return E_POINTER;
+    *level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI service_request_get_Service( IOnlineIdServiceTicketRequest *iface, HSTRING *value )
+{
+    if (!value) return E_POINTER;
+    return WindowsDuplicateString( impl_from_IOnlineIdServiceTicketRequest( iface )->service, value );
+}
+
+static HRESULT WINAPI service_request_get_Policy( IOnlineIdServiceTicketRequest *iface, HSTRING *value )
+{
+    if (!value) return E_POINTER;
+    return WindowsDuplicateString( impl_from_IOnlineIdServiceTicketRequest( iface )->policy, value );
+}
+
+static const struct IOnlineIdServiceTicketRequestVtbl service_request_vtbl =
+{
+    service_request_QueryInterface,
+    service_request_AddRef,
+    service_request_Release,
+    service_request_GetIids,
+    service_request_GetRuntimeClassName,
+    service_request_GetTrustLevel,
+    service_request_get_Service,
+    service_request_get_Policy,
+};
+
+HRESULT ticket_request_create( HSTRING service, HSTRING policy, IOnlineIdServiceTicketRequest **out )
+{
+    struct ticket_request *impl;
+    HRESULT hr;
+
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (!service) return E_INVALIDARG;
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+    impl->IOnlineIdServiceTicketRequest_iface.lpVtbl = &service_request_vtbl;
+    impl->ref = 1;
+    if (FAILED(hr = WindowsDuplicateString( service, &impl->service )) ||
+        FAILED(hr = WindowsDuplicateString( policy, &impl->policy )))
+    {
+        IOnlineIdServiceTicketRequest_Release( &impl->IOnlineIdServiceTicketRequest_iface );
+        return hr;
+    }
+    *out = &impl->IOnlineIdServiceTicketRequest_iface;
+    return S_OK;
+}
+
+struct ticket_request_factory
 {
     IActivationFactory IActivationFactory_iface;
     IOnlineIdServiceTicketRequestFactory IOnlineIdServiceTicketRequestFactory_iface;
     LONG ref;
 };
 
-static inline struct ticket_request_factory_statics *impl_from_IActivationFactory( IActivationFactory *iface )
+static inline struct ticket_request_factory *factory_from_activation( IActivationFactory *iface )
 {
-    return CONTAINING_RECORD( iface, struct ticket_request_factory_statics, IActivationFactory_iface );
+    return CONTAINING_RECORD( iface, struct ticket_request_factory, IActivationFactory_iface );
+}
+
+static inline struct ticket_request_factory *factory_from_request_factory( IOnlineIdServiceTicketRequestFactory *iface )
+{
+    return CONTAINING_RECORD( iface, struct ticket_request_factory, IOnlineIdServiceTicketRequestFactory_iface );
 }
 
 static HRESULT WINAPI factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out )
 {
-    struct ticket_request_factory_statics *impl = impl_from_IActivationFactory( iface );
+    struct ticket_request_factory *impl = factory_from_activation( iface );
 
-    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
-
-    if (IsEqualGUID( iid, &IID_IUnknown ) ||
-        IsEqualGUID( iid, &IID_IInspectable ) ||
-        IsEqualGUID( iid, &IID_IActivationFactory ))
-    {
-        *out = &impl->IActivationFactory_iface;
-        IInspectable_AddRef( *out );
-        return S_OK;
-    }
-
-    if (IsEqualGUID( iid, &IID_IOnlineIdServiceTicketRequestFactory ))
-    {
-        *out = &impl->IOnlineIdServiceTicketRequestFactory_iface;
-        IInspectable_AddRef( *out );
-        return S_OK;
-    }
-
-    FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
+    if (!out) return E_POINTER;
     *out = NULL;
-    return E_NOINTERFACE;
+    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID_IActivationFactory ))
+        *out = &impl->IActivationFactory_iface;
+    else if (IsEqualGUID( iid, &IID_IOnlineIdServiceTicketRequestFactory ))
+        *out = &impl->IOnlineIdServiceTicketRequestFactory_iface;
+    else
+        return E_NOINTERFACE;
+    IInspectable_AddRef( *out );
+    return S_OK;
 }
 
 static ULONG WINAPI factory_AddRef( IActivationFactory *iface )
 {
-    struct ticket_request_factory_statics *impl = impl_from_IActivationFactory( iface );
-    ULONG ref = InterlockedIncrement( &impl->ref );
-    TRACE( "iface %p, ref %lu.\n", iface, ref );
-    return ref;
+    return InterlockedIncrement( &factory_from_activation( iface )->ref );
 }
 
 static ULONG WINAPI factory_Release( IActivationFactory *iface )
 {
-    struct ticket_request_factory_statics *impl = impl_from_IActivationFactory( iface );
-    ULONG ref = InterlockedDecrement( &impl->ref );
-    TRACE( "iface %p, ref %lu.\n", iface, ref );
-    return ref;
+    return InterlockedDecrement( &factory_from_activation( iface )->ref );
 }
 
-static HRESULT WINAPI factory_GetIids( IActivationFactory *iface, ULONG *iid_count, IID **iids )
+static HRESULT WINAPI factory_GetIids( IActivationFactory *iface, ULONG *count, IID **iids )
 {
-    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
-    return E_NOTIMPL;
+    if (!count || !iids) return E_POINTER;
+    *count = 1;
+    if (!(*iids = CoTaskMemAlloc( sizeof(**iids) ))) return E_OUTOFMEMORY;
+    **iids = IID_IOnlineIdServiceTicketRequestFactory;
+    return S_OK;
 }
 
-static HRESULT WINAPI factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name )
+static HRESULT WINAPI factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *name )
 {
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    const WCHAR *class_name = RuntimeClass_Windows_Security_Authentication_OnlineId_OnlineIdServiceTicketRequest;
+    if (!name) return E_POINTER;
+    return WindowsCreateString( class_name, wcslen( class_name ), name );
 }
 
-static HRESULT WINAPI factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *trust_level )
+static HRESULT WINAPI factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *level )
 {
-    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
-    return E_NOTIMPL;
+    if (!level) return E_POINTER;
+    *level = BaseTrust;
+    return S_OK;
 }
 
 static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInspectable **instance )
 {
-    FIXME( "iface %p, instance %p stub!\n", iface, instance );
+    if (instance) *instance = NULL;
     return E_NOTIMPL;
 }
 
@@ -106,49 +202,74 @@ static const struct IActivationFactoryVtbl factory_vtbl =
     factory_QueryInterface,
     factory_AddRef,
     factory_Release,
-    /* IInspectable methods */
     factory_GetIids,
     factory_GetRuntimeClassName,
     factory_GetTrustLevel,
-    /* IActivationFactory methods */
     factory_ActivateInstance,
 };
 
-DEFINE_IINSPECTABLE( ticket_request_factory_statics, IOnlineIdServiceTicketRequestFactory, struct ticket_request_factory_statics, IActivationFactory_iface )
-
-static HRESULT WINAPI ticket_request_factory_statics_CreateOnlineIdServiceTicketRequest( IOnlineIdServiceTicketRequestFactory *iface, HSTRING service,
-                                                                                         HSTRING policy, IOnlineIdServiceTicketRequest **request )
+static HRESULT WINAPI request_factory_QueryInterface( IOnlineIdServiceTicketRequestFactory *iface, REFIID iid, void **out )
 {
-    FIXME( "iface %p, service %s, policy %s, request %p stub!\n", iface, debugstr_hstring( service ), debugstr_hstring( policy ), request );
-    return E_NOTIMPL;
+    return factory_QueryInterface( &factory_from_request_factory( iface )->IActivationFactory_iface, iid, out );
+}
+static ULONG WINAPI request_factory_AddRef( IOnlineIdServiceTicketRequestFactory *iface )
+{
+    return factory_AddRef( &factory_from_request_factory( iface )->IActivationFactory_iface );
+}
+static ULONG WINAPI request_factory_Release( IOnlineIdServiceTicketRequestFactory *iface )
+{
+    return factory_Release( &factory_from_request_factory( iface )->IActivationFactory_iface );
+}
+static HRESULT WINAPI request_factory_GetIids( IOnlineIdServiceTicketRequestFactory *iface, ULONG *count, IID **iids )
+{
+    return factory_GetIids( &factory_from_request_factory( iface )->IActivationFactory_iface, count, iids );
+}
+static HRESULT WINAPI request_factory_GetRuntimeClassName( IOnlineIdServiceTicketRequestFactory *iface, HSTRING *name )
+{
+    return factory_GetRuntimeClassName( &factory_from_request_factory( iface )->IActivationFactory_iface, name );
+}
+static HRESULT WINAPI request_factory_GetTrustLevel( IOnlineIdServiceTicketRequestFactory *iface, TrustLevel *level )
+{
+    return factory_GetTrustLevel( &factory_from_request_factory( iface )->IActivationFactory_iface, level );
 }
 
-static HRESULT WINAPI ticket_request_factory_statics_CreateOnlineIdServiceTicketRequestAdvanced( IOnlineIdServiceTicketRequestFactory *iface, HSTRING service,
-                                                                                                 IOnlineIdServiceTicketRequest **request )
+static HRESULT WINAPI request_factory_CreateOnlineIdServiceTicketRequest( IOnlineIdServiceTicketRequestFactory *iface,
+                                                                           HSTRING service, HSTRING policy,
+                                                                           IOnlineIdServiceTicketRequest **request )
 {
-    FIXME( "iface %p, service %s, request %p stub!\n", iface, debugstr_hstring( service ), request );
-    return E_NOTIMPL;
+    return ticket_request_create( service, policy, request );
 }
 
-static const struct IOnlineIdServiceTicketRequestFactoryVtbl ticket_request_factory_statics_vtbl =
+static HRESULT WINAPI request_factory_CreateOnlineIdServiceTicketRequestAdvanced( IOnlineIdServiceTicketRequestFactory *iface,
+                                                                                   HSTRING service,
+                                                                                   IOnlineIdServiceTicketRequest **request )
 {
-    ticket_request_factory_statics_QueryInterface,
-    ticket_request_factory_statics_AddRef,
-    ticket_request_factory_statics_Release,
-    /* IInspectable methods */
-    ticket_request_factory_statics_GetIids,
-    ticket_request_factory_statics_GetRuntimeClassName,
-    ticket_request_factory_statics_GetTrustLevel,
-    /* IOnlineIdServiceTicketRequestFactory methods */
-    ticket_request_factory_statics_CreateOnlineIdServiceTicketRequest,
-    ticket_request_factory_statics_CreateOnlineIdServiceTicketRequestAdvanced,
+    HSTRING policy;
+    HRESULT hr;
+
+    if (FAILED(hr = WindowsCreateString( L"", 0, &policy ))) return hr;
+    hr = ticket_request_create( service, policy, request );
+    WindowsDeleteString( policy );
+    return hr;
+}
+
+static const struct IOnlineIdServiceTicketRequestFactoryVtbl request_factory_vtbl =
+{
+    request_factory_QueryInterface,
+    request_factory_AddRef,
+    request_factory_Release,
+    request_factory_GetIids,
+    request_factory_GetRuntimeClassName,
+    request_factory_GetTrustLevel,
+    request_factory_CreateOnlineIdServiceTicketRequest,
+    request_factory_CreateOnlineIdServiceTicketRequestAdvanced,
 };
 
-static struct ticket_request_factory_statics ticket_request_factory_statics =
+static struct ticket_request_factory ticket_request_factory =
 {
     {&factory_vtbl},
-    {&ticket_request_factory_statics_vtbl},
+    {&request_factory_vtbl},
     1,
 };
 
-IActivationFactory *ticket_factory = &ticket_request_factory_statics.IActivationFactory_iface;
+IActivationFactory *ticket_factory = &ticket_request_factory.IActivationFactory_iface;

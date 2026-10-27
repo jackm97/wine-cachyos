@@ -19,6 +19,7 @@
 
 #include "initguid.h"
 #include "private.h"
+#include "webauthenticationcoremanagerinterop.h"
 
 #include "wine/debug.h"
 
@@ -42,6 +43,17 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( authenticator_factory, &IID_IActivationFactory, (void **)factory );
     if (!wcscmp( buffer, RuntimeClass_Windows_Security_Authentication_OnlineId_OnlineIdServiceTicketRequest ))
         IActivationFactory_QueryInterface( ticket_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Security_Authentication_Web_Core_WebAuthenticationCoreManager ))
+        IActivationFactory_QueryInterface( web_authentication_core_manager_factory, &IID_IActivationFactory,
+                                           (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Security_Authentication_Web_Core_WebTokenRequest ))
+        IActivationFactory_QueryInterface( web_token_request_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Security_Authentication_Web_Core_WebTokenResponse ))
+        IActivationFactory_QueryInterface( web_token_response_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Security_Credentials_WebAccount ))
+        IActivationFactory_QueryInterface( web_account_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Security_Credentials_WebAccountProvider ))
+        IActivationFactory_QueryInterface( web_account_provider_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;
