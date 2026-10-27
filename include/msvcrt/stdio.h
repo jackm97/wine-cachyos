@@ -499,6 +499,19 @@ static inline int __cdecl _sprintf_l(char *buffer, const char *format, _locale_t
     return ret < 0 ? -1 : ret;
 }
 
+static inline int __cdecl _snprintf_l(char *buffer, size_t size, const char *format, _locale_t locale, ...) __WINE_CRT_PRINTF_ATTR(3, 5);
+static inline int __cdecl _snprintf_l(char *buffer, size_t size, const char *format, _locale_t locale, ...)
+{
+    int ret;
+    va_list args;
+
+    va_start(args, locale);
+    ret = __stdio_common_vsprintf(_CRT_INTERNAL_LOCAL_PRINTF_OPTIONS | _CRT_INTERNAL_PRINTF_LEGACY_VSPRINTF_NULL_TERMINATION,
+                                  buffer, size, format, locale, args);
+    va_end(args);
+    return ret < 0 ? -1 : ret;
+}
+
 static inline int __cdecl vsscanf(const char *buffer, const char *format, va_list args) __WINE_CRT_SCANF_ATTR(2, 0);
 static inline int __cdecl vsscanf(const char *buffer, const char *format, va_list args)
 {
