@@ -406,6 +406,7 @@ SOURCES = \
 	indexsrv.idl \
 	initguid.h \
 	inputpaneinterop.idl \
+	inkpresenterdesktop.idl \
 	inputscope.idl \
 	inseng.idl \
 	inspectable.idl \

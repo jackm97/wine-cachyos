@@ -1,0 +1,6 @@
+MODULE = inkobjcore.dll
+IMPORTS = ole32 uuid
+
+SOURCES = \
+	inkobjcore.rc \
+	main.c
