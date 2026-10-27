@@ -31,6 +31,10 @@
 #include "mfobjects.h"
 #include "mftransform.h"
 
+/* defined once in msvproc.c; declared here before initguid.h turns DEFINE_GUID into a definition */
+DEFINE_MEDIATYPE_GUID(MFVideoFormat_ABGR32, D3DFMT_A8B8G8R8);
+DEFINE_MEDIATYPE_GUID(MFVideoFormat_P208,MAKEFOURCC('P','2','0','8'));
+
 #include "initguid.h"
 #include "d3d11.h"
 
@@ -43,8 +47,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(dmo);
 
-DEFINE_MEDIATYPE_GUID(MFVideoFormat_ABGR32, D3DFMT_A8B8G8R8);
-DEFINE_MEDIATYPE_GUID(MFVideoFormat_P208,MAKEFOURCC('P','2','0','8'));
 
 static const GUID MF_XVP_PLAYBACK_MODE = { 0x3c5d293f, 0xad67, 0x4e29, { 0xaf, 0x12, 0xcf, 0x3e, 0x23, 0x8a, 0xcc, 0xe9 } };
 
