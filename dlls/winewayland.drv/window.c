@@ -649,6 +649,25 @@ static void wayland_configure_window(HWND hwnd)
         flags |= SWP_NOSENDCHANGING;
     }
 
+    /* A maximized window lies on a monitor, which applications rely on, so
+     * center it on the nearest one instead of keeping its old position. */
+    if ((state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED) && !(flags & SWP_NOSIZE))
+    {
+        int window_width = rect.right - rect.left, window_height = rect.bottom - rect.top;
+        HMONITOR hmonitor;
+        MONITORINFO mi;
+
+        mi.cbSize = sizeof(mi);
+        if ((hmonitor = NtUserMonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST)) &&
+            NtUserGetMonitorInfo(hmonitor, &mi))
+        {
+            OffsetRect(&rect,
+                       mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - window_width) / 2 - rect.left,
+                       mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - window_height) / 2 - rect.top);
+            flags &= ~SWP_NOMOVE;
+        }
+    }
+
     NtUserSetRawWindowPos(hwnd, rect, flags, FALSE);
 }
 
