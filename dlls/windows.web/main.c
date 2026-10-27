@@ -38,12 +38,26 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     *factory = NULL;
 
+    if (!wcscmp( buffer, RuntimeClass_Windows_Security_Authorization_AppCapabilityAccess_AppCapability ))
+        IActivationFactory_QueryInterface( app_capability_factory, &IID_IActivationFactory, (void **)factory );
     if (!wcscmp( buffer, RuntimeClass_Windows_Data_Json_JsonArray ))
         IActivationFactory_QueryInterface( json_array_factory, &IID_IActivationFactory, (void **)factory );
     if (!wcscmp( buffer, RuntimeClass_Windows_Data_Json_JsonObject ))
         IActivationFactory_QueryInterface( json_object_factory, &IID_IActivationFactory, (void **)factory );
     if (!wcscmp( buffer, RuntimeClass_Windows_Data_Json_JsonValue ))
         IActivationFactory_QueryInterface( json_value_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Web_Http_HttpCookie ))
+        IActivationFactory_QueryInterface( http_cookie_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Web_Http_HttpMethod ))
+        IActivationFactory_QueryInterface( http_method_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Web_Http_HttpRequestMessage ))
+        IActivationFactory_QueryInterface( http_request_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Web_Http_HttpResponseMessage ))
+        IActivationFactory_QueryInterface( http_response_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Web_Http_HttpClient ))
+        IActivationFactory_QueryInterface( http_client_factory, &IID_IActivationFactory, (void **)factory );
+    if (!wcscmp( buffer, RuntimeClass_Windows_Web_Http_Filters_HttpBaseProtocolFilter ))
+        IActivationFactory_QueryInterface( protocol_filter_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;
