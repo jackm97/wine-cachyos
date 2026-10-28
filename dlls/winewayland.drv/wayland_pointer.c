@@ -686,10 +686,9 @@ static BOOL cursor_buffer_is_transparent(struct wayland_shm_buffer *shm_buffer)
     return TRUE;
 }
 
-static void wayland_pointer_update_cursor_buffer(HCURSOR hcursor, double scale)
+static void wayland_pointer_update_cursor_buffer(HCURSOR hcursor, const ICONINFOEXW *info, double scale)
 {
     struct wayland_cursor *cursor = &process_wayland.pointer.cursor;
-    ICONINFOEXW info = {0};
 
     if (!hcursor) goto clear_cursor;
 
@@ -700,29 +699,26 @@ static void wayland_pointer_update_cursor_buffer(HCURSOR hcursor, double scale)
         cursor->shm_buffer = NULL;
     }
 
-    if (!get_icon_info(hcursor, &info))
+    if (!info)
     {
         ERR("Failed to get icon info for cursor=%p\n", hcursor);
         goto clear_cursor;
     }
 
-    if (info.hbmColor)
+    if (info->hbmColor)
     {
         HDC hdc = NtGdiCreateCompatibleDC(0);
         cursor->shm_buffer =
-            wayland_shm_buffer_from_color_bitmaps(hdc, info.hbmColor, info.hbmMask, FALSE);
+            wayland_shm_buffer_from_color_bitmaps(hdc, info->hbmColor, info->hbmMask, FALSE);
         NtGdiDeleteObjectApp(hdc);
     }
     else
     {
-        cursor->shm_buffer = create_mono_cursor_buffer(info.hbmMask);
+        cursor->shm_buffer = create_mono_cursor_buffer(info->hbmMask);
     }
 
-    if (info.hbmColor) NtGdiDeleteObjectApp(info.hbmColor);
-    if (info.hbmMask) NtGdiDeleteObjectApp(info.hbmMask);
-
-    cursor->hotspot_x = info.xHotspot;
-    cursor->hotspot_y = info.yHotspot;
+    cursor->hotspot_x = info->xHotspot;
+    cursor->hotspot_y = info->yHotspot;
 
     if (!cursor->shm_buffer)
     {
@@ -834,7 +830,7 @@ static void reapply_cursor_clipping(void)
     NtUserSetThreadDpiAwarenessContext(context);
 }
 
-static enum wp_cursor_shape_device_v1_shape cursor_shape_from_info(ICONINFOEXW *info,
+static enum wp_cursor_shape_device_v1_shape cursor_shape_from_info(const ICONINFOEXW *info,
                                                                    uint32_t proto_version)
 {
     const struct system_cursors *cursors;
@@ -865,22 +861,17 @@ static enum wp_cursor_shape_device_v1_shape cursor_shape_from_info(ICONINFOEXW *
     return shape;
 }
 
-static BOOL wayland_pointer_set_cursor_shape(HCURSOR hcursor)
+static BOOL wayland_pointer_set_cursor_shape(const ICONINFOEXW *info)
 {
     struct wayland_pointer *pointer = &process_wayland.pointer;
-    ICONINFOEXW info = {0};
     enum wp_cursor_shape_device_v1_shape shape = 0;
     uint32_t proto_version;
 
     if (!process_wayland.wp_cursor_shape_manager_v1) return FALSE;
-    if (!hcursor) return FALSE;
-    if (!get_icon_info(hcursor, &info)) return FALSE;
+    if (!info) return FALSE;
     proto_version = wp_cursor_shape_manager_v1_get_version(
         process_wayland.wp_cursor_shape_manager_v1);
-    shape = cursor_shape_from_info(&info, proto_version);
-
-    if (info.hbmColor) NtGdiDeleteObjectApp(info.hbmColor);
-    if (info.hbmMask) NtGdiDeleteObjectApp(info.hbmMask);
+    shape = cursor_shape_from_info(info, proto_version);
 
     if (!shape) return FALSE;
 
@@ -916,6 +907,8 @@ static void wayland_set_cursor(HWND hwnd, HCURSOR hcursor, BOOL use_hcursor)
     struct wayland_win_data *data;
     double scale;
     BOOL reapply_clip = FALSE;
+    ICONINFOEXW info = {0};
+    BOOL have_info;
 
     if ((data = wayland_win_data_get(hwnd)))
     {
@@ -935,17 +928,20 @@ static void wayland_set_cursor(HWND hwnd, HCURSOR hcursor, BOOL use_hcursor)
         scale = 1.0;
     }
 
+    /* the icon info needs the user lock, so it is read before pointer->mutex is taken */
+    have_info = use_hcursor && hcursor && get_icon_info(hcursor, &info);
+
     pthread_mutex_lock(&pointer->mutex);
     if (pointer->focused_hwnd == hwnd)
     {
         if ((!use_hcursor && pointer->wp_cursor_shape_device_v1) ||
-            (use_hcursor && hcursor && wayland_pointer_set_cursor_shape(hcursor)))
+            (use_hcursor && hcursor && wayland_pointer_set_cursor_shape(have_info ? &info : NULL)))
         {
             wayland_pointer_clear_cursor_surface();
         }
         else
         {
-            if (use_hcursor) wayland_pointer_update_cursor_buffer(hcursor, scale);
+            if (use_hcursor) wayland_pointer_update_cursor_buffer(hcursor, have_info ? &info : NULL, scale);
             wayland_pointer_update_cursor_surface(scale);
             wl_pointer_set_cursor(pointer->wl_pointer,
                                   pointer->enter_serial,
@@ -958,6 +954,12 @@ static void wayland_set_cursor(HWND hwnd, HCURSOR hcursor, BOOL use_hcursor)
         reapply_clip = TRUE;
     }
     pthread_mutex_unlock(&pointer->mutex);
+
+    if (have_info)
+    {
+        if (info.hbmColor) NtGdiDeleteObjectApp(info.hbmColor);
+        if (info.hbmMask) NtGdiDeleteObjectApp(info.hbmMask);
+    }
 
     /* Reapply cursor clip since cursor visibility affects pointer constraint
      * behavior. */
