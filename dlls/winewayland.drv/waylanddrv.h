@@ -130,6 +130,13 @@ struct wayland_cursor
     int hotspot_x, hotspot_y;
 };
 
+#define WAYLAND_POINTER_FRAME_DISCRETE_WHEEL      0x01
+#define WAYLAND_POINTER_FRAME_DISCRETE_WHEEL_HORZ 0x02
+#define WAYLAND_POINTER_FRAME_AXIS                0x04
+#define WAYLAND_POINTER_FRAME_AXIS_HORZ           0x08
+#define WAYLAND_POINTER_FRAME_AXIS_STOP           0x10
+#define WAYLAND_POINTER_FRAME_AXIS_HORZ_STOP      0x20
+
 struct wayland_pointer
 {
     struct wl_pointer *wl_pointer;
@@ -139,7 +146,6 @@ struct wayland_pointer
     struct wp_cursor_shape_device_v1 *wp_cursor_shape_device_v1;
     HWND focused_hwnd;
     HWND constraint_hwnd;
-    BOOL relative_mode;
     BOOL pending_warp;
     POINT warp;
     uint32_t enter_serial;
@@ -149,6 +155,9 @@ struct wayland_pointer
     double accum_y;
     double accum_raw_x;
     double accum_raw_y;
+    /* continuous scrolling, touched only on the dispatcher thread and never locked */
+    double axis, horz_axis;
+    UINT frame_flags;
     pthread_mutex_t mutex;
 };
 
