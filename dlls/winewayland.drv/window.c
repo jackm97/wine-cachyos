@@ -214,7 +214,7 @@ static void reparent_popups_depth(struct wayland_surface *surface, int depth)
     }
 }
 
-static void wayland_surface_reparent_popups(struct wayland_surface *surface)
+void wayland_surface_reparent_popups(struct wayland_surface *surface)
 {
     reparent_popups_depth(surface, 0);
 }
@@ -230,7 +230,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     TRACE("hwnd=%p\n", data->hwnd);
 
     visible = ((NtUserGetWindowLongW(data->hwnd, GWL_STYLE) & WS_VISIBLE) == WS_VISIBLE) &&
-               (!(exstyle & WS_EX_LAYERED) || data->layered_attribs_set);
+               (!(exstyle & WS_EX_LAYERED) || data->layered_attribs_set || data->client_surface);
 
     if (!visible) role = WAYLAND_SURFACE_ROLE_NONE;
     else if (owner_surface && !data->managed) role = WAYLAND_SURFACE_ROLE_POPUP;
@@ -441,6 +441,19 @@ static inline HWND get_active_window(void)
     return NtUserGetGUIThreadInfo(GetCurrentThreadId(), &info) ? info.hwndActive : 0;
 }
 
+static BOOL is_mso_border_effect_window(HWND hwnd)
+{
+    static const WCHAR border_effect[] = u"MSO_BORDEREFFECT_WINDOW_CLASS";
+    WCHAR class_name[ARRAY_SIZE(border_effect) + 1];
+    UNICODE_STRING name = {.Buffer = class_name, .MaximumLength = sizeof(class_name)};
+    DWORD style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
+    DWORD ex_style = NtUserGetWindowLongW(hwnd, GWL_EXSTYLE);
+
+    return NtUserGetClassName(hwnd, FALSE, &name) == (INT)(ARRAY_SIZE(border_effect) - 1) &&
+           !wcsncmp(class_name, border_effect, ARRAY_SIZE(border_effect) - 1) &&
+           (style & WS_POPUP) && (ex_style & WS_EX_LAYERED);
+}
+
 /***********************************************************************
  *		is_window_managed
  *
@@ -532,6 +545,14 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     BOOL border_effect, visible, foreign_child;
     DWORD pid;
 
+    /* these are NtUser calls, so they run before win_data is locked */
+    border_effect = is_mso_border_effect_window(hwnd);
+    visible = NtUserIsWindowVisible(hwnd);
+    /* a foreign child's toplevel belongs to another process, so it has no win_data here */
+    foreign_child = toplevel && toplevel != hwnd && NtUserGetWindowThread(toplevel, &pid) && pid != GetCurrentProcessId();
+    /* Windows paints a border effect window for its owner, so it never gets a wayland surface */
+    if (border_effect) surface = NULL;
+
     /* Get the managed state with win_data unlocked, as is_window_managed
      * may need to query win_data information about other HWNDs and thus
      * acquire the lock itself internally. */
@@ -541,7 +562,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
           owner, debugstr_window_rects(new_rects), insert_after, swp_flags);
 
     if (!(data = wayland_win_data_get(hwnd))) return;
-    owner_data = owner && owner != hwnd ? wayland_win_data_get(owner) : NULL;
+    owner_data = owner && owner != hwnd && !foreign_child ? wayland_win_data_get(owner) : NULL;
     owner_surface = owner_data ? owner_data->wayland_surface : NULL;
     /* for it to be a popup, we need a valid xdg surface. */
     if (owner_surface && !owner_surface->xdg_surface) owner_surface = NULL;
@@ -558,11 +579,22 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
         wayland_win_data_release(toplevel_data);
     }
 
-    if (!surface && data->wayland_surface)
+    if (!surface && (border_effect || !visible || (toplevel != hwnd && !(foreign_child && data->client_surface))))
     {
-        wayland_surface_reparent_popups(data->wayland_surface);
-        wayland_surface_destroy(data->wayland_surface);
-        data->wayland_surface = NULL;
+        /* a visible, onscreen in-process child attaches its client surface to its toplevel; anything else detaches it (an offscreen client is detached, as in P3-H9 and P3-H12) */
+        if (data->client_surface)
+        {
+            if (!border_effect && visible && toplevel && !data->client_surface->client.offscreen)
+                wayland_client_surface_attach(data->client_surface, toplevel, &data->client_surface->client.monitor_rect);
+            else
+                wayland_client_surface_attach(data->client_surface, NULL, NULL);
+        }
+        if (data->wayland_surface)
+        {
+            wayland_surface_reparent_popups(data->wayland_surface);
+            wayland_surface_destroy(data->wayland_surface);
+            data->wayland_surface = NULL;
+        }
     }
     else if (wayland_win_data_create_wayland_surface(data, owner_surface))
     {
@@ -981,12 +1013,21 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
     RECT rect = new_client->client.monitor_rect;
     struct wayland_client_surface *old_client;
     struct wayland_win_data *data;
-    BOOL visible = FALSE;
+    BOOL visible = FALSE, foreign = FALSE;
+    RECT child_rect = {0};
+    DWORD pid;
 
     /* ownership is shared with the callers, the last caller to release
      * its reference will also destroy it and clear our pointer. */
     wayland_client_surface_update_offscreen(new_client);
     if (toplevel) visible = !new_client->client.offscreen && NtUserIsWindowVisible(hwnd);
+
+    /* NtUser queries, before win_data is locked. visible keeps the tree's offscreen test, so an offscreen client is not attached, as in the tree's attach. */
+    if (toplevel && toplevel != hwnd && NtUserGetWindowThread(toplevel, &pid) && pid != GetCurrentProcessId())
+    {
+        foreign = TRUE;
+        if (visible) child_rect = foreign_child_monitor_rect(hwnd);
+    }
     if (!(data = wayland_win_data_get(hwnd))) return;
 
     if (new_client != data->client_surface)
@@ -996,11 +1037,24 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
 
         if ((data->client_surface = new_client))
         {
-            if (toplevel && visible)
-                wayland_client_surface_attach(new_client, toplevel, &rect);
-            else
-                wayland_client_surface_attach(new_client, NULL, NULL);
+            /* a foreign child stays on its own surface, as update attached it (P3-H9) */
+            if (!(foreign && visible && new_client->toplevel == hwnd))
+            {
+                if (toplevel && visible)
+                    wayland_client_surface_attach(new_client, toplevel, &rect);
+                else
+                    wayland_client_surface_attach(new_client, NULL, NULL);
+            }
         }
+    }
+
+    /* a foreign child with no attached client gets its own TOPLEVEL and attaches to it (patch 970-972) */
+    if (foreign && visible && !new_client->toplevel)
+    {
+        if (!data->wayland_surface && wayland_win_data_create_wayland_surface(data, NULL))
+            wayland_win_data_update_wayland_state(data);
+        if (data->wayland_surface)
+            wayland_client_surface_attach(new_client, hwnd, &child_rect);
     }
 
     wayland_win_data_release(data);
@@ -1013,6 +1067,8 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
     struct wayland_surface *wayland_surface;
     struct wayland_win_data *data;
     BOOL committed = FALSE;
+    /* a user lock query, so it runs before win_data is locked */
+    BOOL border_effect = is_mso_border_effect_window(hwnd);
 
     if (!(data = wayland_win_data_get(hwnd))) return FALSE;
 
@@ -1028,6 +1084,11 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
         {
             TRACE("Wayland surface not configured yet, not flushing\n");
         }
+    }
+    else if (border_effect)
+    {
+        /* no wayland surface is built for these, so there is nothing to flush */
+        committed = TRUE;
     }
 
     /* Update the latest window buffer for the wayland surface. Note that we

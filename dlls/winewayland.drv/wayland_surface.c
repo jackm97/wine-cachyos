@@ -1898,11 +1898,25 @@ static void wayland_client_surface_detach(struct client_surface *client)
 {
     struct wayland_client_surface *surface = impl_from_client_surface(client);
     struct wayland_win_data *data;
+    HWND toplevel = client->toplevel;
+    DWORD pid;
+    BOOL foreign;
+
+    /* NtUser query, before win_data is locked (D1). toplevel is 0 for a client with no GA_ROOT, so the test is skipped */
+    foreign = toplevel && toplevel != client->hwnd &&
+              NtUserGetWindowThread(toplevel, &pid) && pid != GetCurrentProcessId();
 
     if ((data = wayland_win_data_get(client->hwnd)))
     {
         if (data->client_surface == surface) data->client_surface = NULL;
         wayland_client_surface_attach(surface, NULL, NULL);
+        /* the same destroy as the WindowPosChanged block (P3-H4) */
+        if (foreign && data->wayland_surface)
+        {
+            wayland_surface_reparent_popups(data->wayland_surface);
+            wayland_surface_destroy(data->wayland_surface);
+            data->wayland_surface = NULL;
+        }
         wayland_win_data_release(data);
     }
 }
@@ -1950,14 +1964,10 @@ void wayland_client_surface_update_offscreen(struct wayland_client_surface *surf
     HWND hwnd = surface->client.hwnd, toplevel = surface->client.toplevel;
     LONG offscreen = force_use_offscreen();
     struct wayland_win_data *data;
-    DWORD pid, flags;
+    DWORD flags;
     BYTE alpha;
 
     if (!toplevel) toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
-
-    /* windows of other processes are rendered by win32u, we cannot share their surfaces */
-    if (NtUserGetWindowThread(toplevel, &pid) && pid != GetCurrentProcessId())
-        offscreen = TRUE;
 
     if (!offscreen && (data = wayland_win_data_get(toplevel)))
     {
@@ -1976,19 +1986,64 @@ void wayland_client_surface_update_offscreen(struct wayland_client_surface *surf
     InterlockedExchange(&surface->client.offscreen, offscreen);
 }
 
+/***********************************************************************
+ *           foreign_child_monitor_rect
+ *
+ * The driver form of win32u get_client_surface_rects for a foreign child,
+ * with the child as its own reference (toplevel = hwnd). Raw monitor pixels,
+ * relative to the child's visible rect, as client_surface.monitor_rect is.
+ * NtUser queries only, so the caller must hold no win_data lock.
+ * raw_dpi is read once at entry and passed to every query, so the rect is
+ * computed from one DPI value. A DPI change between two calls is seen
+ * consistently on the next update and is never mixed within one result.
+ */
+RECT foreign_child_monitor_rect(HWND hwnd)
+{
+    UINT raw_dpi = NtUserGetWinMonitorDpi(hwnd, MDT_RAW_DPI);
+    RECT rect = {0}, window_rect, present_rect;
+    POINT origin = {0, 0};
+
+    /* the visible rect of a child is its present rect when there is one (window.c:2298) */
+    if (NtUserGetPresentRect(hwnd, &present_rect, raw_dpi))
+    {
+        SetRect(&rect, 0, 0, present_rect.right - present_rect.left,
+                present_rect.bottom - present_rect.top);
+        return rect;
+    }
+
+    /* otherwise the visible rect is the window rect: the client rect is (0,0,cw,ch),
+     * offset by client origin minus window origin, both in screen coordinates */
+    NtUserGetClientRect(hwnd, &rect, raw_dpi);
+    NtUserGetWindowRect(hwnd, &window_rect, raw_dpi);
+    NtUserMapWindowPoints(hwnd, NULL, &origin, 1, raw_dpi);
+    OffsetRect(&rect, origin.x - window_rect.left, origin.y - window_rect.top);
+    return rect;
+}
+
 static void wayland_client_surface_update(struct client_surface *client)
 {
     struct wayland_client_surface *surface = impl_from_client_surface(client);
     HWND hwnd = client->hwnd, toplevel = client->toplevel;
     struct wayland_win_data *data;
-    BOOL visible = FALSE;
+    BOOL visible = FALSE, foreign = FALSE;
+    RECT client_rect = {0};
+    DWORD pid;
 
     TRACE("%s\n", debugstr_client_surface(client));
     wayland_client_surface_update_offscreen(surface);
     if (toplevel) visible = !client->offscreen && NtUserIsWindowVisible(hwnd);
+
+    /* NtUser queries, before the win_data lock. A foreign child draws on its own surface (D3). */
+    if (toplevel && visible && toplevel != hwnd && NtUserGetWindowThread(toplevel, &pid) && pid != GetCurrentProcessId())
+    {
+        foreign = TRUE;
+        client_rect = foreign_child_monitor_rect(hwnd);
+    }
     if (!(data = wayland_win_data_get(hwnd))) return;
 
-    if (toplevel && visible)
+    if (foreign && data->wayland_surface)
+        wayland_client_surface_attach(surface, hwnd, &client_rect);
+    else if (toplevel && visible && !foreign)
         wayland_client_surface_attach(surface, toplevel, &client->monitor_rect);
     else
         wayland_client_surface_attach(surface, NULL, NULL);
@@ -2019,6 +2074,20 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
         NtUserGetWindowThread(root, &pid) && pid != GetCurrentProcessId())
     {
         wayland_surface_update_foreign_parent(hwnd);
+
+        /* the child draws on its own surface: commit it, then set the client (patch 547–548).
+         * An offscreen child is skipped: present does not commit it, and win32u's copy has no
+         * window surface of this process (goal 1). The return keeps the early exit for every foreign child. */
+        if (!hdc && !client->offscreen)
+        {
+            if ((data = wayland_win_data_get(hwnd)))
+            {
+                if (data->wayland_surface) wayland_surface_ensure_contents(data->wayland_surface);
+                wayland_win_data_release(data);
+            }
+            set_client_surface(hwnd, surface);
+        }
+        return;
     }
 
     /* offscreen: win32u copies the contents to the window surface for us */
@@ -2104,6 +2173,9 @@ struct client_surface *WAYLAND_CreateClientSurface(HWND hwnd, int pixel_format, 
     struct wl_region *empty_region;
 
     if (!(client = client_surface_create(&wayland_client_surface_funcs, hwnd, pixel_format, raw))) return NULL;
+
+    /* the compositor scales the host surface, so it is not sized raw (vulkan.c:2875) */
+    client->client.host_scaled = TRUE;
 
     client->wl_surface =
         wl_compositor_create_surface(process_wayland.wl_compositor);
