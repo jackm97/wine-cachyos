@@ -26,6 +26,7 @@
 
 #include <assert.h>
 #include <dlfcn.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -50,7 +51,18 @@ struct wayland_gl_drawable
 {
     struct opengl_drawable base;
     struct wl_egl_window *wl_egl_window;
+    BOOL interval_applied;
 };
+
+/* Private data of a GL frame callback, which belongs to a client surface, not a window. */
+struct wayland_gl_frame
+{
+    struct wayland_client_surface *surface;
+};
+
+/* Leaf lock guarding surface->gl_frame, every wayland_gl_frame.surface, surface->throttle_stalled
+ * and the callback lifetime. No driver lock is taken while it is held. */
+static pthread_mutex_t gl_throttle_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static struct wayland_gl_drawable *impl_from_opengl_drawable(struct opengl_drawable *base)
 {
@@ -77,6 +89,7 @@ static BOOL wayland_opengl_surface_create(struct client_surface *client, int for
     struct wgl_pixel_format desc;
     HWND hwnd = client->hwnd;
     SIZE size;
+    NTSTATUS status;
 
     TRACE("client=%s format=%d\n", debugstr_client_surface(client), format);
 
@@ -103,6 +116,14 @@ static BOOL wayland_opengl_surface_create(struct client_surface *client, int for
     opengl_drawable_map_buffer(&gl->base, GL_FRONT, GL_BACK);
     opengl_drawable_map_buffer(&gl->base, GL_FRONT_AND_BACK, GL_BACK);
     if (gl->base.stereo) opengl_drawable_map_buffer(&gl->base, GL_FRONT_RIGHT, GL_BACK_RIGHT);
+
+    /* starts signalled, so the first qualifying swap passes its wait */
+    if (!surface->throttle &&
+        (status = NtCreateEvent(&surface->throttle, EVENT_ALL_ACCESS, NULL, SynchronizationEvent, TRUE)))
+    {
+        WARN("Failed to create the GL throttle event, status %#x\n", (int)status);
+        surface->throttle = NULL;
+    }
 
     if (!(gl->wl_egl_window = wl_egl_window_create(surface->wl_surface, size.cx, size.cy))) goto err;
     if (!(gl->base.surface = funcs->p_eglCreateWindowSurface(egl->display, config, gl->wl_egl_window, attribs))) goto err;
@@ -133,18 +154,111 @@ static void wayland_drawable_flush(struct opengl_drawable *base, UINT flags)
 
     TRACE("drawable %s, flags %#x\n", debugstr_opengl_drawable(base), flags);
 
-    if (flags & GL_FLUSH_INTERVAL) funcs->p_eglSwapInterval(egl->display, abs(base->interval));
+    /* the driver waits on the frame callback itself in swap, so EGL must not also block */
+    if (flags & GL_FLUSH_INTERVAL) funcs->p_eglSwapInterval(egl->display, 0);
 
     /* Since context_flush is called from operations that may latch the native size,
      * perform any pending resizes before calling them. */
     if (flags & GL_FLUSH_UPDATED) wl_egl_window_resize(gl->wl_egl_window, size.cx, size.cy, 0, 0);
 }
 
+static void wayland_gl_frame_done(void *data, struct wl_callback *callback, uint32_t time)
+{
+    struct wayland_gl_frame *frame = data;
+
+    pthread_mutex_lock(&gl_throttle_mutex);
+    /* a NULL surface means the client surface was destroyed and detached this frame */
+    if (frame->surface)
+    {
+        TRACE("hwnd=%p\n", frame->surface->client.hwnd);
+        frame->surface->gl_frame = NULL;
+        frame->surface->throttle_stalled = FALSE;
+        if (frame->surface->throttle) NtSetEvent(frame->surface->throttle, NULL);
+    }
+    pthread_mutex_unlock(&gl_throttle_mutex);
+
+    /* the only place a frame callback is destroyed */
+    wl_callback_destroy(callback);
+    free(frame);
+}
+
+static const struct wl_callback_listener gl_frame_listener =
+{
+    wayland_gl_frame_done,
+};
+
+void wayland_gl_client_surface_destroy(struct wayland_client_surface *surface)
+{
+    pthread_mutex_lock(&gl_throttle_mutex);
+    if (surface->gl_frame)
+    {
+        /* the callback stays alive; its done handler frees the frame and the proxy */
+        surface->gl_frame->surface = NULL;
+        surface->gl_frame = NULL;
+    }
+    pthread_mutex_unlock(&gl_throttle_mutex);
+
+    if (surface->throttle) NtClose(surface->throttle);
+    surface->throttle = NULL;
+}
+
 static BOOL wayland_drawable_swap(struct opengl_drawable *base)
 {
     struct wayland_gl_drawable *gl = impl_from_opengl_drawable(base);
+    struct wayland_client_surface *surface = impl_from_client_surface(base->client);
 
     client_surface_present(base->client);
+
+    if (!gl->interval_applied)
+    {
+        funcs->p_eglSwapInterval(egl->display, 0);
+        gl->interval_applied = TRUE;
+    }
+
+    if (base->interval && surface->toplevel && surface->throttle)
+    {
+        /* 1 second, relative */
+        const LARGE_INTEGER timeout = { .QuadPart = -10000 * 1000 };
+        struct wayland_gl_frame *frame;
+        struct wl_callback *callback;
+        BOOL stalled;
+
+        pthread_mutex_lock(&gl_throttle_mutex);
+        stalled = surface->throttle_stalled;
+        pthread_mutex_unlock(&gl_throttle_mutex);
+
+        /* the wait runs with gl_throttle_mutex released, so the done handler can signal it */
+        if (!stalled && NtWaitForSingleObject(surface->throttle, FALSE, &timeout) == STATUS_TIMEOUT)
+        {
+            WARN("Present timed out!\n");
+            pthread_mutex_lock(&gl_throttle_mutex);
+            surface->throttle_stalled = TRUE;
+            pthread_mutex_unlock(&gl_throttle_mutex);
+        }
+
+        /* Currently, EGL is implemented using frame callbacks, so replicate that here.
+         * The commit made by eglSwapBuffers applies the request. At most one request is
+         * outstanding per client surface. */
+        pthread_mutex_lock(&gl_throttle_mutex);
+        if (!surface->gl_frame)
+        {
+            if (!(frame = calloc(1, sizeof(*frame))))
+                NtSetEvent(surface->throttle, NULL);
+            else if (!(callback = wl_surface_frame(surface->wl_surface)))
+            {
+                free(frame);
+                NtSetEvent(surface->throttle, NULL);
+            }
+            else
+            {
+                frame->surface = surface;
+                wl_callback_add_listener(callback, &gl_frame_listener, frame);
+                surface->gl_frame = frame;
+            }
+        }
+        pthread_mutex_unlock(&gl_throttle_mutex);
+    }
+
     funcs->p_eglSwapBuffers(egl->display, gl->base.surface);
 
     return TRUE;
@@ -248,6 +362,10 @@ UINT WAYLAND_OpenGLInit(UINT version, const struct opengl_funcs *opengl_funcs, c
 }
 
 #else /* No GL */
+
+void wayland_gl_client_surface_destroy(struct wayland_client_surface *surface)
+{
+}
 
 UINT WAYLAND_OpenGLInit(UINT version, const struct opengl_funcs *opengl_funcs, const struct opengl_driver_funcs **driver_funcs)
 {

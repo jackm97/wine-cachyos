@@ -52,7 +52,11 @@ static VkResult wayland_vulkan_surface_create(struct client_surface *client, con
     create_info_host.flags = 0; /* reserved */
     create_info_host.display = process_wayland.wl_display;
     create_info_host.surface = surface->wl_surface;
-    if ((res = instance->p_vkCreateWaylandSurfaceKHR(instance->host.instance, &create_info_host, NULL /* allocator */, handle))) return res;
+    if ((res = instance->p_vkCreateWaylandSurfaceKHR(instance->host.instance, &create_info_host, NULL /* allocator */, handle)))
+    {
+        ERR("Failed to create vulkan surface for %s, res %d\n", debugstr_client_surface(client), res);
+        return res;
+    }
     set_client_surface(hwnd, surface);
 
     TRACE("Created surface=0x%s\n", wine_dbgstr_longlong(*handle));

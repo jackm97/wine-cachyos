@@ -81,6 +81,7 @@ enum wayland_window_message
     WM_WAYLAND_SET_FOREGROUND,
     WM_WAYLAND_ACTIVATE_FOREIGN,
     WM_WAYLAND_FOREIGN_PARENT_CHANGED,
+    WM_WAYLAND_EXPOSE_SURFACE,
 };
 
 enum wayland_surface_config_state
@@ -96,6 +97,13 @@ enum wayland_surface_role
     WAYLAND_SURFACE_ROLE_NONE,
     WAYLAND_SURFACE_ROLE_TOPLEVEL,
     WAYLAND_SURFACE_ROLE_POPUP,
+};
+
+enum wayland_surface_ensure_type
+{
+    WAYLAND_SURFACE_NOT_ENSURED = 0,
+    WAYLAND_SURFACE_ENSURED_FLUSH,
+    WAYLAND_SURFACE_ENSURED_DUMMY_BUFFER,
 };
 
 struct wayland_keyboard
@@ -288,7 +296,10 @@ struct wayland_window_config
     BOOL managed;
     BOOL minimized;
     BOOL resizeable;
+    RECT client_rect;
 };
+
+struct wayland_gl_frame;
 
 struct wayland_client_surface
 {
@@ -296,10 +307,14 @@ struct wayland_client_surface
     HWND toplevel;
     UINT64 parent_serial; /* serial of the wayland_surface the subsurface was created on, 0 if none */
     RECT rect;
+    RECT viewport_rect; /* last applied position and size, in surface coordinates */
     struct wl_surface *wl_surface;
     struct wl_subsurface *wl_subsurface;
     struct wp_viewport *wp_viewport;
     struct wp_color_management_surface_v1 *color_management;
+    HANDLE throttle; /* GL swap throttle event, signalled by the frame callback */
+    struct wayland_gl_frame *gl_frame; /* pending frame callback, guarded by gl_throttle_mutex */
+    BOOL throttle_stalled; /* a throttle wait timed out, guarded by gl_throttle_mutex */
 };
 
 extern struct wayland_client_surface *impl_from_client_surface(struct client_surface *client);
@@ -359,6 +374,10 @@ struct wayland_surface
 
     struct wayland_surface_config pending, requested, processing, current;
     BOOL resizing;
+    /* TODO: We can remove this once FSHack is implemented in opengl and vulkan upstream for all drivers.
+     * The opengl implementation is already merged. Then we would only need to ensure contents via expose. */
+    enum wayland_surface_ensure_type ensured_contents;
+    BOOL expose_posted; /* a WM_WAYLAND_EXPOSE_SURFACE is in flight */
     struct wayland_window_config window;
     int content_width, content_height;
     HCURSOR hcursor;
@@ -413,13 +432,13 @@ RECT map_rect_from_surface(struct wayland_surface *surface, RECT rect);
 POINT map_point_from_surface(struct wayland_surface *surface, POINT point);
 void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel, const RECT *rect);
 void wayland_restack_client_surfaces(HWND toplevel);
-void wayland_surface_ensure_contents(struct wayland_surface *surface);
 void wayland_surface_set_title(struct wayland_surface *surface, LPCWSTR title);
 void wayland_surface_assign_icon(struct wayland_surface *surface);
 void wayland_surface_set_icon_buffer(struct wayland_surface *surface, UINT type, const ICONINFO *ii);
 void wayland_surface_set_opacity(struct wayland_surface *surface, BYTE alpha, UINT flags);
 void wayland_surface_flash_window(struct wayland_surface *surface);
 void wayland_client_surface_update_offscreen(struct wayland_client_surface *surface);
+void wayland_gl_client_surface_destroy(struct wayland_client_surface *surface);
 
 static inline BOOL wayland_surface_is_toplevel(struct wayland_surface *surface)
 {

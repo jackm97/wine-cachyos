@@ -1269,6 +1269,8 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
 
     surface->content_width = 0;
     surface->content_height = 0;
+    surface->ensured_contents = WAYLAND_SURFACE_NOT_ENSURED;
+    surface->expose_posted = FALSE;
 
     wl_display_flush(process_wayland.wl_display);
 }
@@ -1497,21 +1499,33 @@ static void wayland_surface_reconfigure_size(struct wayland_surface *surface,
         wp_viewport_set_destination(surface->wp_viewport, -1, -1);
 }
 
+/* A rect no real position and size can equal, so the next reconfigure applies. */
+static void reset_client_viewport_rect(struct wayland_client_surface *client)
+{
+    SetRect(&client->viewport_rect, -INT32_MAX, 0, -INT32_MAX, 0);
+}
+
 /**********************************************************************
  *          wayland_surface_reconfigure_client
  *
- * Reconfigures the subsurface covering the client area.
+ * Reconfigures the subsurface covering the client area. Returns FALSE
+ * without any request when the position and size are already applied.
  */
-static void wayland_surface_reconfigure_client(struct wayland_surface *surface,
+static BOOL wayland_surface_reconfigure_client(struct wayland_surface *surface,
                                                struct wayland_client_surface *client,
                                                const RECT *client_rect)
 {
-    RECT rect = client_rect ? *client_rect : client->rect;
+    RECT client_area = client_rect ? *client_rect : client->rect;
+    RECT rect;
 
     /* The offset of the client area origin relatively to the window origin. */
-    rect = map_rect_to_surface(surface, rect);
+    rect = map_rect_to_surface(surface, client_area);
 
     TRACE("hwnd=%p rect=%s\n", surface->hwnd, wine_dbgstr_rect(&rect));
+
+    client->rect = client_area;
+    if (EqualRect(&rect, &client->viewport_rect)) return FALSE;
+    client->viewport_rect = rect;
 
     if (client->wl_subsurface)
     {
@@ -1524,7 +1538,7 @@ static void wayland_surface_reconfigure_client(struct wayland_surface *surface,
     else /* We can't have a 0x0 destination, use 1x1 instead. */
         wp_viewport_set_destination(client->wp_viewport, 1, 1);
 
-    client->rect = *client_rect;
+    return TRUE;
 }
 
 /**********************************************************************
@@ -1936,6 +1950,9 @@ static void wayland_client_surface_destroy(struct client_surface *client)
 
     TRACE("%s\n", debugstr_client_surface(client));
 
+    /* detaches a pending GL frame callback and closes the throttle event */
+    wayland_gl_client_surface_destroy(surface);
+
     if (surface->color_management)
         wp_color_management_surface_v1_destroy(surface->color_management);
     if (surface->wp_viewport)
@@ -1953,6 +1970,8 @@ static void wayland_client_surface_detach(struct client_surface *client)
     HWND toplevel = client->toplevel;
     DWORD pid;
     BOOL foreign;
+
+    TRACE("%s\n", debugstr_client_surface(client));
 
     /* NtUser query, before win_data is locked (D1). toplevel is 0 for a client with no GA_ROOT, so the test is skipped */
     foreign = toplevel && toplevel != client->hwnd &&
@@ -2079,12 +2098,12 @@ static void wayland_client_surface_update(struct client_surface *client)
     HWND hwnd = client->hwnd, toplevel = client->toplevel;
     struct wayland_win_data *data;
     BOOL visible = FALSE, foreign = FALSE;
-    RECT client_rect = {0};
+    RECT client_rect = {0}, present_rect;
     DWORD pid;
 
     TRACE("%s\n", debugstr_client_surface(client));
     wayland_client_surface_update_offscreen(surface);
-    if (toplevel) visible = !client->offscreen && NtUserIsWindowVisible(hwnd);
+    if (toplevel) visible = !client->offscreen && (NtUserIsWindowVisible(hwnd) || NtUserGetPresentRect(hwnd, &present_rect, 0));
 
     /* NtUser queries, before the win_data lock. A foreign child draws on its own surface (D3). */
     if (toplevel && visible && toplevel != hwnd && NtUserGetWindowThread(toplevel, &pid) && pid != GetCurrentProcessId())
@@ -2106,12 +2125,89 @@ static void wayland_client_surface_update(struct client_surface *client)
     if (toplevel) wayland_restack_client_surfaces(toplevel);
 }
 
+static void dummy_buffer_release(void *data, struct wl_buffer *buffer)
+{
+    struct wayland_shm_buffer *shm_buffer = data;
+    TRACE("shm_buffer=%p\n", shm_buffer);
+    wayland_shm_buffer_unref(shm_buffer);
+}
+
+static const struct wl_buffer_listener dummy_buffer_listener =
+{
+    dummy_buffer_release
+};
+
+/**********************************************************************
+ *          wayland_surface_ensure_contents
+ *
+ * Ensure that the wayland surface has contents. Called with the win_data
+ * lock held. A fullscreen window, or a toplevel whose client area covers
+ * the whole window, gets a dummy buffer (the client surface shows through
+ * it). Returns TRUE when the surface has no committed contents yet and no
+ * dummy was committed, so the caller posts an expose after releasing the
+ * lock; every other outcome returns FALSE.
+ */
+static BOOL wayland_surface_ensure_contents(struct wayland_surface *surface, BOOL fullscreen, BOOL toplevel)
+{
+    struct wayland_shm_buffer *dummy_shm_buffer;
+    enum wl_shm_format format;
+    int width, height;
+
+    if (!surface->window.visible || !surface->xdg_surface) return FALSE;
+
+    TRACE("surface=%p hwnd=%p fullscreen=%d toplevel=%d ensured=%u\n",
+          surface, surface->hwnd, fullscreen, toplevel, surface->ensured_contents);
+
+    /* overwrite the window contents with a dummy buffer for a few reasons:
+     * 1. fullscreen window black background
+     * 2. avoid alpha blending between client surface and toplevel */
+    if (surface->ensured_contents != WAYLAND_SURFACE_ENSURED_DUMMY_BUFFER &&
+        (fullscreen || (toplevel && EqualRect(&surface->window.client_rect, &surface->window.rect))))
+    {
+        if (!wayland_surface_reconfigure(surface))
+        {
+            WARN("Failed to reconfigure surface %p\n", surface);
+            return FALSE;
+        }
+
+        width = surface->window.rect.right - surface->window.rect.left;
+        height = surface->window.rect.bottom - surface->window.rect.top;
+        format = fullscreen ? WL_SHM_FORMAT_XRGB8888 : WL_SHM_FORMAT_ARGB8888;
+
+        if (!(dummy_shm_buffer = wayland_shm_buffer_create(width, height, format)))
+        {
+            ERR("Failed to create dummy buffer\n");
+            return FALSE;
+        }
+        wl_buffer_add_listener(dummy_shm_buffer->wl_buffer, &dummy_buffer_listener,
+                               dummy_shm_buffer);
+
+        /* no damage region: the whole buffer is damaged below, so no NtGdi call is made here */
+        wayland_surface_attach_shm(surface, dummy_shm_buffer, NULL);
+        wl_surface_damage_buffer(surface->wl_surface, 0, 0, width, height);
+        wl_surface_commit(surface->wl_surface);
+        surface->ensured_contents = WAYLAND_SURFACE_ENSURED_DUMMY_BUFFER;
+        wayland_shm_buffer_unref(dummy_shm_buffer);
+        return FALSE;
+    }
+
+    /* no contents committed yet: the caller posts an expose, once at a time */
+    if (surface->ensured_contents == WAYLAND_SURFACE_NOT_ENSURED && !surface->expose_posted)
+    {
+        surface->expose_posted = TRUE;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 static void wayland_client_surface_present(struct client_surface *client, HDC hdc)
 {
     struct wayland_client_surface *surface = impl_from_client_surface(client);
     HWND hwnd = client->hwnd, toplevel = client->toplevel;
     struct wayland_surface *wayland_surface;
     struct wayland_win_data *data;
+    BOOL expose = FALSE, is_toplevel = (hwnd == toplevel);
 
     DWORD pid;
     HWND root;
@@ -2135,9 +2231,12 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
         {
             if ((data = wayland_win_data_get(hwnd)))
             {
-                if (data->wayland_surface) wayland_surface_ensure_contents(data->wayland_surface);
+                if (data->wayland_surface)
+                    expose = wayland_surface_ensure_contents(data->wayland_surface, data->is_fullscreen, TRUE);
                 wayland_win_data_release(data);
             }
+            /* posted, not sent: win32u holds surfaces_lock across present, which an expose takes again */
+            if (expose) NtUserPostMessage(hwnd, WM_WAYLAND_EXPOSE_SURFACE, 0, 0);
             set_client_surface(hwnd, surface);
         }
         return;
@@ -2148,7 +2247,7 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
 
     if ((wayland_surface = data->wayland_surface))
     {
-        wayland_surface_ensure_contents(wayland_surface);
+        expose = wayland_surface_ensure_contents(wayland_surface, data->is_fullscreen, is_toplevel);
 
         /* Handle any processed configure request, to ensure the related
          * surface state is applied by the compositor. */
@@ -2161,6 +2260,9 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
     }
 
     wayland_win_data_release(data);
+
+    /* posted, not sent: win32u holds surfaces_lock across present, which an expose takes again */
+    if (expose && toplevel) NtUserPostMessage(toplevel, WM_WAYLAND_EXPOSE_SURFACE, 0, 0);
 
     set_client_surface(hwnd, surface);
 }
@@ -2229,6 +2331,7 @@ struct client_surface *WAYLAND_CreateClientSurface(HWND hwnd, int pixel_format, 
 
     /* the compositor scales the host surface, so it is not sized raw (vulkan.c:2875) */
     client->client.host_scaled = TRUE;
+    reset_client_viewport_rect(client);
 
     client->wl_surface =
         wl_compositor_create_surface(process_wayland.wl_compositor);
@@ -2705,6 +2808,7 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND t
 
         client->toplevel = 0;
         client->parent_serial = 0;
+        reset_client_viewport_rect(client);
         return;
     }
 
@@ -2731,79 +2835,24 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND t
 
         /* Present contents independently of the parent surface. */
         wl_subsurface_set_desync(client->wl_subsurface);
+        TRACE("Created subsurface for toplevel=%p\n", toplevel);
 
         client->toplevel = toplevel;
         client->parent_serial = surface->serial;
+        reset_client_viewport_rect(client);
     }
 
-    wayland_surface_reconfigure_client(surface, client, rect);
-    /* reconfiguring puts the client surface right above its parent, below its
-     * siblings, so the toplevel's client surfaces are restacked after the unlock */
-    toplevel_data->restack_pending = TRUE;
-    /* Commit to apply subsurface positioning. */
-    wl_surface_commit(surface->wl_surface);
-
-done:
-    wayland_win_data_release(toplevel_data);
-}
-
-static void dummy_buffer_release(void *data, struct wl_buffer *buffer)
-{
-    struct wayland_shm_buffer *shm_buffer = data;
-    TRACE("shm_buffer=%p\n", shm_buffer);
-    wayland_shm_buffer_unref(shm_buffer);
-}
-
-static const struct wl_buffer_listener dummy_buffer_listener =
-{
-    dummy_buffer_release
-};
-
-/**********************************************************************
- *          wayland_surface_ensure_contents
- *
- * Ensure that the wayland surface has up-to-date contents, by committing
- * a dummy buffer if necessary.
- */
-void wayland_surface_ensure_contents(struct wayland_surface *surface)
-{
-    struct wayland_shm_buffer *dummy_shm_buffer;
-    HRGN damage;
-    int width, height;
-    BOOL needs_contents;
-
-    width = surface->window.rect.right - surface->window.rect.left;
-    height = surface->window.rect.bottom - surface->window.rect.top;
-    needs_contents = surface->window.visible &&
-                     (surface->content_width != width ||
-                      surface->content_height != height);
-
-    TRACE("surface=%p hwnd=%p needs_contents=%d\n",
-          surface, surface->hwnd, needs_contents);
-
-    if (!needs_contents) return;
-
-    /* Create a transparent dummy buffer. */
-    dummy_shm_buffer = wayland_shm_buffer_create(width, height, WL_SHM_FORMAT_ARGB8888);
-    if (!dummy_shm_buffer)
+    if (wayland_surface_reconfigure_client(surface, client, rect))
     {
-        ERR("Failed to create dummy buffer\n");
-        return;
-    }
-    wl_buffer_add_listener(dummy_shm_buffer->wl_buffer, &dummy_buffer_listener,
-                           dummy_shm_buffer);
-
-    if (!(damage = NtGdiCreateRectRgn(0, 0, width, height)))
-        WARN("Failed to create damage region for dummy buffer\n");
-
-    if (wayland_surface_reconfigure(surface))
-    {
-        wayland_surface_attach_shm(surface, dummy_shm_buffer, damage);
+        /* reconfiguring puts the client surface right above its parent, below its
+         * siblings, so the toplevel's client surfaces are restacked after the unlock */
+        toplevel_data->restack_pending = TRUE;
+        /* Commit to apply subsurface positioning. */
         wl_surface_commit(surface->wl_surface);
     }
 
-    wayland_shm_buffer_unref(dummy_shm_buffer);
-    if (damage) NtGdiDeleteObjectApp(damage);
+done:
+    wayland_win_data_release(toplevel_data);
 }
 
 /**********************************************************************

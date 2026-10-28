@@ -141,6 +141,7 @@ static void wayland_win_data_get_config(struct wayland_win_data *data,
     DWORD style, exstyle;
 
     conf->rect = data->rects.visible;
+    conf->client_rect = data->rects.client;
     style = NtUserGetWindowLongW(data->hwnd, GWL_STYLE);
     exstyle = NtUserGetWindowLongW(data->hwnd, GWL_EXSTYLE);
 
@@ -228,6 +229,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     BOOL visible;
     DWORD exstyle = NtUserGetWindowLongW(data->hwnd, GWL_EXSTYLE);
     struct wl_region *input_region;
+    int old_width, old_height;
 
     TRACE("hwnd=%p\n", data->hwnd);
 
@@ -263,7 +265,16 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     wl_surface_set_input_region(surface->wl_surface, input_region);
     if (input_region) wl_region_destroy(input_region);
 
+    /* a resize invalidates the ensured contents; a move or a state change that keeps the size does not */
+    old_width = surface->window.rect.right - surface->window.rect.left;
+    old_height = surface->window.rect.bottom - surface->window.rect.top;
     wayland_win_data_get_config(data, &surface->window);
+    if (old_width != surface->window.rect.right - surface->window.rect.left ||
+        old_height != surface->window.rect.bottom - surface->window.rect.top)
+    {
+        surface->ensured_contents = WAYLAND_SURFACE_NOT_ENSURED;
+        surface->expose_posted = FALSE;
+    }
 
     /* If the window is a visible toplevel make it a wayland
      * xdg_toplevel. Otherwise keep it role-less to avoid polluting the
@@ -828,6 +839,19 @@ LRESULT WAYLAND_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_WAYLAND_FOREIGN_PARENT_CHANGED:
         wayland_refresh_foreign_child(hwnd, (HWND)wp);
         return 0;
+    case WM_WAYLAND_EXPOSE_SURFACE:
+    {
+        struct wayland_win_data *data;
+
+        /* no lock held here: the expose flushes the window surface, which commits its contents */
+        NtUserExposeWindowSurface(hwnd, 0, NULL);
+        if ((data = wayland_win_data_get(hwnd)))
+        {
+            if (data->wayland_surface) data->wayland_surface->expose_posted = FALSE;
+            wayland_win_data_release(data);
+        }
+        return 0;
+    }
     default:
         FIXME("got window msg %x hwnd %p wp %lx lp %lx\n", msg, hwnd, (long)wp, lp);
         return 0;
@@ -1053,13 +1077,13 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
     struct wayland_client_surface *old_client;
     struct wayland_win_data *data;
     BOOL visible = FALSE, foreign = FALSE;
-    RECT child_rect = {0};
+    RECT child_rect = {0}, present_rect;
     DWORD pid;
 
     /* ownership is shared with the callers, the last caller to release
      * its reference will also destroy it and clear our pointer. */
     wayland_client_surface_update_offscreen(new_client);
-    if (toplevel) visible = !new_client->client.offscreen && NtUserIsWindowVisible(hwnd);
+    if (toplevel) visible = !new_client->client.offscreen && (NtUserIsWindowVisible(hwnd) || NtUserGetPresentRect(hwnd, &present_rect, 0));
 
     /* NtUser queries, before win_data is locked. visible keeps the tree's offscreen test, so an offscreen client is not attached, as in the tree's attach. */
     if (toplevel && toplevel != hwnd && NtUserGetWindowThread(toplevel, &pid) && pid != GetCurrentProcessId())
@@ -1122,6 +1146,8 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
             wayland_update_overlays(data, shm_buffer, damage_box);
             wayland_surface_attach_shm(wayland_surface, shm_buffer, damage_region);
             wl_surface_commit(wayland_surface->wl_surface);
+            wayland_surface->ensured_contents = WAYLAND_SURFACE_ENSURED_FLUSH;
+            wayland_surface->expose_posted = FALSE;
             committed = TRUE;
         }
         else
