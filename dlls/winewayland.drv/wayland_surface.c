@@ -1608,8 +1608,6 @@ void wayland_surface_update_toplevel_parent(struct wayland_surface *surface)
 
     if (!wayland_surface_is_toplevel(surface)) return;
 
-    surface->owner_hwnd = NtUserGetWindowRelative(surface->hwnd, GW_OWNER);
-
     TRACE("hwnd=%p owner=%p\n", surface->hwnd, surface->owner_hwnd);
 
     if (surface->owner_hwnd && (owner_data = wayland_win_data_get(surface->owner_hwnd)))

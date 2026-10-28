@@ -534,6 +534,8 @@ struct wayland_win_data
     BOOL managed;
     BOOL layered_attribs_set;
     BOOL shaped;
+    /* a border effect window, which gets no wayland surface; set by WindowPosChanged */
+    BOOL border_effect;
     int ime_ref;
     /* the client surfaces of this toplevel need restacking */
     BOOL restack_pending;

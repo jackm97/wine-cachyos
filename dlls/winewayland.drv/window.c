@@ -624,6 +624,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     data->is_fullscreen = fullscreen;
     data->resizeable = swp_flags & WINE_SWP_RESIZABLE;
     data->managed = managed;
+    data->border_effect = border_effect;
 
     /* the toplevel whose overlay last showed this window, read under its lock;
      * cleared when the window has left it, since that toplevel is restacked below */
@@ -1271,8 +1272,6 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
     struct wayland_surface *wayland_surface;
     struct wayland_win_data *data;
     BOOL committed = FALSE;
-    /* a user lock query, so it runs before win_data is locked */
-    BOOL border_effect = is_mso_border_effect_window(hwnd);
     RECT box, *damage_box = NULL;
 
     /* the region box is a GDI query, so it is read before win_data is locked */
@@ -1296,7 +1295,7 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
             TRACE("Wayland surface not configured yet, not flushing\n");
         }
     }
-    else if (border_effect)
+    else if (data->border_effect)
     {
         /* no wayland surface is built for these, so there is nothing to flush */
         committed = TRUE;
