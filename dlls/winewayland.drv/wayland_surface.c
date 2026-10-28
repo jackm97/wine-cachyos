@@ -29,6 +29,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "ntstatus.h"
+
 #include "waylanddrv.h"
 #include "wine/debug.h"
 #include "wine/server.h"
@@ -1992,6 +1994,8 @@ static void wayland_client_surface_update(struct client_surface *client)
         wayland_client_surface_attach(surface, NULL, NULL);
 
     wayland_win_data_release(data);
+
+    if (toplevel) wayland_restack_client_surfaces(toplevel);
 }
 
 static void wayland_client_surface_present(struct client_surface *client, HDC hdc)
@@ -2136,6 +2140,101 @@ err:
     return NULL;
 }
 
+/* Stack the client subsurfaces of a toplevel in window z-order. Each of them
+ * is placed right above the parent surface when reconfigured, so without this
+ * the last reconfigured child ends up below its siblings, and an opaque
+ * sibling that Windows paints underneath can hide it completely. */
+static HWND *build_hwnd_list(HWND parent, BOOL children, ULONG *count)
+{
+    HWND *list;
+    NTSTATUS status;
+
+    *count = 128;
+    for (;;)
+    {
+        if (!(list = malloc(*count * sizeof(*list)))) return NULL;
+        status = NtUserBuildHwndList(0, parent, children, children, 0, *count, list, count);
+        if (!status) break;
+        free(list);
+        if (status != STATUS_BUFFER_TOO_SMALL) return NULL;
+    }
+    /* win32u writes HWND_BOTTOM at buffer[*count - 1] and counts it in *count (win32u/window.c:3444, :3453) */
+    if (*count && list[*count - 1] == HWND_BOTTOM) (*count)--;
+    return list;
+}
+
+/**********************************************************************
+ *          wayland_restack_client_surfaces
+ *
+ * Stacks the client surfaces of a toplevel in painting order. Walking the
+ * window tree takes the win32u user lock, which may be held while waiting for
+ * the win_data lock, so this must be called without holding the win_data lock.
+ */
+void wayland_restack_client_surfaces(HWND toplevel)
+{
+    HWND *list, *stack = NULL, *order = NULL;
+    struct wayland_client_surface *client;
+    struct wayland_win_data *toplevel_data, *data;
+    struct wayland_surface *surface;
+    struct wl_surface *below;
+    ULONG count;
+    UINT i, depth = 0, ordered = 0;
+
+    if (!(toplevel_data = wayland_win_data_get(toplevel))) return;
+    if (!toplevel_data->restack_pending)
+    {
+        wayland_win_data_release(toplevel_data);
+        return;
+    }
+    wayland_win_data_release(toplevel_data);
+
+    if (!(list = build_hwnd_list(toplevel, TRUE, &count))) return;
+
+    /* The list is in pre-order with siblings from the top. Reversing its
+     * post-order gives the painting order. */
+    if (!(stack = malloc(2 * (count + 1) * sizeof(*stack)))) goto done;
+    order = stack + count + 1;
+    for (i = 0; i < count; i++)
+    {
+        HWND parent = NtUserGetAncestor(list[i], GA_PARENT);
+
+        while (depth && stack[depth - 1] != parent) order[ordered++] = stack[--depth];
+        stack[depth++] = list[i];
+    }
+    while (depth) order[ordered++] = stack[--depth];
+
+    if (!(toplevel_data = wayland_win_data_get(toplevel))) goto done;
+    toplevel_data->restack_pending = FALSE;
+    if (!(surface = toplevel_data->wayland_surface))
+    {
+        wayland_win_data_release(toplevel_data);
+        goto done;
+    }
+
+    below = surface->wl_surface;
+    if ((client = toplevel_data->client_surface) && client->toplevel == toplevel && client->wl_subsurface)
+        below = client->wl_surface;
+
+    /* each lookup takes the recursive win_data lock again, so release each one */
+    for (i = ordered; i--;)
+    {
+        if (!(data = wayland_win_data_get(order[i]))) continue;
+        if ((client = data->client_surface) && client->toplevel == toplevel && client->wl_subsurface)
+        {
+            wl_subsurface_place_above(client->wl_subsurface, below);
+            below = client->wl_surface;
+        }
+        wayland_win_data_release(data);
+    }
+
+    wl_surface_commit(surface->wl_surface);
+    wayland_win_data_release(toplevel_data);
+
+done:
+    free(stack);
+    free(list);
+}
+
 void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel, const RECT *rect)
 {
     struct wayland_win_data *toplevel_data;
@@ -2183,6 +2282,9 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND t
     }
 
     wayland_surface_reconfigure_client(surface, client, rect);
+    /* reconfiguring puts the client surface right above its parent, below its
+     * siblings, so the toplevel's client surfaces are restacked after the unlock */
+    toplevel_data->restack_pending = TRUE;
     /* Commit to apply subsurface positioning. */
     wl_surface_commit(surface->wl_surface);
 

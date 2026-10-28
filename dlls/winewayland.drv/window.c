@@ -525,8 +525,12 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
 {
     HWND owner = NtUserGetAncestor(hwnd, GA_ROOT);
     struct wayland_surface *owner_surface = NULL;
-    struct wayland_win_data *data, *owner_data;
+    struct wayland_win_data *data, *owner_data, *toplevel_data;
     BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
+    /* queried before win_data is locked */
+    HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
+    BOOL border_effect, visible, foreign_child;
+    DWORD pid;
 
     /* Get the managed state with win_data unlocked, as is_window_managed
      * may need to query win_data information about other HWNDs and thus
@@ -547,6 +551,13 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     data->resizeable = swp_flags & WINE_SWP_RESIZABLE;
     data->managed = managed;
 
+    /* a moved child may change the stacking of its toplevel */
+    if (toplevel && toplevel != hwnd && (toplevel_data = wayland_win_data_get(toplevel)))
+    {
+        toplevel_data->restack_pending = TRUE;
+        wayland_win_data_release(toplevel_data);
+    }
+
     if (!surface && data->wayland_surface)
     {
         wayland_surface_reparent_popups(data->wayland_surface);
@@ -560,6 +571,8 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
 
     if (owner_data) wayland_win_data_release(owner_data);
     wayland_win_data_release(data);
+
+    if (toplevel) wayland_restack_client_surfaces(toplevel);
 }
 
 static void wayland_configure_window(HWND hwnd)
@@ -991,6 +1004,8 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
     }
 
     wayland_win_data_release(data);
+
+    if (toplevel) wayland_restack_client_surfaces(toplevel);
 }
 
 BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffer, HRGN damage_region)
