@@ -126,7 +126,8 @@ void color_management_init(void)
     TRACE("Initialized image descriptors, scRGB %p BT.2100 %p\n", scrgb_desc, bt2100_desc);
 }
 
-static const WCHAR xdg_foreign_handle_prop[] =
+/* not static: wayland_window_snapshot_init (window.c) reads it */
+const WCHAR xdg_foreign_handle_prop[] =
     {'_','_','w','i','n','e','_','w','a','y','l','a','n','d','_','x','d','g','_',
      'f','o','r','e','i','g','n','_','h','a','n','d','l','e',0};
 static const WCHAR xdg_foreign_child_prop[] =
@@ -378,11 +379,12 @@ static const struct zxdg_exported_v2_listener xdg_exported_v2_listener =
  * (D1: make_toplevel runs under it). The guard stops a second export, so repeated
  * make_toplevel calls export once.
  */
-static void wayland_surface_export_locked(struct wayland_surface *surface)
+static void wayland_surface_export_locked(struct wayland_surface *surface,
+                                          const struct wayland_window_snapshot *snap)
 {
     if (!process_wayland.zxdg_exporter_v2 || surface->zxdg_exported_v2 ||
         !wayland_surface_is_toplevel(surface) ||
-        NtUserGetAncestor(surface->hwnd, GA_ROOT) != surface->hwnd)
+        snap->root != surface->hwnd)
         return;
 
     surface->zxdg_exported_v2 =
@@ -844,8 +846,11 @@ void wp_fractional_scale_handle_scale(void* user_data,
 
     surface->window.scale = scale;
 
-    /* reattach client surfaces as their rects have changed */
-    update_client_surfaces(hwnd);
+    /* reattach client surfaces as their rects have changed; runs when win_data is released */
+    {
+        struct wayland_deferred_op op = { .type = WAYLAND_DEFERRED_UPDATE_CLIENT_SURFACES, .hwnd = hwnd };
+        wayland_win_data_defer(&op);
+    }
 
     /* the popup x,y position has changed */
     if (wayland_surface_is_popup(surface) &&
@@ -966,7 +971,7 @@ static const struct wl_surface_listener wayland_surface_listener =
  */
 static LONG64 surface_serial;
 
-struct wayland_surface *wayland_surface_create(HWND hwnd)
+struct wayland_surface *wayland_surface_create(HWND hwnd, const struct wayland_window_snapshot *snap)
 {
     struct wayland_surface *surface;
 
@@ -1001,14 +1006,14 @@ struct wayland_surface *wayland_surface_create(HWND hwnd)
     }
     if (process_wayland.wp_alpha_modifier_v1)
     {
-        COLORREF key;
         DWORD flags;
         BYTE alpha;
 
         surface->wp_alpha_modifier_surface_v1 =
             wp_alpha_modifier_v1_get_surface(process_wayland.wp_alpha_modifier_v1, surface->wl_surface);
 
-        if (!NtUserGetLayeredWindowAttributes(hwnd, &key, &alpha, &flags)) flags = 0;
+        flags = snap->layered_valid ? snap->layered_flags : 0;
+        alpha = snap->layered_alpha;
         wayland_surface_set_opacity(surface, alpha, flags);
     }
 
@@ -1134,12 +1139,12 @@ static void wayland_surface_init_decoration(struct wayland_surface *surface)
  *
  * Gives the toplevel role to a plain wayland surface.
  */
-void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_decor)
+void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_decor,
+                                   const struct wayland_window_snapshot *snap)
 {
     static char steam_proton[] = "steam_proton";
     const char *app_id = getenv("SteamAppId");
     char proton_app_class[128];
-    WCHAR text[1024];
 
     TRACE("surface=%p\n", surface);
 
@@ -1148,8 +1153,8 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_
     {
         BOOL changed = FALSE;
 
-        surface->owner_hwnd = NtUserGetWindowRelative(surface->hwnd, GW_OWNER);
-        wayland_surface_export_locked(surface);
+        surface->owner_hwnd = snap->owner;
+        wayland_surface_export_locked(surface, snap);
 
         if (process_wayland.zxdg_decoration_manager_v1)
         {
@@ -1177,7 +1182,7 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_
 
     wayland_surface_clear_role(surface);
     surface->role = WAYLAND_SURFACE_ROLE_TOPLEVEL;
-    surface->owner_hwnd = NtUserGetWindowRelative(surface->hwnd, GW_OWNER);
+    surface->owner_hwnd = snap->owner;
 
     surface->xdg_surface =
         xdg_wm_base_get_xdg_surface(process_wayland.xdg_wm_base, surface->wl_surface);
@@ -1208,31 +1213,36 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_
             "This is a game running through proton");
     }
 
-    if (!NtUserInternalGetWindowText(surface->hwnd, text, ARRAY_SIZE(text)))
-        text[0] = 0;
-    wayland_surface_set_title(surface, text);
+    wayland_surface_set_title(surface, snap->title);
 
     wayland_surface_assign_icon(surface);
 
-    if (process_wayland.zxdg_exporter_v2 &&
-        NtUserGetAncestor(surface->hwnd, GA_ROOT) == surface->hwnd)
+    if (process_wayland.zxdg_exporter_v2 && snap->root == surface->hwnd)
     {
-        wayland_surface_export_locked(surface);
+        wayland_surface_export_locked(surface, snap);
     }
     else if (process_wayland.zxdg_importer_v2)
     {
-        HWND parent = NtUserGetAncestor(surface->hwnd, GA_ROOT), old_parent = NULL;
+        HWND parent = snap->root, old_parent = NULL;
         BOOL imported;
-        RTL_ATOM atom = parent && parent != surface->hwnd ?
-                        HandleToULong(NtUserGetProp(parent, xdg_foreign_handle_prop)) : 0;
+        RTL_ATOM atom = parent && parent != surface->hwnd ? snap->foreign_parent_atom : 0;
 
         imported = atom && update_foreign_parent_locked(surface, parent, atom, &old_parent);
 
-        /* under the lock, like the SetProp below */
-        if (old_parent && NtUserGetProp(old_parent, xdg_foreign_child_prop) == surface->hwnd)
-            NtUserRemoveProp(old_parent, xdg_foreign_child_prop);
+        /* the prop updates need the user lock, so they run when win_data is released */
+        if (old_parent)
+        {
+            struct wayland_deferred_op op = { .type = WAYLAND_DEFERRED_REMOVE_PROP_IF, .hwnd = old_parent,
+                                              .name = xdg_foreign_child_prop, .value = surface->hwnd };
+            wayland_win_data_defer(&op);
+        }
         /* a failed SetProp keeps the import, with no retry (accepted, see the failed child-prop bullet) */
-        if (imported) NtUserSetProp(parent, xdg_foreign_child_prop, surface->hwnd);
+        if (imported)
+        {
+            struct wayland_deferred_op op = { .type = WAYLAND_DEFERRED_SET_PROP, .hwnd = parent,
+                                              .name = xdg_foreign_child_prop, .value = surface->hwnd };
+            wayland_win_data_defer(&op);
+        }
         if (surface->foreign_activation_pending && !surface->foreign_activation_frame_callback &&
             (surface->foreign_activation_frame_callback = wl_surface_frame(surface->wl_surface)))
             wl_callback_add_listener(surface->foreign_activation_frame_callback,
@@ -1383,8 +1393,11 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
 
     if (surface->exported_handle_atom)
     {
-        NtUserRemoveProp(surface->hwnd, xdg_foreign_handle_prop);
-        NtDeleteAtom(surface->exported_handle_atom);
+        /* the prop removal needs the user lock, so it runs when win_data is released */
+        struct wayland_deferred_op op = { .type = WAYLAND_DEFERRED_REMOVE_PROP_DELETE_ATOM, .hwnd = surface->hwnd,
+                                          .name = xdg_foreign_handle_prop,
+                                          .value = ULongToHandle(surface->exported_handle_atom) };
+        wayland_win_data_defer(&op);
         surface->exported_handle_atom = 0;
     }
 
@@ -1392,9 +1405,10 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
      * Gated on TOPLEVEL: only toplevel children receive tokens, and the role is still set here, before the switch */
     if (surface->role == WAYLAND_SURFACE_ROLE_TOPLEVEL)
     {
-        RTL_ATOM token_atom = HandleToULong(NtUserRemoveProp(surface->hwnd, xdg_activation_token_prop));
-
-        if (token_atom) NtDeleteAtom(token_atom);
+        /* value 0: the atom the prop holds when this runs is deleted */
+        struct wayland_deferred_op op = { .type = WAYLAND_DEFERRED_REMOVE_PROP_DELETE_ATOM, .hwnd = surface->hwnd,
+                                          .name = xdg_activation_token_prop };
+        wayland_win_data_defer(&op);
     }
 
     /* some objects are shared between several roles */

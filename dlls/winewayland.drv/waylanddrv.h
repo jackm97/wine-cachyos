@@ -441,10 +441,53 @@ BOOL wayland_output_get_monitor_rect(struct wayland_output *output, RECT *rect);
 extern const struct wp_color_manager_v1_listener color_manager_listener;
 void color_management_init(void);
 
-struct wayland_surface *wayland_surface_create(HWND hwnd);
+/* NtUser state of a window, read with no driver lock held and passed down to the
+ * code that runs under win_data_mutex, which must make no user-lock call. */
+struct wayland_window_snapshot
+{
+    DWORD style, exstyle;
+    HWND owner, root;
+    BOOL foreground;
+    WCHAR title[1024];
+    BOOL layered_valid;
+    BYTE layered_alpha;
+    DWORD layered_flags;
+    RTL_ATOM foreign_parent_atom;
+};
+
+void wayland_window_snapshot_init(HWND hwnd, struct wayland_window_snapshot *snap);
+extern const WCHAR xdg_foreign_handle_prop[];
+
+/* Operations that need the user lock (or surfaces_lock) but are requested with
+ * win_data_mutex held. They run when the outermost win_data lock is released. */
+enum wayland_deferred_type
+{
+    WAYLAND_DEFERRED_POST,
+    WAYLAND_DEFERRED_REMOVE_PROP_IF,
+    WAYLAND_DEFERRED_REMOVE_PROP_DELETE_ATOM,
+    WAYLAND_DEFERRED_SET_PROP,
+    WAYLAND_DEFERRED_REAPPLY_CLIP_CURSOR,
+    WAYLAND_DEFERRED_UPDATE_CLIENT_SURFACES,
+};
+
+struct wayland_deferred_op
+{
+    enum wayland_deferred_type type;
+    HWND hwnd;
+    const WCHAR *name;
+    HANDLE value;
+    UINT msg;
+    WPARAM wparam;
+    LPARAM lparam;
+};
+
+void wayland_win_data_defer(const struct wayland_deferred_op *op);
+
+struct wayland_surface *wayland_surface_create(HWND hwnd, const struct wayland_window_snapshot *snap);
 void wayland_surface_destroy(struct wayland_surface *surface);
 void wayland_surface_reparent_popups(struct wayland_surface *surface);
-void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_decor);
+void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_decor,
+                                   const struct wayland_window_snapshot *snap);
 void wayland_surface_update_foreign_parent(HWND hwnd);
 void wayland_activate_foreign_child(HWND hwnd, uint32_t serial);
 void wayland_forget_foreign_child(HWND parent, HWND hwnd);

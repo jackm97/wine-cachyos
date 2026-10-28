@@ -51,6 +51,98 @@ static int wayland_win_data_cmp_rb(const void *key,
 static pthread_mutex_t win_data_mutex;
 static struct rb_tree win_data_rb = { wayland_win_data_cmp_rb };
 
+/* Operations requested with win_data_mutex held that must not run under it; both the
+ * list and the depth are read and written only while win_data_mutex is held. */
+struct deferred_entry
+{
+    struct list entry;
+    struct wayland_deferred_op op;
+};
+
+static struct list win_data_deferred = LIST_INIT(win_data_deferred);
+static int win_data_depth;
+
+static void reapply_cursor_clipping(void);
+
+static void run_deferred_op(const struct wayland_deferred_op *op)
+{
+    switch (op->type)
+    {
+    case WAYLAND_DEFERRED_POST:
+        NtUserPostMessage(op->hwnd, op->msg, op->wparam, op->lparam);
+        break;
+    case WAYLAND_DEFERRED_REMOVE_PROP_IF:
+        if (NtUserGetProp(op->hwnd, op->name) == op->value)
+            NtUserRemoveProp(op->hwnd, op->name);
+        break;
+    case WAYLAND_DEFERRED_REMOVE_PROP_DELETE_ATOM:
+        if (op->value)
+        {
+            /* the captured atom belongs to the surface that queued this, so delete it either way */
+            if (HandleToULong(NtUserGetProp(op->hwnd, op->name)) == HandleToULong(op->value))
+                NtUserRemoveProp(op->hwnd, op->name);
+            NtDeleteAtom(HandleToULong(op->value));
+        }
+        else
+        {
+            RTL_ATOM atom = HandleToULong(NtUserRemoveProp(op->hwnd, op->name));
+            if (atom) NtDeleteAtom(atom);
+        }
+        break;
+    case WAYLAND_DEFERRED_SET_PROP:
+        NtUserSetProp(op->hwnd, op->name, op->value);
+        break;
+    case WAYLAND_DEFERRED_REAPPLY_CLIP_CURSOR:
+        reapply_cursor_clipping();
+        break;
+    case WAYLAND_DEFERRED_UPDATE_CLIENT_SURFACES:
+        update_client_surfaces(op->hwnd);
+        break;
+    }
+}
+
+/* Releases one level of win_data_mutex. The outermost release moves the deferred
+ * operations to a local list while still locked, then runs them in order with no
+ * lock held, on this thread. */
+static void win_data_unlock(void)
+{
+    struct deferred_entry *entry, *next;
+    struct list ops;
+
+    assert(win_data_depth > 0);
+    if (--win_data_depth)
+    {
+        pthread_mutex_unlock(&win_data_mutex);
+        return;
+    }
+
+    list_init(&ops);
+    list_move_tail(&ops, &win_data_deferred);
+    pthread_mutex_unlock(&win_data_mutex);
+
+    LIST_FOR_EACH_ENTRY_SAFE(entry, next, &ops, struct deferred_entry, entry)
+    {
+        list_remove(&entry->entry);
+        run_deferred_op(&entry->op);
+        free(entry);
+    }
+}
+
+void wayland_win_data_defer(const struct wayland_deferred_op *op)
+{
+    struct deferred_entry *entry;
+
+    pthread_mutex_lock(&win_data_mutex);
+    win_data_depth++;
+    if ((entry = malloc(sizeof(*entry))))
+    {
+        entry->op = *op;
+        list_add_tail(&win_data_deferred, &entry->entry);
+    }
+    else ERR("Failed to queue deferred op %u for hwnd %p\n", op->type, op->hwnd);
+    win_data_unlock();
+}
+
 /***********************************************************************
  *           wayland_win_data_create
  *
@@ -79,10 +171,12 @@ static struct wayland_win_data *wayland_win_data_create(HWND hwnd, const struct 
     if ((rb_entry = rb_get(&win_data_rb, hwnd)))
     {
         free(data);
+        win_data_depth++;
         return RB_ENTRY_VALUE(rb_entry, struct wayland_win_data, entry);
     }
 
     rb_put(&win_data_rb, hwnd, &data->entry);
+    win_data_depth++;
 
     TRACE("hwnd=%p\n", data->hwnd);
 
@@ -98,7 +192,7 @@ static void wayland_win_data_destroy(struct wayland_win_data *data)
 
     rb_remove(&win_data_rb, &data->entry);
 
-    pthread_mutex_unlock(&win_data_mutex);
+    win_data_unlock();
 
     wayland_destroy_overlays(data);
     if (data->wayland_surface) wayland_surface_destroy(data->wayland_surface);
@@ -117,7 +211,10 @@ struct wayland_win_data *wayland_win_data_get(HWND hwnd)
 
     pthread_mutex_lock(&win_data_mutex);
     if ((entry = rb_get(&win_data_rb, hwnd)))
+    {
+        win_data_depth++;
         return RB_ENTRY_VALUE(entry, struct wayland_win_data, entry);
+    }
     pthread_mutex_unlock(&win_data_mutex);
 
     return NULL;
@@ -131,19 +228,41 @@ struct wayland_win_data *wayland_win_data_get(HWND hwnd)
 void wayland_win_data_release(struct wayland_win_data *data)
 {
     assert(data);
-    pthread_mutex_unlock(&win_data_mutex);
+    win_data_unlock();
+}
+
+/***********************************************************************
+ *           wayland_window_snapshot_init
+ *
+ * Reads the NtUser state of a window. Called with no driver lock held.
+ */
+void wayland_window_snapshot_init(HWND hwnd, struct wayland_window_snapshot *snap)
+{
+    memset(snap, 0, sizeof(*snap));
+
+    snap->style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
+    snap->exstyle = NtUserGetWindowLongW(hwnd, GWL_EXSTYLE);
+    snap->owner = NtUserGetWindowRelative(hwnd, GW_OWNER);
+    snap->root = NtUserGetAncestor(hwnd, GA_ROOT);
+    snap->foreground = hwnd == NtUserGetForegroundWindow();
+    if (!NtUserInternalGetWindowText(hwnd, snap->title, ARRAY_SIZE(snap->title))) snap->title[0] = 0;
+    snap->layered_valid = NtUserGetLayeredWindowAttributes(hwnd, NULL, &snap->layered_alpha,
+                                                           &snap->layered_flags);
+    if (snap->root && snap->root != hwnd)
+        snap->foreign_parent_atom = HandleToULong(NtUserGetProp(snap->root, xdg_foreign_handle_prop));
 }
 
 static void wayland_win_data_get_config(struct wayland_win_data *data,
-                                        struct wayland_window_config *conf)
+                                        struct wayland_window_config *conf,
+                                        const struct wayland_window_snapshot *snap)
 {
     enum wayland_surface_config_state window_state = 0;
     DWORD style, exstyle;
 
     conf->rect = data->rects.visible;
     conf->client_rect = data->rects.client;
-    style = NtUserGetWindowLongW(data->hwnd, GWL_STYLE);
-    exstyle = NtUserGetWindowLongW(data->hwnd, GWL_EXSTYLE);
+    style = snap->style;
+    exstyle = snap->exstyle;
 
     TRACE("window=%s style=%#x exstyle=%#x\n", wine_dbgstr_rect(&conf->rect), style, exstyle);
 
@@ -212,7 +331,12 @@ static void reparent_popups_depth(struct wayland_surface *surface, int depth)
         /* deepest first: clear the popups this popup owns before this popup */
         reparent_popups_depth(entry_surface, depth + 1);
         wayland_surface_clear_role(entry_surface);
-        NtUserPostMessage(entry_surface->hwnd, WM_WINE_UPDATEWINDOWSTATE, 0, 0);
+        /* win_data_mutex is held: the post runs when it is released */
+        {
+            struct wayland_deferred_op op = { .type = WAYLAND_DEFERRED_POST, .hwnd = entry_surface->hwnd,
+                                              .msg = WM_WINE_UPDATEWINDOWSTATE };
+            wayland_win_data_defer(&op);
+        }
     }
 }
 
@@ -221,12 +345,13 @@ void wayland_surface_reparent_popups(struct wayland_surface *surface)
     reparent_popups_depth(surface, 0);
 }
 
-static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *data, struct wayland_surface *owner_surface)
+static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *data, struct wayland_surface *owner_surface,
+                                                    const struct wayland_window_snapshot *snap)
 {
     struct wayland_surface *surface;
     enum wayland_surface_role role;
     BOOL visible, layer_set;
-    DWORD exstyle = NtUserGetWindowLongW(data->hwnd, GWL_EXSTYLE);
+    DWORD exstyle = snap->exstyle;
     struct wl_region *input_region;
     int old_width, old_height;
     BOOL server_decor;
@@ -234,7 +359,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     TRACE("hwnd=%p\n", data->hwnd);
 
     layer_set = !(exstyle & WS_EX_LAYERED) || data->layered_attribs_set || data->client_surface;
-    visible = (NtUserGetWindowLongW(data->hwnd, GWL_STYLE) & WS_VISIBLE) == WS_VISIBLE;
+    visible = (snap->style & WS_VISIBLE) == WS_VISIBLE;
     /* a layered window stays mapped once it is mapped */
     if (!data->wayland_surface || !data->wayland_surface->window.visible) visible = visible && layer_set;
 
@@ -247,23 +372,27 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
 
     /* the surface as it was before this call decides whether a refused decoration stays refused */
     server_decor = !EqualRect(&data->rects.visible, &data->rects.window) &&
-                   is_decoration_enabled(NtUserGetWindowLongW(data->hwnd, GWL_STYLE), exstyle) &&
+                   is_decoration_enabled(snap->style, exstyle) &&
                    !(data->wayland_surface && data->wayland_surface->server_decor_refused);
 
     /* we can temporarily clear the role of a surface but cannot assign a different one after it's set */
     if ((surface = data->wayland_surface) && role && surface->role && surface->role != role)
     {
-        /* Make sure any attached client surface is detached before we destroy the surface.
+        /* The attached client surfaces are detached and reattached by the deferred update,
+         * which runs once win_data_mutex is released.
          * They will be reattached when win32u updates them again after WindowPosChanged.
          */
         data->wayland_surface = NULL;
-        update_client_surfaces(data->hwnd);
+        {
+            struct wayland_deferred_op op = { .type = WAYLAND_DEFERRED_UPDATE_CLIENT_SURFACES, .hwnd = data->hwnd };
+            wayland_win_data_defer(&op);
+        }
         wayland_surface_reparent_popups(surface);
         wayland_destroy_overlays(data);
         wayland_surface_destroy(surface);
     }
 
-    if (!(surface = data->wayland_surface) && !(surface = wayland_surface_create(data->hwnd))) return FALSE;
+    if (!(surface = data->wayland_surface) && !(surface = wayland_surface_create(data->hwnd, snap))) return FALSE;
 
     /* Pass through mouse events for layered, transparent windows, to match
      * Windows behavior. */
@@ -277,7 +406,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     old_width = surface->window.rect.right - surface->window.rect.left;
     old_height = surface->window.rect.bottom - surface->window.rect.top;
     surface->window.visible = visible;
-    wayland_win_data_get_config(data, &surface->window);
+    wayland_win_data_get_config(data, &surface->window, snap);
     if (old_width != surface->window.rect.right - surface->window.rect.left ||
         old_height != surface->window.rect.bottom - surface->window.rect.top)
     {
@@ -297,14 +426,18 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
         wayland_surface_make_popup(surface, owner_surface);
         break;
     case WAYLAND_SURFACE_ROLE_TOPLEVEL:
-        wayland_surface_make_toplevel(surface, server_decor);
+        wayland_surface_make_toplevel(surface, server_decor, snap);
         break;
     }
 
 
     /* Size/position changes affect the effective pointer constraint, so update
      * it as needed. */
-    if (data->hwnd == NtUserGetForegroundWindow()) reapply_cursor_clipping();
+    if (snap->foreground)
+    {
+        struct wayland_deferred_op op = { .type = WAYLAND_DEFERRED_REAPPLY_CLIP_CURSOR };
+        wayland_win_data_defer(&op);
+    }
 
     TRACE("hwnd=%p surface=%p=>%p\n", data->hwnd, data->wayland_surface, surface);
     data->wayland_surface = surface;
@@ -596,6 +729,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     /* queried before win_data is locked */
     HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
     BOOL border_effect, visible, foreign_child;
+    struct wayland_window_snapshot snap;
     DWORD pid;
 
     /* these are NtUser calls, so they run before win_data is locked */
@@ -613,6 +747,9 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
 
     TRACE("hwnd %p owner %p new_rects %s after %p flags %08x\n", hwnd,
           owner, debugstr_window_rects(new_rects), insert_after, swp_flags);
+
+    /* the NtUser state the locked code below reads */
+    wayland_window_snapshot_init(hwnd, &snap);
 
     if (!(data = wayland_win_data_get(hwnd))) return;
     owner_data = owner && owner != hwnd && !foreign_child ? wayland_win_data_get(owner) : NULL;
@@ -656,7 +793,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
             data->wayland_surface = NULL;
         }
     }
-    else if (wayland_win_data_create_wayland_surface(data, owner_surface))
+    else if (wayland_win_data_create_wayland_surface(data, owner_surface, &snap))
     {
         wayland_win_data_update_wayland_state(data);
     }
@@ -1219,6 +1356,7 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
     struct wayland_client_surface *old_client;
     struct wayland_win_data *data;
     BOOL visible = FALSE, foreign = FALSE;
+    struct wayland_window_snapshot snap;
     RECT child_rect = {0}, present_rect;
     DWORD pid;
 
@@ -1233,6 +1371,9 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
         foreign = TRUE;
         if (visible) child_rect = foreign_child_monitor_rect(hwnd);
     }
+    /* the NtUser state that create_wayland_surface reads under the lock below */
+    if (foreign && visible && !new_client->toplevel) wayland_window_snapshot_init(hwnd, &snap);
+
     if (!(data = wayland_win_data_get(hwnd))) return;
 
     if (new_client != data->client_surface)
@@ -1256,7 +1397,7 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
     /* a foreign child with no attached client gets its own TOPLEVEL and attaches to it (patch 970-972) */
     if (foreign && visible && !new_client->toplevel)
     {
-        if (!data->wayland_surface && wayland_win_data_create_wayland_surface(data, NULL))
+        if (!data->wayland_surface && wayland_win_data_create_wayland_surface(data, NULL, &snap))
             wayland_win_data_update_wayland_state(data);
         if (data->wayland_surface)
             wayland_client_surface_attach(new_client, hwnd, &child_rect);
