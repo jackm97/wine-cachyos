@@ -338,10 +338,10 @@ static void wayland_surface_update_state_toplevel(struct wayland_surface *surfac
         {
             struct wayland_output *wayland_output;
             struct wl_output *output = NULL;
-            pthread_mutex_lock(&process_wayland.output_mutex);
 
-            if ((wayland_output = wayland_output_for_rect(rect)))
-                output = wayland_output->wl_output;
+            wayland_output = wayland_output_for_rect(rect);
+            pthread_mutex_lock(&process_wayland.output_mutex);
+            if (wayland_output) output = wayland_output->wl_output;
 
             if (surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN)
             {
@@ -359,6 +359,7 @@ static void wayland_surface_update_state_toplevel(struct wayland_surface *surfac
 
             skip_fullscreen:
             pthread_mutex_unlock(&process_wayland.output_mutex);
+            if (wayland_output) wayland_output_release(wayland_output);
         }
         if (surface->window.minimized)
         {

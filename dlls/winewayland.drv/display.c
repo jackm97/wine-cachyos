@@ -437,17 +437,21 @@ static void output_info_array_init(struct wl_array *output_info_array)
     output_info_array_arrange_physical_coords(output_info_array);
 }
 
-/* Locking is done externally to ensure wl_output remains valid */
+/* Takes output_mutex itself. Returns a reference the caller drops with wayland_output_release. */
 struct wayland_output *wayland_output_for_rect(const RECT *window_rect)
 {
     struct wayland_output *best = NULL;
     struct wl_array output_info_array;
     struct output_info *output_info;
+    struct { RECT rect; struct wayland_output *output; } cand[16];
+    UINT count = 0, i;
     HMONITOR target = NtUserMonitorFromRect(window_rect, 0);
 
     TRACE("window %s\n", wine_dbgstr_rect(window_rect));
 
     if (!target) return NULL;
+
+    pthread_mutex_lock(&process_wayland.output_mutex);
 
     /* Setup monitor positions */
     wl_array_init(&output_info_array);
@@ -455,26 +459,34 @@ struct wayland_output *wayland_output_for_rect(const RECT *window_rect)
 
     wl_array_for_each(output_info, &output_info_array)
     {
-        RECT rect;
-        SetRect(&rect, 0, 0,
+        if (count == 16) break;
+        SetRect(&cand[count].rect, 0, 0,
                 output_info->output->current_mode->width,
                 output_info->output->current_mode->height);
-        OffsetRect(&rect, output_info->x, output_info->y);
+        OffsetRect(&cand[count].rect, output_info->x, output_info->y);
 
         TRACE("output %s: %s\n",
               debugstr_a(output_info->output->name),
-              wine_dbgstr_rect(&rect));
+              wine_dbgstr_rect(&cand[count].rect));
 
-        if (NtUserMonitorFromRect(&rect, 0) == target)
-        {
-            best = CONTAINING_RECORD(output_info->output,
-                                     struct wayland_output,
-                                     current);
-            break;
-        }
+        cand[count].output = CONTAINING_RECORD(output_info->output,
+                                               struct wayland_output,
+                                               current);
+        wayland_output_add_ref(cand[count].output);
+        count++;
     }
 
     wl_array_release(&output_info_array);
+    pthread_mutex_unlock(&process_wayland.output_mutex);
+
+    /* no lock is held here: NtUserMonitorFromRect takes display_lock */
+    for (i = 0; i < count; i++)
+    {
+        if (!best && NtUserMonitorFromRect(&cand[i].rect, 0) == target)
+            best = cand[i].output;
+        else
+            wayland_output_release(cand[i].output);
+    }
 
     if (!best)
     {

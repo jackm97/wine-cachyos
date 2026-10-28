@@ -261,11 +261,28 @@ static void output_handle_scale(void *data, struct wl_output *wl_output,
 {
 }
 
+static void output_handle_name(void *data, struct wl_output *wl_output,
+                               const char *name)
+{
+    struct wayland_output *output = data;
+
+    free(output->pending.name);
+    output->pending.name = strdup(name);
+    output->pending_flags |= WAYLAND_OUTPUT_CHANGED_NAME;
+}
+
+static void output_handle_description(void *data, struct wl_output *wl_output,
+                                      const char *desc)
+{
+}
+
 static const struct wl_output_listener output_listener = {
     output_handle_geometry,
     output_handle_mode,
     output_handle_done,
-    output_handle_scale
+    output_handle_scale,
+    output_handle_name,
+    output_handle_description,
 };
 
 static void zxdg_output_v1_handle_logical_position(void *data,
@@ -306,11 +323,6 @@ static void zxdg_output_v1_handle_name(void *data,
                                        struct zxdg_output_v1 *zxdg_output_v1,
                                        const char *name)
 {
-    struct wayland_output *output = data;
-
-    free(output->pending.name);
-    output->pending.name = strdup(name);
-    output->pending_flags |= WAYLAND_OUTPUT_CHANGED_NAME;
 }
 
 static void zxdg_output_v1_handle_description(void *data,
@@ -342,11 +354,12 @@ BOOL wayland_output_create(uint32_t id, uint32_t version)
         ERR("Failed to allocate space for wayland_output\n");
         goto err;
     }
+    output->ref = 1;
 
-    if (version < 3) goto err;
+    if (version < 4) goto err;
 
     output->wl_output = wl_registry_bind(process_wayland.wl_registry, id,
-                                         &wl_output_interface, 3);
+                                         &wl_output_interface, 4);
     output->global_id = id;
     wl_output_add_listener(output->wl_output, &output_listener, output);
 
@@ -391,7 +404,7 @@ BOOL wayland_output_create(uint32_t id, uint32_t version)
     return TRUE;
 
 err:
-    if (output) wayland_output_destroy(output);
+    if (output) wayland_output_release(output);
     return FALSE;
 }
 
@@ -402,24 +415,51 @@ static void wayland_output_state_deinit(struct wayland_output_state *state)
 }
 
 /**********************************************************************
- *          wayland_output_destroy
+ *          wayland_output_remove
  *
- *  Destroys a wayland_output.
+ *  Drops the output list's reference and the output's protocol objects, and updates display devices.
  */
-void wayland_output_destroy(struct wayland_output *output)
+void wayland_output_remove(struct wayland_output *output)
 {
     pthread_mutex_lock(&process_wayland.output_mutex);
     wl_list_remove(&output->link);
+    if (output->zxdg_output_v1)
+    {
+        zxdg_output_v1_destroy(output->zxdg_output_v1);
+        output->zxdg_output_v1 = NULL;
+    }
+    if (output->wl_output)
+    {
+        wl_output_release(output->wl_output);
+        output->wl_output = NULL;
+    }
     pthread_mutex_unlock(&process_wayland.output_mutex);
+
+    wayland_output_release(output);
+
+    maybe_init_display_devices();
+}
+
+void wayland_output_add_ref(struct wayland_output *output)
+{
+    InterlockedIncrement(&output->ref);
+}
+
+/**********************************************************************
+ *          wayland_output_release
+ *
+ *  Drops a reference to a wayland_output, and frees it with the last one.
+ */
+void wayland_output_release(struct wayland_output *output)
+{
+    if (InterlockedDecrement(&output->ref)) return;
 
     wayland_output_state_deinit(&output->pending);
     wayland_output_state_deinit(&output->current);
     if (output->zxdg_output_v1)
         zxdg_output_v1_destroy(output->zxdg_output_v1);
-    wl_output_release(output->wl_output);
+    if (output->wl_output) wl_output_release(output->wl_output);
     free(output);
-
-    maybe_init_display_devices();
 }
 
 /**********************************************************************
