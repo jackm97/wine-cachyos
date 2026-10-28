@@ -71,6 +71,7 @@ static struct wayland_win_data *wayland_win_data_create(HWND hwnd, const struct 
 
     data->hwnd = hwnd;
     data->rects = *rects;
+    wl_list_init(&data->overlays);
 
     pthread_mutex_lock(&win_data_mutex);
 
@@ -99,6 +100,7 @@ static void wayland_win_data_destroy(struct wayland_win_data *data)
 
     pthread_mutex_unlock(&win_data_mutex);
 
+    wayland_destroy_overlays(data);
     if (data->wayland_surface) wayland_surface_destroy(data->wayland_surface);
     if (data->window_contents) wayland_shm_buffer_unref(data->window_contents);
     free(data);
@@ -247,6 +249,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
         data->wayland_surface = NULL;
         update_client_surfaces(data->hwnd);
         wayland_surface_reparent_popups(surface);
+        wayland_destroy_overlays(data);
         wayland_surface_destroy(surface);
     }
 
@@ -504,7 +507,8 @@ static BOOL is_window_managed(HWND hwnd, UINT swp_flags, BOOL fullscreen)
 void WAYLAND_DestroyWindow(HWND hwnd)
 {
     struct wayland_win_data *data;
-    HWND parent = NULL;
+    HWND parent = NULL, toplevel;
+    BOOL restack;
 
     TRACE("%p\n", hwnd);
 
@@ -514,10 +518,18 @@ void WAYLAND_DestroyWindow(HWND hwnd)
         wayland_surface_reparent_popups(data->wayland_surface);
         parent = data->wayland_surface->foreign_parent_hwnd;
     }
+    /* the toplevel whose overlays may show this window, read under the lock */
+    toplevel = data->overlay_toplevel;
     wayland_win_data_destroy(data);
 
     /* the child prop lives on the parent, which was read under the lock above */
     wayland_forget_foreign_child(parent, hwnd);
+
+    /* drop the overlay of the destroyed window by restacking its toplevel, with no lock held */
+    if (!toplevel || toplevel == hwnd || !(data = wayland_win_data_get(toplevel))) return;
+    if ((restack = !wl_list_empty(&data->overlays))) data->restack_pending = TRUE;
+    wayland_win_data_release(data);
+    if (restack) wayland_restack_client_surfaces(toplevel);
 }
 
 /***********************************************************************
@@ -546,7 +558,8 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
 {
     HWND owner = NtUserGetAncestor(hwnd, GA_ROOT);
     struct wayland_surface *owner_surface = NULL;
-    struct wayland_win_data *data, *owner_data, *toplevel_data;
+    struct wayland_win_data *data, *owner_data, *toplevel_data, *old_data;
+    HWND old_toplevel = NULL;
     BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
     /* queried before win_data is locked */
     HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
@@ -580,6 +593,11 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     data->resizeable = swp_flags & WINE_SWP_RESIZABLE;
     data->managed = managed;
 
+    /* the toplevel whose overlay last showed this window, read under its lock;
+     * cleared when the window has left it, since that toplevel is restacked below */
+    old_toplevel = data->overlay_toplevel;
+    if (old_toplevel && old_toplevel != toplevel) data->overlay_toplevel = NULL;
+
     /* a moved child may change the stacking of its toplevel */
     if (toplevel && toplevel != hwnd && (toplevel_data = wayland_win_data_get(toplevel)))
     {
@@ -600,6 +618,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
         if (data->wayland_surface)
         {
             wayland_surface_reparent_popups(data->wayland_surface);
+            wayland_destroy_overlays(data);
             wayland_surface_destroy(data->wayland_surface);
             data->wayland_surface = NULL;
         }
@@ -613,6 +632,14 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     wayland_win_data_release(data);
 
     if (toplevel) wayland_restack_client_surfaces(toplevel);
+
+    /* the child left old_toplevel: restack it with no lock held, so its unused overlay is destroyed */
+    if (old_toplevel && old_toplevel != toplevel && (old_data = wayland_win_data_get(old_toplevel)))
+    {
+        old_data->restack_pending = TRUE;
+        wayland_win_data_release(old_data);
+        wayland_restack_client_surfaces(old_toplevel);
+    }
 }
 
 static void wayland_configure_window(HWND hwnd)
@@ -1080,6 +1107,10 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
     BOOL committed = FALSE;
     /* a user lock query, so it runs before win_data is locked */
     BOOL border_effect = is_mso_border_effect_window(hwnd);
+    RECT box, *damage_box = NULL;
+
+    /* the region box is a GDI query, so it is read before win_data is locked */
+    if (damage_region && NtGdiGetRgnBox(damage_region, &box) >= NULLREGION) damage_box = &box;
 
     if (!(data = wayland_win_data_get(hwnd))) return FALSE;
 
@@ -1087,6 +1118,7 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
     {
         if (wayland_surface_reconfigure(wayland_surface))
         {
+            wayland_update_overlays(data, shm_buffer, damage_box);
             wayland_surface_attach_shm(wayland_surface, shm_buffer, damage_region);
             wl_surface_commit(wayland_surface->wl_surface);
             committed = TRUE;
