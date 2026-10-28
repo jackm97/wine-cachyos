@@ -97,6 +97,21 @@ static const struct wl_seat_listener seat_listener =
  *          Registry handling
  */
 
+/* WAYLANDDRV_SSD=0 disables server-side decorations; read once and cached. */
+static int wayland_disable_ssd(void)
+{
+    static LONG disabled = -1;
+    const char *env;
+
+    if (disabled == -1)
+    {
+        disabled = (env = getenv("WAYLANDDRV_SSD")) && !strcmp(env, "0");
+        if (disabled) FIXME("Server-side decorations explicitly disabled!\n");
+    }
+
+    return disabled;
+}
+
 static void registry_handle_global(void *data, struct wl_registry *registry,
                                    uint32_t id, const char *interface,
                                    uint32_t version)
@@ -255,6 +270,13 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     {
         process_wayland.xdg_activation_v1 =
             wl_registry_bind(registry, id, &xdg_activation_v1_interface, 1);
+    }
+    else if (strcmp(interface, "zxdg_decoration_manager_v1") == 0)
+    {
+        if (version < 2 || wayland_disable_ssd()) return;
+
+        process_wayland.zxdg_decoration_manager_v1 =
+            wl_registry_bind(registry, id, &zxdg_decoration_manager_v1_interface, 2);
     }
 }
 
@@ -416,6 +438,9 @@ BOOL wayland_process_init(void)
     else WARN("Wayland compositor doesn't support wp_color_manager_v1 (color management will be broken)\n");
     if (!process_wayland.xdg_activation_v1)
         ERR("Wayland compositor doesn't support optional xdg_activation_v1! (Flash Window will not be supported)\n");
+
+    if (!process_wayland.zxdg_decoration_manager_v1 && !wayland_disable_ssd())
+        WARN("Wayland compositor doesn't support optional zxdg_decoration_manager_v1!\n");
 
     process_wayland.initialized = TRUE;
 

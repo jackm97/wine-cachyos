@@ -229,6 +229,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     DWORD exstyle = NtUserGetWindowLongW(data->hwnd, GWL_EXSTYLE);
     struct wl_region *input_region;
     int old_width, old_height;
+    BOOL server_decor;
 
     TRACE("hwnd=%p\n", data->hwnd);
 
@@ -243,6 +244,11 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     else if (!owner_surface || !data->managed) role = WAYLAND_SURFACE_ROLE_TOPLEVEL;
     /* managed child windows do not need subsurfaces */
     else role = WAYLAND_SURFACE_ROLE_NONE;
+
+    /* the surface as it was before this call decides whether a refused decoration stays refused */
+    server_decor = !EqualRect(&data->rects.visible, &data->rects.window) &&
+                   is_decoration_enabled(NtUserGetWindowLongW(data->hwnd, GWL_STYLE), exstyle) &&
+                   !(data->wayland_surface && data->wayland_surface->server_decor_refused);
 
     /* we can temporarily clear the role of a surface but cannot assign a different one after it's set */
     if ((surface = data->wayland_surface) && role && surface->role && surface->role != role)
@@ -291,7 +297,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
         wayland_surface_make_popup(surface, owner_surface);
         break;
     case WAYLAND_SURFACE_ROLE_TOPLEVEL:
-        wayland_surface_make_toplevel(surface);
+        wayland_surface_make_toplevel(surface, server_decor);
         break;
     }
 
@@ -677,7 +683,7 @@ static void wayland_configure_window(HWND hwnd)
     BOOL needs_exit_size_move = FALSE;
     BOOL restoring_from_minimize = FALSE;
     struct wayland_win_data *data;
-    RECT rect, surface_rect;
+    RECT rect;
 
     if (!(data = wayland_win_data_get(hwnd))) return;
     if (!(surface = data->wayland_surface))
@@ -742,15 +748,14 @@ static void wayland_configure_window(HWND hwnd)
     {
         flags |= SWP_FRAMECHANGED;
     }
-
-    surface_rect = map_rect_to_surface(surface, surface->window.rect);
+    else if (surface->processing.decor != surface->current.decor) flags |= SWP_FRAMECHANGED;
 
     /* If the window is already fullscreen and its size is compatible with what
      * the compositor is requesting, don't force a resize, since some applications
      * are very insistent on a particular fullscreen size (which may not match
      * the monitor size). */
     if ((surface->window.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN) &&
-        wayland_surface_config_is_compatible(&surface->processing, surface_rect,
+        wayland_surface_config_is_compatible(&surface->processing, surface->window.rect,
                                              surface->window.state))
     {
         flags |= SWP_NOSIZE;
@@ -779,8 +784,8 @@ static void wayland_configure_window(HWND hwnd)
     }
 
     SetRect(&rect, 0, 0, width, height);
-    rect = map_rect_from_surface(surface, rect);
     OffsetRect(&rect, data->rects.window.left, data->rects.window.top);
+    if (!IsRectEmpty(&rect)) rect = window_rect_from_visible(&data->rects, rect);
 
     wayland_win_data_release(data);
 
@@ -790,7 +795,7 @@ static void wayland_configure_window(HWND hwnd)
     if (needs_exit_size_move) send_message(hwnd, WM_EXITSIZEMOVE, 0, 0);
 
     flags |= SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE;
-    if (rect.left == rect.right || rect.bottom == rect.top) flags |= SWP_NOSIZE;
+    if (IsRectEmpty(&rect)) flags |= SWP_NOSIZE;
 
     style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
     if (!(state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED) != !(style & WS_MAXIMIZE)
@@ -1061,6 +1066,33 @@ BOOL WAYLAND_HasWindowManager(const char *name)
     if (env && !strcmp(env, name)) return TRUE;
 
     return FALSE;
+}
+
+/***********************************************************************
+ *          WAYLAND_GetWindowStyleMasks
+ */
+BOOL WAYLAND_GetWindowStyleMasks(HWND hwnd, UINT style, UINT ex_style, UINT *style_mask, UINT *ex_style_mask)
+{
+    struct wayland_win_data *data;
+    struct wayland_surface *surface;
+    BOOL refused = FALSE;
+
+    *style_mask = 0;
+    *ex_style_mask = 0;
+
+    if (!process_wayland.zxdg_decoration_manager_v1) return FALSE;
+    if (!(data = wayland_win_data_get(hwnd))) return FALSE;
+
+    if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface))
+        refused = !data->managed || surface->server_decor_refused;
+    wayland_win_data_release(data);
+
+    if (refused) return FALSE;
+    if (!is_decoration_enabled(style, ex_style)) return FALSE;
+
+    *style_mask |= WS_CAPTION | WS_DLGFRAME | WS_THICKFRAME;
+    *ex_style_mask |= WS_EX_DLGMODALFRAME;
+    return TRUE;
 }
 
 /**********************************************************************

@@ -50,6 +50,7 @@ struct xkb_compose_table;
 #include "fractional-scale-v1-client-protocol.h"
 #include "color-management-v1-client-protocol.h"
 #include "xdg-activation-v1-client-protocol.h"
+#include "xdg-decoration-unstable-v1-client-protocol.h"
 
 #include "windef.h"
 #include "winbase.h"
@@ -227,6 +228,7 @@ struct wayland
     struct wp_alpha_modifier_v1 *wp_alpha_modifier_v1;
     struct wp_color_manager_v1 *wp_color_manager_v1;
     struct xdg_activation_v1 *xdg_activation_v1;
+    struct zxdg_decoration_manager_v1 *zxdg_decoration_manager_v1;
     struct zxdg_exporter_v2 *zxdg_exporter_v2;
     struct zxdg_importer_v2 *zxdg_importer_v2;
     struct wayland_seat seat;
@@ -282,6 +284,7 @@ struct wayland_surface_config
 {
     RECT rect;
     enum wayland_surface_config_state state;
+    enum zxdg_toplevel_decoration_v1_mode decor;
     uint32_t serial;
     BOOL processed;
 };
@@ -359,6 +362,7 @@ struct wayland_surface
     struct wl_callback *foreign_activation_frame_callback;
 
     enum wayland_surface_role role;
+    BOOL server_decor_refused; /* the compositor answered CLIENT_SIDE */
 
     struct xdg_surface *xdg_surface;
     HWND owner_hwnd;
@@ -370,6 +374,7 @@ struct wayland_surface
             struct xdg_toplevel *xdg_toplevel;
             struct xdg_toplevel_icon_v1 *xdg_toplevel_icon;
             struct wl_output *requested_output;
+            struct zxdg_toplevel_decoration_v1 *zxdg_toplevel_decoration_v1;
         };
         struct
         {
@@ -421,7 +426,7 @@ void color_management_init(void);
 struct wayland_surface *wayland_surface_create(HWND hwnd);
 void wayland_surface_destroy(struct wayland_surface *surface);
 void wayland_surface_reparent_popups(struct wayland_surface *surface);
-void wayland_surface_make_toplevel(struct wayland_surface *surface);
+void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_decor);
 void wayland_surface_update_foreign_parent(HWND hwnd);
 void wayland_activate_foreign_child(HWND hwnd, uint32_t serial);
 void wayland_forget_foreign_child(HWND parent, HWND hwnd);
@@ -452,6 +457,12 @@ void wayland_surface_activate(struct wayland_surface *surface);
 void wayland_refresh_activation_token(HWND hwnd);
 void wayland_client_surface_update_offscreen(struct wayland_client_surface *surface);
 void wayland_gl_client_surface_destroy(struct wayland_client_surface *surface);
+
+static inline BOOL is_decoration_enabled(DWORD style, DWORD ex_style)
+{
+    if (ex_style & (WS_EX_TOOLWINDOW | WS_EX_LAYERED)) return FALSE;
+    return (style & WS_CAPTION) == WS_CAPTION;
+}
 
 static inline BOOL wayland_surface_is_toplevel(struct wayland_surface *surface)
 {
@@ -587,6 +598,7 @@ BOOL WAYLAND_ClipCursor(const RECT *clip, BOOL reset);
 LRESULT WAYLAND_DesktopWindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 void WAYLAND_DestroyWindow(HWND hwnd);
 void WAYLAND_FlashWindowEx(FLASHWINFO *info);
+BOOL WAYLAND_GetWindowStyleMasks(HWND hwnd, UINT style, UINT ex_style, UINT *style_mask, UINT *ex_style_mask);
 BOOL WAYLAND_GetWindowStateUpdates(HWND hwnd, UINT *state_cmd, UINT *swp_flags, RECT *rect, HWND *foreground);
 void WAYLAND_ActivateWindow(HWND hwnd, HWND previous);
 BOOL WAYLAND_SetIMECompositionRect(HWND hwnd, RECT rect);

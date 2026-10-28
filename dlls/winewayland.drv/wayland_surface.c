@@ -692,8 +692,14 @@ static void xdg_toplevel_handle_configure(void *private,
 
     if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface))
     {
-        SetRect(&surface->pending.rect, 0, 0, width, height);
+        RECT rect;
+
+        SetRect(&rect, 0, 0, width, height);
+        surface->pending.rect = map_rect_from_surface(surface, rect);
         surface->pending.state = config_state;
+        /* a decoration configure of this cycle has already set decor */
+        if (!surface->pending.decor) surface->pending.decor = surface->current.decor;
+        TRACE("hwnd=%p pending rect=%s\n", hwnd, wine_dbgstr_rect(&surface->pending.rect));
     }
 
     wayland_win_data_release(data);
@@ -710,6 +716,34 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener =
     xdg_toplevel_handle_close
 };
 
+static void zxdg_toplevel_decoration_v1_configure(void *user_data,
+                                                  struct zxdg_toplevel_decoration_v1 *decoration,
+                                                  uint32_t mode)
+{
+    HWND hwnd = user_data;
+    struct wayland_win_data *data;
+    struct wayland_surface *surface;
+
+    TRACE("hwnd=%p mode=%u\n", hwnd, mode);
+
+    if (!(data = wayland_win_data_get(hwnd))) return;
+
+    /* write only to the surface that owns this decoration object */
+    if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface) &&
+        surface->zxdg_toplevel_decoration_v1 == decoration)
+    {
+        surface->pending.decor = mode;
+        surface->server_decor_refused = (mode == ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE);
+    }
+
+    wayland_win_data_release(data);
+}
+
+static const struct zxdg_toplevel_decoration_v1_listener zxdg_toplevel_decoration_listener =
+{
+    zxdg_toplevel_decoration_v1_configure,
+};
+
 static void xdg_popup_handle_configure(void *private, struct xdg_popup *xdg_popup,
                                        int32_t x, int32_t y, int32_t width, int32_t height)
 {
@@ -723,8 +757,12 @@ static void xdg_popup_handle_configure(void *private, struct xdg_popup *xdg_popu
 
     if ((surface = data->wayland_surface) && wayland_surface_is_popup(surface))
     {
-        SetRect(&surface->pending.rect, x, y, x + width, y + height);
+        RECT rect;
+
+        SetRect(&rect, x, y, x + width, y + height);
+        surface->pending.rect = map_rect_from_surface(surface, rect);
         surface->pending.state = 0;
+        TRACE("hwnd=%p pending rect=%s\n", hwnd, wine_dbgstr_rect(&surface->pending.rect));
     }
 
     wayland_win_data_release(data);
@@ -1070,12 +1108,32 @@ static void wayland_surface_init_fractional_scale(struct wayland_surface *surfac
         surface->hwnd);
 }
 
+static void wayland_surface_init_decoration(struct wayland_surface *surface)
+{
+    struct zxdg_toplevel_decoration_v1 *decoration;
+
+    if (!process_wayland.zxdg_decoration_manager_v1) return;
+
+    surface->current.decor = 0;
+    decoration = zxdg_decoration_manager_v1_get_toplevel_decoration(
+        process_wayland.zxdg_decoration_manager_v1, surface->xdg_toplevel);
+    if (!decoration)
+    {
+        ERR("Failed to create zxdg_toplevel_decoration_v1\n");
+        return;
+    }
+
+    zxdg_toplevel_decoration_v1_set_mode(decoration, ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    zxdg_toplevel_decoration_v1_add_listener(decoration, &zxdg_toplevel_decoration_listener, surface->hwnd);
+    surface->zxdg_toplevel_decoration_v1 = decoration;
+}
+
 /**********************************************************************
  *          wayland_surface_make_toplevel
  *
  * Gives the toplevel role to a plain wayland surface.
  */
-void wayland_surface_make_toplevel(struct wayland_surface *surface)
+void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_decor)
 {
     static char steam_proton[] = "steam_proton";
     const char *app_id = getenv("SteamAppId");
@@ -1087,8 +1145,32 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface)
     assert(!surface->role || surface->role == WAYLAND_SURFACE_ROLE_TOPLEVEL);
     if (surface->xdg_surface && surface->xdg_toplevel)
     {
+        BOOL changed = FALSE;
+
         surface->owner_hwnd = NtUserGetWindowRelative(surface->hwnd, GW_OWNER);
         wayland_surface_export_locked(surface);
+
+        if (process_wayland.zxdg_decoration_manager_v1)
+        {
+            if (!server_decor && surface->zxdg_toplevel_decoration_v1)
+            {
+                zxdg_toplevel_decoration_v1_destroy(surface->zxdg_toplevel_decoration_v1);
+                surface->zxdg_toplevel_decoration_v1 = NULL;
+                surface->pending.decor = surface->current.decor = 0;
+                changed = TRUE;
+            }
+            else if (server_decor && !surface->zxdg_toplevel_decoration_v1)
+            {
+                wayland_surface_init_decoration(surface);
+                changed = surface->zxdg_toplevel_decoration_v1 != NULL;
+            }
+        }
+
+        if (changed)
+        {
+            wl_surface_commit(surface->wl_surface);
+            wl_display_flush(process_wayland.wl_display);
+        }
         return;
     }
 
@@ -1149,6 +1231,8 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface)
 
     wayland_surface_init_fractional_scale(surface, 1.0);
 
+    if (server_decor) wayland_surface_init_decoration(surface);
+
     wl_surface_commit(surface->wl_surface);
     wl_display_flush(process_wayland.wl_display);
 
@@ -1202,10 +1286,10 @@ void wayland_surface_make_popup(struct wayland_surface *surface,
     {
         if (!surface->current.serial) return;
 
-        rect = map_rect_to_surface(surface, rect);
+        /* reposition the popup only if its owner-relative rect changed */
+        if (EqualRect(&surface->current.rect, &rect)) return;
 
-        /* reposition the popup if needed */
-        if (!EqualRect(&surface->current.rect, &rect)) return;
+        rect = map_rect_to_surface(surface, rect);
 
         xdg_positioner = wayland_surface_create_positioner(surface, &rect);
         if (!xdg_positioner)
@@ -1336,6 +1420,12 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
             surface->xdg_toplevel_icon = NULL;
         }
 
+        if (surface->zxdg_toplevel_decoration_v1)
+        {
+            zxdg_toplevel_decoration_v1_destroy(surface->zxdg_toplevel_decoration_v1);
+            surface->zxdg_toplevel_decoration_v1 = NULL;
+        }
+
         if (surface->xdg_toplevel)
         {
             xdg_toplevel_destroy(surface->xdg_toplevel);
@@ -1353,6 +1443,7 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
     }
 
     surface->owner_hwnd = NULL;
+    surface->server_decor_refused = FALSE;
 
     memset(&surface->pending, 0, sizeof(surface->pending));
     memset(&surface->requested, 0, sizeof(surface->requested));
@@ -1534,8 +1625,6 @@ static void wayland_surface_reconfigure_geometry(struct wayland_surface *surface
     {
         wayland_surface_get_rect_in_monitor(surface, &rect);
 
-        rect = map_rect_to_surface(surface, rect);
-
         /* If the window rect in the monitor is smaller than required,
          * fall back to an appropriately sized rect at the top-left. */
         if ((surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED) &&
@@ -1556,6 +1645,8 @@ static void wayland_surface_reconfigure_geometry(struct wayland_surface *surface
     {
         OffsetRect(&rect, -rect.left, -rect.top);
     }
+
+    rect = map_rect_to_surface(surface, rect);
 
     TRACE("hwnd=%p geometry=%s\n", surface->hwnd, wine_dbgstr_rect(&rect));
 
@@ -1662,6 +1753,7 @@ static BOOL wayland_surface_reconfigure_xdg(struct wayland_surface *surface, REC
      * config, use that, in order to draw windows that don't go through the
      * message loop (e.g., some splash screens). */
     else if (!surface->current.serial && surface->requested.serial &&
+             surface->current.decor == surface->requested.decor &&
              wayland_surface_config_is_compatible(&surface->requested, rect,
                                                   window->state))
     {
@@ -1692,7 +1784,7 @@ static BOOL wayland_surface_reconfigure_xdg(struct wayland_surface *surface, REC
 BOOL wayland_surface_reconfigure(struct wayland_surface *surface)
 {
     struct wayland_window_config *window = &surface->window;
-    RECT rect = map_rect_to_surface(surface, surface->window.rect);
+    RECT rect = surface->window.rect;
 
     TRACE("hwnd=%p window=%s,%#x processing=%s,%#x current=%s,%#x\n",
           surface->hwnd, wine_dbgstr_rect(&rect), window->state,
@@ -1710,6 +1802,7 @@ BOOL wayland_surface_reconfigure(struct wayland_surface *surface)
         break;
     }
 
+    rect = map_rect_to_surface(surface, rect);
     wayland_surface_reconfigure_size(surface, rect.right - rect.left, rect.bottom - rect.top);
 
     return TRUE;

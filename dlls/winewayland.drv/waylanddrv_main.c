@@ -45,6 +45,7 @@ static const struct user_driver_funcs waylanddrv_funcs =
     .pDestroyWindow = WAYLAND_DestroyWindow,
     .pFlashWindowEx = WAYLAND_FlashWindowEx,
     .pGetWindowStateUpdates = WAYLAND_GetWindowStateUpdates,
+    .pGetWindowStyleMasks = WAYLAND_GetWindowStyleMasks,
     .pSetIMECompositionRect = WAYLAND_SetIMECompositionRect,
     .pEnableIMEContext = WAYLAND_EnableIMEContext,
     .pKbdLayerDescriptor = WAYLAND_KbdLayerDescriptor,
