@@ -504,12 +504,20 @@ static BOOL is_window_managed(HWND hwnd, UINT swp_flags, BOOL fullscreen)
 void WAYLAND_DestroyWindow(HWND hwnd)
 {
     struct wayland_win_data *data;
+    HWND parent = NULL;
 
     TRACE("%p\n", hwnd);
 
     if (!(data = wayland_win_data_get(hwnd))) return;
-    if (data->wayland_surface) wayland_surface_reparent_popups(data->wayland_surface);
+    if (data->wayland_surface)
+    {
+        wayland_surface_reparent_popups(data->wayland_surface);
+        parent = data->wayland_surface->foreign_parent_hwnd;
+    }
     wayland_win_data_destroy(data);
+
+    /* the child prop lives on the parent, which was read under the lock above */
+    wayland_forget_foreign_child(parent, hwnd);
 }
 
 /***********************************************************************
@@ -788,6 +796,9 @@ LRESULT WAYLAND_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_WAYLAND_ACTIVATE_FOREIGN:
         wayland_surface_activate_from_token(hwnd);
+        return 0;
+    case WM_WAYLAND_FOREIGN_PARENT_CHANGED:
+        wayland_refresh_foreign_child(hwnd, (HWND)wp);
         return 0;
     default:
         FIXME("got window msg %x hwnd %p wp %lx lp %lx\n", msg, hwnd, (long)wp, lp);

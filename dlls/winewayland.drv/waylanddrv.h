@@ -80,6 +80,7 @@ enum wayland_window_message
     WM_WAYLAND_CONFIGURE,
     WM_WAYLAND_SET_FOREGROUND,
     WM_WAYLAND_ACTIVATE_FOREIGN,
+    WM_WAYLAND_FOREIGN_PARENT_CHANGED,
 };
 
 enum wayland_surface_config_state
@@ -329,6 +330,8 @@ struct wayland_surface
     struct zxdg_imported_v2 *zxdg_imported_v2;
     RTL_ATOM exported_handle_atom;
     RTL_ATOM imported_handle_atom;
+    char imported_handle[256];  /* handle string of the current import (MAX_ATOM_LEN + 1) */
+    char destroyed_handle[256]; /* handle the compositor last destroyed; never imported again */
     HWND foreign_parent_hwnd;
     BOOL foreign_activation_pending;
     struct wl_callback *foreign_activation_frame_callback;
@@ -388,6 +391,8 @@ void wayland_surface_reparent_popups(struct wayland_surface *surface);
 void wayland_surface_make_toplevel(struct wayland_surface *surface);
 void wayland_surface_update_foreign_parent(HWND hwnd);
 void wayland_activate_foreign_child(HWND hwnd, uint32_t serial);
+void wayland_forget_foreign_child(HWND parent, HWND hwnd);
+void wayland_refresh_foreign_child(HWND hwnd, HWND child);
 void wayland_surface_activate_from_token(HWND hwnd);
 void wayland_surface_make_popup(struct wayland_surface *surface,
                                 struct wayland_surface *owner);

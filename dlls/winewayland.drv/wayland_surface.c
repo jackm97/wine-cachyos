@@ -309,6 +309,7 @@ static void xdg_exported_v2_handle_handle(void *private, struct zxdg_exported_v2
     RTL_ATOM atom, old_atom;
     size_t i, len = strlen(handle);
     BOOL owned = FALSE;
+    HWND child;
 
     if (len > MAX_ATOM_LEN) return;
     for (i = 0; i < len; i++) handleW[i] = (unsigned char)handle[i];
@@ -354,7 +355,13 @@ static void xdg_exported_v2_handle_handle(void *private, struct zxdg_exported_v2
         if (HandleToULong(NtUserGetProp(hwnd, xdg_foreign_handle_prop)) == atom)
             NtUserRemoveProp(hwnd, xdg_foreign_handle_prop);
     }
-    else wayland_win_data_release(data);
+    else
+    {
+        wayland_win_data_release(data);
+        /* the prop is confirmed and the lock is released: refresh a child that already names this root */
+        if ((child = NtUserGetProp(hwnd, xdg_foreign_child_prop)))
+            NtUserPostMessage(hwnd, WM_WAYLAND_FOREIGN_PARENT_CHANGED, (WPARAM)child, 0);
+    }
     if (old_atom) NtDeleteAtom(old_atom);
     TRACE("exported hwnd=%p handle=%s\n", hwnd, handle);
 }
@@ -400,14 +407,15 @@ static void xdg_imported_v2_handle_destroyed(void *private, struct zxdg_imported
     parent = surface->foreign_parent_hwnd;
     zxdg_imported_v2_destroy(imported);
     surface->zxdg_imported_v2 = NULL;
+    strcpy(surface->destroyed_handle, surface->imported_handle);
+    surface->imported_handle[0] = 0;
     surface->imported_handle_atom = 0;
     surface->foreign_parent_hwnd = NULL;
     surface->foreign_activation_pending = FALSE;
     wayland_win_data_release(data);
 
-    /* the NtUser calls run outside the win_data lock */
-    if (parent && NtUserGetProp(parent, xdg_foreign_child_prop) == hwnd)
-        NtUserRemoveProp(parent, xdg_foreign_child_prop);
+    /* the child is this window: refresh it outside the lock; wparam 0 means hwnd is the child */
+    if (parent) NtUserPostMessage(hwnd, WM_WAYLAND_FOREIGN_PARENT_CHANGED, 0, 0);
 }
 
 static const struct zxdg_imported_v2_listener xdg_imported_v2_listener =
@@ -470,11 +478,14 @@ static BOOL update_foreign_parent_locked(struct wayland_surface *surface, HWND p
         *old_parent = surface->foreign_parent_hwnd;
         zxdg_imported_v2_destroy(surface->zxdg_imported_v2);
         surface->zxdg_imported_v2 = NULL;
+        surface->imported_handle[0] = 0;
         surface->imported_handle_atom = 0;
         surface->foreign_parent_hwnd = NULL;
     }
 
     if (!atom_get_ascii(atom, handle, sizeof(handle))) return FALSE;
+    /* the handle the compositor just destroyed is not imported again: this ends a chain of destroyed events */
+    if (surface->destroyed_handle[0] && !strcmp(handle, surface->destroyed_handle)) return FALSE;
 
     surface->zxdg_imported_v2 =
         zxdg_importer_v2_import_toplevel(process_wayland.zxdg_importer_v2, handle);
@@ -483,6 +494,7 @@ static BOOL update_foreign_parent_locked(struct wayland_surface *surface, HWND p
     zxdg_imported_v2_add_listener(surface->zxdg_imported_v2,
                                   &xdg_imported_v2_listener, surface->hwnd);
     zxdg_imported_v2_set_parent_of(surface->zxdg_imported_v2, surface->wl_surface);
+    strcpy(surface->imported_handle, handle);
     surface->imported_handle_atom = atom;
     surface->foreign_parent_hwnd = parent;
     surface->foreign_activation_pending = TRUE;
@@ -539,6 +551,46 @@ void wayland_surface_update_foreign_parent(HWND hwnd)
                 NtUserRemoveProp(parent, xdg_foreign_child_prop);
         }
         else wayland_win_data_release(data);
+    }
+}
+
+/***********************************************************************
+ *           wayland_forget_foreign_child
+ *
+ * Called with no lock held. parent is the handle the child imported from,
+ * read under the win_data lock before the surface was destroyed. Drops that
+ * parent's child prop only when it names hwnd.
+ */
+void wayland_forget_foreign_child(HWND parent, HWND hwnd)
+{
+    if (parent && NtUserGetProp(parent, xdg_foreign_child_prop) == hwnd)
+        NtUserRemoveProp(parent, xdg_foreign_child_prop);
+}
+
+/***********************************************************************
+ *           wayland_refresh_foreign_child
+ *
+ * Handles WM_WAYLAND_FOREIGN_PARENT_CHANGED with no lock held. A non-zero
+ * child (posted to the parent by the exported handler) is moved with ASYNC,
+ * since it may belong to another thread. A zero child means hwnd is the child
+ * (posted by the destroyed handler): refresh it, then re-run the import check.
+ * Lives here rather than in window.c because xdg_foreign_child_prop is static.
+ */
+void wayland_refresh_foreign_child(HWND hwnd, HWND child)
+{
+    const UINT flags = SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE |
+                       SWP_NOOWNERZORDER | SWP_FRAMECHANGED;
+
+    if (child)
+    {
+        /* the child must still exist and still name this parent */
+        if (NtUserIsWindow(child) && NtUserGetProp(hwnd, xdg_foreign_child_prop) == child)
+            NtUserSetWindowPos(child, 0, 0, 0, 0, 0, flags | SWP_ASYNCWINDOWPOS);
+    }
+    else
+    {
+        NtUserSetWindowPos(hwnd, 0, 0, 0, 0, 0, flags);
+        wayland_surface_update_foreign_parent(hwnd);
     }
 }
 
@@ -1123,15 +1175,15 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
 
     if (surface->zxdg_imported_v2)
     {
-        if (surface->foreign_parent_hwnd &&
-            NtUserGetProp(surface->foreign_parent_hwnd, xdg_foreign_child_prop) == surface->hwnd)
-            NtUserRemoveProp(surface->foreign_parent_hwnd, xdg_foreign_child_prop);
         zxdg_imported_v2_destroy(surface->zxdg_imported_v2);
         surface->zxdg_imported_v2 = NULL;
+        surface->imported_handle[0] = 0;
         surface->imported_handle_atom = 0;
         surface->foreign_parent_hwnd = 0;
         surface->foreign_activation_pending = FALSE;
     }
+    /* a role change clears the destroyed-handle guard too, including after a compositor-side destroy */
+    surface->destroyed_handle[0] = 0;
 
     if (surface->zxdg_exported_v2)
     {
