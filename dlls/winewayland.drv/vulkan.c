@@ -34,7 +34,7 @@
 #include "wine/vulkan.h"
 #include "wine/vulkan_driver.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(vulkan);
+WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
 
 static const struct vulkan_driver_funcs wayland_vulkan_driver_funcs;
 

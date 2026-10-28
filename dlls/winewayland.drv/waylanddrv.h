@@ -51,6 +51,9 @@ struct xkb_compose_table;
 #include "color-management-v1-client-protocol.h"
 #include "xdg-activation-v1-client-protocol.h"
 #include "xdg-decoration-unstable-v1-client-protocol.h"
+#include "xdg-toplevel-tag-v1-client-protocol.h"
+#include "content-type-v1-client-protocol.h"
+#include "keyboard-shortcuts-inhibit-unstable-v1-client-protocol.h"
 
 #include "windef.h"
 #include "winbase.h"
@@ -229,6 +232,10 @@ struct wayland
     struct wp_color_manager_v1 *wp_color_manager_v1;
     struct xdg_activation_v1 *xdg_activation_v1;
     struct zxdg_decoration_manager_v1 *zxdg_decoration_manager_v1;
+    struct xdg_toplevel_tag_manager_v1 *xdg_toplevel_tag_manager_v1;
+    struct wp_content_type_manager_v1 *wp_content_type_manager_v1;
+    struct zwp_keyboard_shortcuts_inhibit_manager_v1 *zwp_keyboard_shortcuts_inhibit_manager_v1;
+    HANDLE overlay_event;
     struct zxdg_exporter_v2 *zxdg_exporter_v2;
     struct zxdg_importer_v2 *zxdg_importer_v2;
     struct wayland_seat seat;
@@ -314,6 +321,7 @@ struct wayland_client_surface
     struct wl_surface *wl_surface;
     struct wl_subsurface *wl_subsurface;
     struct wp_viewport *wp_viewport;
+    struct wp_content_type_v1 *wp_content_type_v1;
     struct wp_color_management_surface_v1 *color_management;
     HANDLE throttle; /* GL swap throttle event, signalled by the frame callback */
     struct wayland_gl_frame *gl_frame; /* pending frame callback, guarded by gl_throttle_mutex */
@@ -375,6 +383,7 @@ struct wayland_surface
             struct xdg_toplevel_icon_v1 *xdg_toplevel_icon;
             struct wl_output *requested_output;
             struct zxdg_toplevel_decoration_v1 *zxdg_toplevel_decoration_v1;
+            struct zwp_keyboard_shortcuts_inhibitor_v1 *zwp_keyboard_shortcuts_inhibitor_v1;
         };
         struct
         {
@@ -454,9 +463,17 @@ void wayland_surface_set_icon_buffer(struct wayland_surface *surface, UINT type,
 void wayland_surface_set_opacity(struct wayland_surface *surface, BYTE alpha, UINT flags);
 void wayland_surface_flash_window(struct wayland_surface *surface);
 void wayland_surface_activate(struct wayland_surface *surface);
+void wayland_surface_shortcut_control(struct wayland_surface *surface, BOOL inhibit);
 void wayland_refresh_activation_token(HWND hwnd);
 void wayland_client_surface_update_offscreen(struct wayland_client_surface *surface);
 void wayland_gl_client_surface_destroy(struct wayland_client_surface *surface);
+
+static inline void ascii_to_unicode(WCHAR *dst, const char *src, int len)
+{
+    while (len-- && *src) *dst++ = (unsigned char)*src++;
+}
+
+BOOL wayland_is_overlay_active(void);
 
 static inline BOOL is_decoration_enabled(DWORD style, DWORD ex_style)
 {

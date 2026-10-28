@@ -1198,6 +1198,15 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface, BOOL server_
         xdg_toplevel_set_app_id(surface->xdg_toplevel, steam_proton);
     }
 
+    if (process_wayland.xdg_toplevel_tag_manager_v1)
+    {
+        xdg_toplevel_tag_manager_v1_set_toplevel_tag(
+            process_wayland.xdg_toplevel_tag_manager_v1, surface->xdg_toplevel, "proton-game");
+        xdg_toplevel_tag_manager_v1_set_toplevel_description(
+            process_wayland.xdg_toplevel_tag_manager_v1, surface->xdg_toplevel,
+            "This is a game running through proton");
+    }
+
     if (!NtUserInternalGetWindowText(surface->hwnd, text, ARRAY_SIZE(text)))
         text[0] = 0;
     wayland_surface_set_title(surface, text);
@@ -1418,6 +1427,12 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
                 surface->xdg_toplevel, NULL);
             xdg_toplevel_icon_v1_destroy(surface->xdg_toplevel_icon);
             surface->xdg_toplevel_icon = NULL;
+        }
+
+        if (surface->zwp_keyboard_shortcuts_inhibitor_v1)
+        {
+            zwp_keyboard_shortcuts_inhibitor_v1_destroy(surface->zwp_keyboard_shortcuts_inhibitor_v1);
+            surface->zwp_keyboard_shortcuts_inhibitor_v1 = NULL;
         }
 
         if (surface->zxdg_toplevel_decoration_v1)
@@ -2144,6 +2159,8 @@ static void wayland_client_surface_destroy(struct client_surface *client)
     /* detaches a pending GL frame callback and closes the throttle event */
     wayland_gl_client_surface_destroy(surface);
 
+    if (surface->wp_content_type_v1)
+        wp_content_type_v1_destroy(surface->wp_content_type_v1);
     if (surface->color_management)
         wp_color_management_surface_v1_destroy(surface->color_management);
     if (surface->wp_viewport)
@@ -2551,6 +2568,12 @@ struct client_surface *WAYLAND_CreateClientSurface(HWND hwnd, int pixel_format, 
         ERR("Failed to create client wp_viewport\n");
         goto err;
     }
+
+    if (process_wayland.wp_content_type_manager_v1 &&
+        (client->wp_content_type_v1 =
+         wp_content_type_manager_v1_get_surface_content_type(process_wayland.wp_content_type_manager_v1,
+                                                              client->wl_surface)))
+        wp_content_type_v1_set_content_type(client->wp_content_type_v1, WP_CONTENT_TYPE_V1_TYPE_GAME);
 
     return &client->client;
 
@@ -3283,4 +3306,50 @@ void wayland_surface_activate(struct wayland_surface *surface)
     if (!(token = wayland_surface_create_token(surface, TRUE))) return;
     xdg_activation_token_v1_add_listener(token, &activate_listener, surface->hwnd);
     xdg_activation_token_v1_commit(token);
+}
+
+/* WAYLANDDRV_SHORTCUT_INHIBIT enables the inhibitor when non-zero; read once and cached. */
+static BOOL use_inhibit(void)
+{
+    static LONG enabled = -1;
+    const char *env;
+
+    if (enabled == -1) enabled = (env = getenv("WAYLANDDRV_SHORTCUT_INHIBIT")) && atoi(env);
+
+    return enabled;
+}
+
+/***********************************************************************
+ *           wayland_surface_shortcut_control
+ *
+ * Called with the win_data lock held. Inhibits compositor shortcuts while
+ * the surface is fullscreen.
+ */
+void wayland_surface_shortcut_control(struct wayland_surface *surface, BOOL inhibit)
+{
+    BOOL should_inhibit = inhibit && use_inhibit();
+    struct wl_seat *seat;
+
+    if (!process_wayland.zwp_keyboard_shortcuts_inhibit_manager_v1) return;
+
+    if (should_inhibit)
+    {
+        /* the protocol raises already_inhibited for a second inhibitor */
+        if (surface->zwp_keyboard_shortcuts_inhibitor_v1) return;
+
+        pthread_mutex_lock(&process_wayland.seat.mutex);
+        seat = process_wayland.seat.wl_seat;
+        pthread_mutex_unlock(&process_wayland.seat.mutex);
+        if (!seat) return;
+
+        /* no listener: we don't care whether the shortcuts are actually inhibited */
+        surface->zwp_keyboard_shortcuts_inhibitor_v1 =
+            zwp_keyboard_shortcuts_inhibit_manager_v1_inhibit_shortcuts(
+                process_wayland.zwp_keyboard_shortcuts_inhibit_manager_v1, surface->wl_surface, seat);
+    }
+    else if (surface->zwp_keyboard_shortcuts_inhibitor_v1)
+    {
+        zwp_keyboard_shortcuts_inhibitor_v1_destroy(surface->zwp_keyboard_shortcuts_inhibitor_v1);
+        surface->zwp_keyboard_shortcuts_inhibitor_v1 = NULL;
+    }
 }

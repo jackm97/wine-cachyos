@@ -97,6 +97,46 @@ static const struct wl_seat_listener seat_listener =
  *          Registry handling
  */
 
+static void init_overlay_event(void)
+{
+    OBJECT_ATTRIBUTES attr;
+    WCHAR buffer[MAX_PATH] = {0};
+    char path[MAX_PATH];
+    UNICODE_STRING str;
+    NTSTATUS status;
+    int len;
+
+    len = snprintf(path, sizeof(path),
+                   "\\Sessions\\%u\\BaseNamedObjects\\__wine_steamclient_GameOverlayActivated",
+                   (unsigned int)NtCurrentTeb()->Peb->SessionId);
+    ascii_to_unicode(buffer, path, len + 1);
+    str.Buffer = buffer;
+    str.Length = len * sizeof(WCHAR);
+    str.MaximumLength = sizeof(buffer);
+    InitializeObjectAttributes(&attr, &str, OBJ_CASE_INSENSITIVE | OBJ_OPENIF, 0, NULL);
+    status = NtCreateEvent(&process_wayland.overlay_event, EVENT_ALL_ACCESS, &attr, NotificationEvent, FALSE);
+    if (status) WARN("Failed to create the steam overlay event, status %#x\n", (int)status);
+}
+
+BOOL wayland_is_overlay_active(void)
+{
+    LARGE_INTEGER timeout = {0};
+
+    if (!process_wayland.overlay_event) return FALSE;
+    return NtWaitForSingleObject(process_wayland.overlay_event, FALSE, &timeout) == WAIT_OBJECT_0;
+}
+
+/* WAYLANDDRV_IME=1 enables the text input manager; read once and cached. */
+static int wayland_use_ime(void)
+{
+    static LONG enabled = -1;
+    const char *env;
+
+    if (enabled == -1) enabled = (env = getenv("WAYLANDDRV_IME")) && !strcmp(env, "1");
+
+    return enabled;
+}
+
 /* WAYLANDDRV_SSD=0 disables server-side decorations; read once and cached. */
 static int wayland_disable_ssd(void)
 {
@@ -208,6 +248,7 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     }
     else if (strcmp(interface, "zwp_text_input_manager_v3") == 0)
     {
+        if (!wayland_use_ime()) return;
         process_wayland.zwp_text_input_manager_v3 =
             wl_registry_bind(registry, id, &zwp_text_input_manager_v3_interface, 1);
         if (process_wayland.seat.wl_seat) wayland_text_input_init();
@@ -270,6 +311,21 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     {
         process_wayland.xdg_activation_v1 =
             wl_registry_bind(registry, id, &xdg_activation_v1_interface, 1);
+    }
+    else if (strcmp(interface, "xdg_toplevel_tag_manager_v1") == 0)
+    {
+        process_wayland.xdg_toplevel_tag_manager_v1 =
+            wl_registry_bind(registry, id, &xdg_toplevel_tag_manager_v1_interface, 1);
+    }
+    else if (strcmp(interface, "wp_content_type_manager_v1") == 0)
+    {
+        process_wayland.wp_content_type_manager_v1 =
+            wl_registry_bind(registry, id, &wp_content_type_manager_v1_interface, 1);
+    }
+    else if (strcmp(interface, "zwp_keyboard_shortcuts_inhibit_manager_v1") == 0)
+    {
+        process_wayland.zwp_keyboard_shortcuts_inhibit_manager_v1 =
+            wl_registry_bind(registry, id, &zwp_keyboard_shortcuts_inhibit_manager_v1_interface, 1);
     }
     else if (strcmp(interface, "zxdg_decoration_manager_v1") == 0)
     {
@@ -365,6 +421,8 @@ BOOL wayland_process_init(void)
         return FALSE;
     }
 
+    init_overlay_event();
+
     wayland_window_init();
 
     /* Populate registry */
@@ -441,6 +499,12 @@ BOOL wayland_process_init(void)
 
     if (!process_wayland.zxdg_decoration_manager_v1 && !wayland_disable_ssd())
         WARN("Wayland compositor doesn't support optional zxdg_decoration_manager_v1!\n");
+
+    if (!process_wayland.xdg_toplevel_tag_manager_v1)
+        WARN("Wayland compositor doesn't support optional xdg_toplevel_tag_manager_v1!\n");
+
+    if (!process_wayland.wp_content_type_manager_v1)
+        WARN("Wayland compositor doesn't support optional wp_content_type_manager_v1!\n");
 
     process_wayland.initialized = TRUE;
 
