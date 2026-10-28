@@ -203,6 +203,8 @@ static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
 
     TRACE("hwnd=%p\n", hwnd);
 
+    wayland_activate_foreign_child(hwnd, serial);
+
     pthread_mutex_lock(&pointer->mutex);
     pointer->focused_hwnd = hwnd;
     pointer->enter_serial = serial;
@@ -277,6 +279,9 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
     pthread_mutex_unlock(&pointer->mutex);
 
     TRACE("hwnd=%p button=%#x state=%u\n", hwnd, button, state);
+
+    if (state == WL_POINTER_BUTTON_STATE_PRESSED)
+        wayland_activate_foreign_child(hwnd, serial);
 
     NtUserSendHardwareInput(get_input_hwnd(hwnd), SEND_HWMSG_RAWINPUT, &input, 0);
 }

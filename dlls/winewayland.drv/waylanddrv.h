@@ -40,6 +40,7 @@ struct xkb_compose_table;
 #include "relative-pointer-unstable-v1-client-protocol.h"
 #include "text-input-unstable-v3-client-protocol.h"
 #include "viewporter-client-protocol.h"
+#include "xdg-foreign-unstable-v2-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 #include "ext-data-control-v1-client-protocol.h"
@@ -78,6 +79,7 @@ enum wayland_window_message
     WM_WAYLAND_INIT_DISPLAY_DEVICES = WM_WINE_FIRST_DRIVER_MSG,
     WM_WAYLAND_CONFIGURE,
     WM_WAYLAND_SET_FOREGROUND,
+    WM_WAYLAND_ACTIVATE_FOREIGN,
 };
 
 enum wayland_surface_config_state
@@ -216,6 +218,8 @@ struct wayland
     struct wp_alpha_modifier_v1 *wp_alpha_modifier_v1;
     struct wp_color_manager_v1 *wp_color_manager_v1;
     struct xdg_activation_v1 *xdg_activation_v1;
+    struct zxdg_exporter_v2 *zxdg_exporter_v2;
+    struct zxdg_importer_v2 *zxdg_importer_v2;
     struct wayland_seat seat;
     struct wayland_keyboard keyboard;
     struct wayland_pointer pointer;
@@ -321,6 +325,13 @@ struct wayland_surface
     struct wp_fractional_scale_v1 *wp_fractional_scale_v1;
     struct wayland_shm_buffer *small_icon_buffer;
     struct wayland_shm_buffer *big_icon_buffer;
+    struct zxdg_exported_v2 *zxdg_exported_v2;
+    struct zxdg_imported_v2 *zxdg_imported_v2;
+    RTL_ATOM exported_handle_atom;
+    RTL_ATOM imported_handle_atom;
+    HWND foreign_parent_hwnd;
+    BOOL foreign_activation_pending;
+    struct wl_callback *foreign_activation_frame_callback;
 
     enum wayland_surface_role role;
 
@@ -374,6 +385,9 @@ void color_management_init(void);
 struct wayland_surface *wayland_surface_create(HWND hwnd);
 void wayland_surface_destroy(struct wayland_surface *surface);
 void wayland_surface_make_toplevel(struct wayland_surface *surface);
+void wayland_surface_update_foreign_parent(HWND hwnd);
+void wayland_activate_foreign_child(HWND hwnd, uint32_t serial);
+void wayland_surface_activate_from_token(HWND hwnd);
 void wayland_surface_make_popup(struct wayland_surface *surface,
                                 struct wayland_surface *owner);
 void wayland_surface_clear_role(struct wayland_surface *surface);

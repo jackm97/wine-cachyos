@@ -124,6 +124,422 @@ void color_management_init(void)
     TRACE("Initialized image descriptors, scRGB %p BT.2100 %p\n", scrgb_desc, bt2100_desc);
 }
 
+static const WCHAR xdg_foreign_handle_prop[] =
+    {'_','_','w','i','n','e','_','w','a','y','l','a','n','d','_','x','d','g','_',
+     'f','o','r','e','i','g','n','_','h','a','n','d','l','e',0};
+static const WCHAR xdg_foreign_child_prop[] =
+    {'_','_','w','i','n','e','_','w','a','y','l','a','n','d','_','x','d','g','_',
+     'f','o','r','e','i','g','n','_','c','h','i','l','d',0};
+static const WCHAR xdg_activation_token_prop[] =
+    {'_','_','w','i','n','e','_','w','a','y','l','a','n','d','_','x','d','g','_',
+     'a','c','t','i','v','a','t','i','o','n','_','t','o','k','e','n',0};
+
+struct foreign_activation_request
+{
+    struct xdg_activation_token_v1 *token;
+    HWND child;
+};
+
+static BOOL atom_get_ascii(RTL_ATOM atom, char *string, size_t size)
+{
+    char buffer[sizeof(ATOM_BASIC_INFORMATION) + MAX_ATOM_LEN * sizeof(WCHAR)];
+    ATOM_BASIC_INFORMATION *info = (ATOM_BASIC_INFORMATION *)buffer;
+    unsigned int i, len;
+
+    if (!atom || NtQueryInformationAtom(atom, AtomBasicInformation,
+                                        info, sizeof(buffer), NULL))
+        return FALSE;
+
+    len = info->NameLength / sizeof(WCHAR);
+    if (!len || len >= size) return FALSE;
+
+    for (i = 0; i < len; i++)
+    {
+        if (info->Name[i] > 0x7f) return FALSE;
+        string[i] = info->Name[i];
+    }
+    string[len] = 0;
+    return TRUE;
+}
+
+static void foreign_activation_token_handle_done(void *private,
+                                                 struct xdg_activation_token_v1 *token,
+                                                 const char *token_string)
+{
+    struct foreign_activation_request *request = private;
+    WCHAR tokenW[MAX_ATOM_LEN + 1];
+    RTL_ATOM atom, old_atom;
+    size_t i, len = strlen(token_string);
+
+    TRACE("done child=%p token=%s\n", request->child, token_string);
+
+    if (request->token != token || len > MAX_ATOM_LEN || !NtUserIsWindow(request->child))
+        goto done;
+
+    for (i = 0; i < len; i++) tokenW[i] = (unsigned char)token_string[i];
+    tokenW[len] = 0;
+    if (NtAddAtom(tokenW, len * sizeof(WCHAR), &atom)) goto done;
+
+    old_atom = HandleToULong(NtUserRemoveProp(request->child, xdg_activation_token_prop));
+    if (old_atom) NtDeleteAtom(old_atom);
+    if (!NtUserSetProp(request->child, xdg_activation_token_prop, ULongToHandle(atom)) ||
+        !NtUserPostMessage(request->child, WM_WAYLAND_ACTIVATE_FOREIGN, 0, 0))
+    {
+        NtUserRemoveProp(request->child, xdg_activation_token_prop);
+        NtDeleteAtom(atom);
+    }
+
+done:
+    xdg_activation_token_v1_destroy(token);
+    free(request);
+}
+
+static const struct xdg_activation_token_v1_listener foreign_activation_token_listener =
+{
+    foreign_activation_token_handle_done,
+};
+
+static void wayland_request_surface_activation(struct wayland_surface *surface)
+{
+    struct foreign_activation_request *request;
+
+    if (!process_wayland.xdg_activation_v1 || !surface->wl_surface) return;
+    if (!(request = calloc(1, sizeof(*request)))) return;
+
+    request->child = surface->hwnd;
+    request->token = xdg_activation_v1_get_activation_token(process_wayland.xdg_activation_v1);
+    if (!request->token)
+    {
+        free(request);
+        return;
+    }
+
+    xdg_activation_token_v1_add_listener(request->token,
+                                         &foreign_activation_token_listener, request);
+    xdg_activation_token_v1_set_surface(request->token, surface->wl_surface);
+    xdg_activation_token_v1_commit(request->token);
+    wl_display_flush(process_wayland.wl_display);
+}
+
+void wayland_activate_foreign_child(HWND hwnd, uint32_t serial)
+{
+    struct foreign_activation_request *request;
+    struct wayland_win_data *data;
+    struct wl_seat *seat;
+    HWND child, root = 0;
+
+    if (!hwnd) return;
+    root = NtUserGetAncestor(hwnd, GA_ROOT);
+
+    child = root ? NtUserGetProp(root, xdg_foreign_child_prop) : 0;
+    TRACE("request hwnd=%p root=%p child=%p serial=%u\n", hwnd, root, child, serial);
+    if (!process_wayland.xdg_activation_v1 || !root || !child || child == hwnd ||
+        !NtUserIsWindow(child))
+        return;
+
+    if (!(data = wayland_win_data_get(hwnd))) return;
+    if (!data->wayland_surface || !wayland_surface_is_toplevel(data->wayland_surface))
+    {
+        wayland_win_data_release(data);
+        return;
+    }
+
+    if (!(request = calloc(1, sizeof(*request))))
+    {
+        wayland_win_data_release(data);
+        return;
+    }
+
+    request->child = child;
+    request->token = xdg_activation_v1_get_activation_token(process_wayland.xdg_activation_v1);
+    if (!request->token)
+    {
+        free(request);
+        wayland_win_data_release(data);
+        return;
+    }
+
+    xdg_activation_token_v1_add_listener(request->token,
+                                         &foreign_activation_token_listener, request);
+    pthread_mutex_lock(&process_wayland.seat.mutex);
+    if ((seat = process_wayland.seat.wl_seat) && serial)
+        xdg_activation_token_v1_set_serial(request->token, serial, seat);
+    pthread_mutex_unlock(&process_wayland.seat.mutex);
+    xdg_activation_token_v1_set_surface(request->token,
+                                        data->wayland_surface->wl_surface);
+    xdg_activation_token_v1_commit(request->token);
+    TRACE("committed request for child=%p\n", child);
+    wayland_win_data_release(data);
+    wl_display_flush(process_wayland.wl_display);
+}
+
+void wayland_surface_activate_from_token(HWND hwnd)
+{
+    struct wayland_win_data *data;
+    char token[MAX_ATOM_LEN + 1];
+    RTL_ATOM atom;
+
+    atom = HandleToULong(NtUserRemoveProp(hwnd, xdg_activation_token_prop));
+    TRACE("consume hwnd=%p atom=%u\n", hwnd, atom);
+    if (!atom) return;
+
+    if (process_wayland.xdg_activation_v1 && atom_get_ascii(atom, token, sizeof(token)) &&
+        (data = wayland_win_data_get(hwnd)))
+    {
+        if (data->wayland_surface && wayland_surface_is_toplevel(data->wayland_surface))
+        {
+            xdg_activation_v1_activate(process_wayland.xdg_activation_v1, token,
+                                       data->wayland_surface->wl_surface);
+            wl_display_flush(process_wayland.wl_display);
+        }
+        wayland_win_data_release(data);
+    }
+
+    NtDeleteAtom(atom);
+}
+
+static void xdg_exported_v2_handle_handle(void *private, struct zxdg_exported_v2 *exported,
+                                          const char *handle)
+{
+    HWND hwnd = private;
+    struct wayland_win_data *data;
+    WCHAR handleW[MAX_ATOM_LEN + 1];
+    RTL_ATOM atom, old_atom;
+    size_t i, len = strlen(handle);
+    BOOL owned = FALSE;
+
+    if (len > MAX_ATOM_LEN) return;
+    for (i = 0; i < len; i++) handleW[i] = (unsigned char)handle[i];
+    handleW[len] = 0;
+    if (NtAddAtom(handleW, len * sizeof(WCHAR), &atom)) return;
+
+    if (!(data = wayland_win_data_get(hwnd)))
+    {
+        NtDeleteAtom(atom);
+        return;
+    }
+    if (!data->wayland_surface || data->wayland_surface->zxdg_exported_v2 != exported)
+    {
+        wayland_win_data_release(data);
+        NtDeleteAtom(atom);
+        return;
+    }
+    old_atom = data->wayland_surface->exported_handle_atom;
+    data->wayland_surface->exported_handle_atom = atom;
+    wayland_win_data_release(data);
+
+    /* the NtUser calls run outside the win_data lock */
+    NtUserRemoveProp(hwnd, xdg_foreign_handle_prop);
+    if (!NtUserSetProp(hwnd, xdg_foreign_handle_prop, ULongToHandle(atom)))
+    {
+        /* clear_role may already have taken the atom, so delete it only if it is still ours */
+        if ((data = wayland_win_data_get(hwnd)))
+        {
+            if (data->wayland_surface && data->wayland_surface->exported_handle_atom == atom)
+            {
+                data->wayland_surface->exported_handle_atom = 0;
+                owned = TRUE;
+            }
+            wayland_win_data_release(data);
+        }
+        if (owned) NtDeleteAtom(atom);
+    }
+    else if (!(data = wayland_win_data_get(hwnd)) ||
+             !data->wayland_surface || data->wayland_surface->exported_handle_atom != atom)
+    {
+        /* cleared meanwhile: whoever cleared the field deleted the atom, so only the prop is ours to remove */
+        if (data) wayland_win_data_release(data);
+        if (HandleToULong(NtUserGetProp(hwnd, xdg_foreign_handle_prop)) == atom)
+            NtUserRemoveProp(hwnd, xdg_foreign_handle_prop);
+    }
+    else wayland_win_data_release(data);
+    if (old_atom) NtDeleteAtom(old_atom);
+    TRACE("exported hwnd=%p handle=%s\n", hwnd, handle);
+}
+
+static const struct zxdg_exported_v2_listener xdg_exported_v2_listener =
+{
+    xdg_exported_v2_handle_handle,
+};
+
+/***********************************************************************
+ *           wayland_surface_export_locked
+ *
+ * Exports a toplevel that is a root window. Called with the win_data lock held
+ * (D1: make_toplevel runs under it). The guard stops a second export, so repeated
+ * make_toplevel calls export once.
+ */
+static void wayland_surface_export_locked(struct wayland_surface *surface)
+{
+    if (!process_wayland.zxdg_exporter_v2 || surface->zxdg_exported_v2 ||
+        !wayland_surface_is_toplevel(surface) ||
+        NtUserGetAncestor(surface->hwnd, GA_ROOT) != surface->hwnd)
+        return;
+
+    surface->zxdg_exported_v2 =
+        zxdg_exporter_v2_export_toplevel(process_wayland.zxdg_exporter_v2, surface->wl_surface);
+    if (surface->zxdg_exported_v2)
+        zxdg_exported_v2_add_listener(surface->zxdg_exported_v2,
+                                      &xdg_exported_v2_listener, surface->hwnd);
+}
+
+static void xdg_imported_v2_handle_destroyed(void *private, struct zxdg_imported_v2 *imported)
+{
+    HWND hwnd = private, parent;
+    struct wayland_win_data *data;
+    struct wayland_surface *surface;
+
+    if (!(data = wayland_win_data_get(hwnd))) return;
+    if (!(surface = data->wayland_surface) || surface->zxdg_imported_v2 != imported)
+    {
+        wayland_win_data_release(data);
+        return;
+    }
+    parent = surface->foreign_parent_hwnd;
+    zxdg_imported_v2_destroy(imported);
+    surface->zxdg_imported_v2 = NULL;
+    surface->imported_handle_atom = 0;
+    surface->foreign_parent_hwnd = NULL;
+    surface->foreign_activation_pending = FALSE;
+    wayland_win_data_release(data);
+
+    /* the NtUser calls run outside the win_data lock */
+    if (parent && NtUserGetProp(parent, xdg_foreign_child_prop) == hwnd)
+        NtUserRemoveProp(parent, xdg_foreign_child_prop);
+}
+
+static const struct zxdg_imported_v2_listener xdg_imported_v2_listener =
+{
+    xdg_imported_v2_handle_destroyed,
+};
+
+/* Activation frame callback, on the child's own wayland_surface (H8). Its commits come from the child's own surface (D3). */
+static void foreign_activation_frame_done(void *private, struct wl_callback *callback,
+                                          uint32_t callback_data)
+{
+    HWND hwnd = private;
+    struct wayland_win_data *data;
+    struct wayland_surface *surface;
+
+    /* a miss means the window's win_data is gone; clear_role (H13) has already destroyed the callback */
+    if (!(data = wayland_win_data_get(hwnd))) return;
+    if (!(surface = data->wayland_surface) || surface->foreign_activation_frame_callback != callback)
+    {
+        wayland_win_data_release(data);
+        return;
+    }
+    wl_callback_destroy(callback);
+    surface->foreign_activation_frame_callback = NULL;
+
+    if (surface->foreign_activation_pending)
+    {
+        surface->foreign_activation_pending = FALSE;
+        wayland_request_surface_activation(surface);
+    }
+    wayland_win_data_release(data);
+}
+
+static const struct wl_callback_listener foreign_activation_frame_listener =
+{
+    foreign_activation_frame_done,
+};
+
+/***********************************************************************
+ *           update_foreign_parent_locked
+ *
+ * Called with the win_data lock held. Only Wayland and atom work happens here.
+ * Returns TRUE when it newly imported the parent; the caller then sets
+ * xdg_foreign_child_prop after releasing the lock. *old_parent is set to the
+ * parent the surface was imported from before a re-import, or NULL, and the
+ * caller drops its child prop on that parent.
+ */
+static BOOL update_foreign_parent_locked(struct wayland_surface *surface, HWND parent, RTL_ATOM atom,
+                                         HWND *old_parent)
+{
+    char handle[MAX_ATOM_LEN + 1];
+
+    *old_parent = NULL;
+    if (!process_wayland.zxdg_importer_v2 || !wayland_surface_is_toplevel(surface)) return FALSE;
+    if (surface->zxdg_imported_v2 && surface->imported_handle_atom == atom) return FALSE;
+
+    if (surface->zxdg_imported_v2)
+    {
+        /* the caller drops this parent's child prop */
+        *old_parent = surface->foreign_parent_hwnd;
+        zxdg_imported_v2_destroy(surface->zxdg_imported_v2);
+        surface->zxdg_imported_v2 = NULL;
+        surface->imported_handle_atom = 0;
+        surface->foreign_parent_hwnd = NULL;
+    }
+
+    if (!atom_get_ascii(atom, handle, sizeof(handle))) return FALSE;
+
+    surface->zxdg_imported_v2 =
+        zxdg_importer_v2_import_toplevel(process_wayland.zxdg_importer_v2, handle);
+    if (!surface->zxdg_imported_v2) return FALSE;
+
+    zxdg_imported_v2_add_listener(surface->zxdg_imported_v2,
+                                  &xdg_imported_v2_listener, surface->hwnd);
+    zxdg_imported_v2_set_parent_of(surface->zxdg_imported_v2, surface->wl_surface);
+    surface->imported_handle_atom = atom;
+    surface->foreign_parent_hwnd = parent;
+    surface->foreign_activation_pending = TRUE;
+    wl_display_flush(process_wayland.wl_display);
+    TRACE("imported parent hwnd=%p for hwnd=%p handle=%s\n",
+          parent, surface->hwnd, handle);
+    return TRUE;
+}
+
+/***********************************************************************
+ *           wayland_surface_update_foreign_parent
+ *
+ * Called with no lock held, since the NtUser queries take the user lock.
+ * Under the lock it imports a newly exported parent, then schedules the
+ * activation frame callback on the child's own wayland_surface, whose
+ * commits come from the child's own surface (D3).
+ */
+void wayland_surface_update_foreign_parent(HWND hwnd)
+{
+    struct wayland_win_data *data;
+    struct wayland_surface *surface;
+    HWND parent, old_parent = NULL;
+    RTL_ATOM atom;
+    BOOL imported = FALSE;
+
+    if (!process_wayland.zxdg_importer_v2) return;
+    if (!(parent = NtUserGetAncestor(hwnd, GA_ROOT)) || parent == hwnd) return;
+    if (!(atom = HandleToULong(NtUserGetProp(parent, xdg_foreign_handle_prop)))) return;
+
+    if (!(data = wayland_win_data_get(hwnd))) return;
+    if ((surface = data->wayland_surface))
+    {
+        imported = update_foreign_parent_locked(surface, parent, atom, &old_parent);
+        if (surface->foreign_activation_pending && !surface->foreign_activation_frame_callback &&
+            (surface->foreign_activation_frame_callback = wl_surface_frame(surface->wl_surface)))
+            wl_callback_add_listener(surface->foreign_activation_frame_callback,
+                                     &foreign_activation_frame_listener, surface->hwnd);
+    }
+    wayland_win_data_release(data);
+
+    /* outside the lock, like the SetProp below */
+    if (old_parent && NtUserGetProp(old_parent, xdg_foreign_child_prop) == hwnd)
+        NtUserRemoveProp(old_parent, xdg_foreign_child_prop);
+    /* a failed SetProp keeps the import, with no retry (accepted, see the failed child-prop bullet) */
+    if (imported && NtUserSetProp(parent, xdg_foreign_child_prop, hwnd))
+    {
+        /* the import may have been dropped meanwhile; keep the prop only if this surface still imports this parent */
+        if (!(data = wayland_win_data_get(hwnd)) ||
+            !data->wayland_surface || !data->wayland_surface->zxdg_imported_v2 ||
+            data->wayland_surface->foreign_parent_hwnd != parent)
+        {
+            if (data) wayland_win_data_release(data);
+            if (NtUserGetProp(parent, xdg_foreign_child_prop) == hwnd)
+                NtUserRemoveProp(parent, xdg_foreign_child_prop);
+        }
+        else wayland_win_data_release(data);
+    }
+}
+
 static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_surface,
                                          uint32_t serial)
 {
@@ -522,6 +938,7 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface)
     if (surface->xdg_surface && surface->xdg_toplevel)
     {
         surface->owner_hwnd = NtUserGetWindowRelative(surface->hwnd, GW_OWNER);
+        wayland_surface_export_locked(surface);
         return;
     }
 
@@ -554,6 +971,31 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface)
     wayland_surface_set_title(surface, text);
 
     wayland_surface_assign_icon(surface);
+
+    if (process_wayland.zxdg_exporter_v2 &&
+        NtUserGetAncestor(surface->hwnd, GA_ROOT) == surface->hwnd)
+    {
+        wayland_surface_export_locked(surface);
+    }
+    else if (process_wayland.zxdg_importer_v2)
+    {
+        HWND parent = NtUserGetAncestor(surface->hwnd, GA_ROOT), old_parent = NULL;
+        BOOL imported;
+        RTL_ATOM atom = parent && parent != surface->hwnd ?
+                        HandleToULong(NtUserGetProp(parent, xdg_foreign_handle_prop)) : 0;
+
+        imported = atom && update_foreign_parent_locked(surface, parent, atom, &old_parent);
+
+        /* under the lock, like the SetProp below */
+        if (old_parent && NtUserGetProp(old_parent, xdg_foreign_child_prop) == surface->hwnd)
+            NtUserRemoveProp(old_parent, xdg_foreign_child_prop);
+        /* a failed SetProp keeps the import, with no retry (accepted, see the failed child-prop bullet) */
+        if (imported) NtUserSetProp(parent, xdg_foreign_child_prop, surface->hwnd);
+        if (surface->foreign_activation_pending && !surface->foreign_activation_frame_callback &&
+            (surface->foreign_activation_frame_callback = wl_surface_frame(surface->wl_surface)))
+            wl_callback_add_listener(surface->foreign_activation_frame_callback,
+                                     &foreign_activation_frame_listener, surface->hwnd);
+    }
 
     wayland_surface_init_fractional_scale(surface, 1.0);
 
@@ -669,6 +1111,47 @@ err:
 void wayland_surface_clear_role(struct wayland_surface *surface)
 {
     TRACE("surface=%p\n", surface);
+
+    /* the frame callback is on this surface (H8); destroying it is a Wayland call only */
+    if (surface->foreign_activation_frame_callback)
+    {
+        wl_callback_destroy(surface->foreign_activation_frame_callback);
+        surface->foreign_activation_frame_callback = NULL;
+    }
+
+    if (surface->zxdg_imported_v2)
+    {
+        if (surface->foreign_parent_hwnd &&
+            NtUserGetProp(surface->foreign_parent_hwnd, xdg_foreign_child_prop) == surface->hwnd)
+            NtUserRemoveProp(surface->foreign_parent_hwnd, xdg_foreign_child_prop);
+        zxdg_imported_v2_destroy(surface->zxdg_imported_v2);
+        surface->zxdg_imported_v2 = NULL;
+        surface->imported_handle_atom = 0;
+        surface->foreign_parent_hwnd = 0;
+        surface->foreign_activation_pending = FALSE;
+    }
+
+    if (surface->zxdg_exported_v2)
+    {
+        zxdg_exported_v2_destroy(surface->zxdg_exported_v2);
+        surface->zxdg_exported_v2 = NULL;
+    }
+
+    if (surface->exported_handle_atom)
+    {
+        NtUserRemoveProp(surface->hwnd, xdg_foreign_handle_prop);
+        NtDeleteAtom(surface->exported_handle_atom);
+        surface->exported_handle_atom = 0;
+    }
+
+    /* the token prop is taken by whichever side removes it first, so only that side deletes the atom.
+     * Gated on TOPLEVEL: only toplevel children receive tokens, and the role is still set here, before the switch */
+    if (surface->role == WAYLAND_SURFACE_ROLE_TOPLEVEL)
+    {
+        RTL_ATOM token_atom = HandleToULong(NtUserRemoveProp(surface->hwnd, xdg_activation_token_prop));
+
+        if (token_atom) NtDeleteAtom(token_atom);
+    }
 
     /* some objects are shared between several roles */
 
@@ -1517,6 +2000,22 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
     HWND hwnd = client->hwnd, toplevel = client->toplevel;
     struct wayland_surface *wayland_surface;
     struct wayland_win_data *data;
+
+    DWORD pid;
+    HWND root;
+
+    /* NtUser queries, so this runs before any win_data lock is taken, and before
+     * the early return below, which skips foreign children. The gate tests the child's
+     * GA_ROOT, not `toplevel`, which may be 0; it is the `NtUserGetWindowThread` test that the rule removed by P3-H8 used (`wayland_surface.c:1474`).
+     * The frame callback is scheduled inside the call (H11 step 4).
+     * If the child's GA_ROOT is 0 (its root cannot be found, as when the window is being destroyed),
+     * root is 0 and the gate is FALSE before NtUserGetWindowThread runs. That lookup is not safe for 0
+     * (see the zero-thread paragraph in Section 4b), so the import is skipped. If the root is 0, the P3-H10 commit and `set_client_surface` are skipped too: the early return below finds no local win_data for a foreign toplevel, so nothing after the gate runs for that child. That matches HEAD for every foreign child, and is accepted for a window being torn down. */
+    if (hwnd != toplevel && (root = NtUserGetAncestor(hwnd, GA_ROOT)) &&
+        NtUserGetWindowThread(root, &pid) && pid != GetCurrentProcessId())
+    {
+        wayland_surface_update_foreign_parent(hwnd);
+    }
 
     /* offscreen: win32u copies the contents to the window surface for us */
     if (hdc || !(data = wayland_win_data_get(toplevel))) return;
