@@ -284,6 +284,8 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
         wayland_activate_foreign_child(hwnd, serial);
 
     NtUserSendHardwareInput(get_input_hwnd(hwnd), SEND_HWMSG_RAWINPUT, &input, 0);
+
+    if (state == WL_POINTER_BUTTON_STATE_PRESSED) wayland_refresh_activation_token(hwnd);
 }
 
 static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer,

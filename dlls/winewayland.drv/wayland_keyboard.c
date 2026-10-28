@@ -921,7 +921,7 @@ static void update_keyboard_lock_state(struct xkb_state *xkb_state)
  *          Keyboard handling
  */
 
-static HWND wayland_keyboard_get_focused_hwnd(void)
+HWND wayland_keyboard_get_focused_hwnd(void)
 {
     struct wayland_keyboard *keyboard = &process_wayland.keyboard;
     HWND hwnd;
@@ -1024,8 +1024,6 @@ static void keyboard_handle_enter(void *private, struct wl_keyboard *wl_keyboard
                                   struct wl_array *keys)
 {
     struct wayland_keyboard *keyboard = &process_wayland.keyboard;
-    struct wayland_surface *surface;
-    struct wayland_win_data *data;
     HWND hwnd;
 
     InterlockedExchange(&process_wayland.input_serial, serial);
@@ -1044,19 +1042,26 @@ static void keyboard_handle_enter(void *private, struct wl_keyboard *wl_keyboard
     NtUserPostMessage(get_input_language_target(keyboard->focused_hwnd), WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
                       (LPARAM)keyboard_hkl);
 
-    if (!(data = wayland_win_data_get(hwnd))) return;
+    /* the window state update decides the foreground window from the keyboard focus */
+    NtUserPostMessage(hwnd, WM_WINE_WINDOW_STATE_CHANGED, 0, 0);
 
-    if ((surface = data->wayland_surface))
+    /* no lock is held here */
+    wayland_refresh_activation_token(hwnd);
+}
+
+/* WAYLANDDRV_FOCUS_LOSS=0 disables the focus loss handling; read once and cached. */
+static BOOL wayland_disable_focus_loss(void)
+{
+    static LONG disabled = -1;
+    const char *env;
+
+    if (disabled == -1)
     {
-        /* TODO: Drop the internal message and call NtUserSetForegroundWindow
-         * directly once it's updated to not explicitly deactivate the old
-         * foreground window when both the old and new foreground windows
-         * are in the same non-current thread. */
-        if (surface->window.managed)
-            NtUserPostMessage(hwnd, WM_WAYLAND_SET_FOREGROUND, 0, 0);
+        disabled = (env = getenv("WAYLANDDRV_FOCUS_LOSS")) && !atoi(env);
+        if (disabled) FIXME("Focus loss explicitly disabled!\n");
     }
 
-    wayland_win_data_release(data);
+    return disabled;
 }
 
 static void keyboard_handle_leave(void *data, struct wl_keyboard *wl_keyboard,
@@ -1083,7 +1088,14 @@ static void keyboard_handle_leave(void *data, struct wl_keyboard *wl_keyboard,
      * and for any key repetition to stop. */
     release_all_keys(hwnd);
 
-    /* FIXME: update foreground window as well */
+    if (hwnd && hwnd == NtUserGetForegroundWindow())
+    {
+        /* posted, not sent, so the dispatcher thread never blocks on the window thread */
+        if (!(NtUserGetWindowLongW(hwnd, GWL_STYLE) & WS_MINIMIZE))
+            NtUserPostMessage(hwnd, WM_CANCELMODE, 0, 0);
+        if (!wayland_disable_focus_loss())
+            NtUserPostMessage(hwnd, WM_WINE_WINDOW_STATE_CHANGED, 0, 0);
+    }
 }
 
 static inline void update_keystate(uint32_t key, uint32_t state)
@@ -1178,6 +1190,8 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
     if (state == WL_KEYBOARD_KEY_STATE_RELEASED) input.ki.dwFlags |= KEYEVENTF_KEYUP;
     NtUserSendHardwareInput(hwnd, 0, &input, 0);
     update_keystate(key, state);
+
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED) wayland_refresh_activation_token(hwnd);
 }
 
 static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboard,

@@ -821,11 +821,104 @@ void wp_fractional_scale_handle_scale(void* user_data,
     wayland_win_data_release(data);
 
     NtUserExposeWindowSurface(hwnd, 0, NULL);
+    NtUserPostMessage(hwnd, WM_WINE_UPDATEWINDOWSTATE, 0, 0);
 }
 
 static const struct wp_fractional_scale_v1_listener wp_fractional_scale_listener =
 {
     wp_fractional_scale_handle_scale
+};
+
+static struct surface_output_entry *find_output_entry(struct wayland_surface *surface,
+                                                      struct wayland_output *output)
+{
+    struct surface_output_entry *entry;
+
+    wl_list_for_each(entry, &surface->output_list, entry)
+        if (entry->output == output) return entry;
+    return NULL;
+}
+
+/* Removes and releases every output entry of the surface; returns how many were removed. */
+static UINT wayland_surface_clear_outputs(struct wayland_surface *surface, struct wayland_output *only)
+{
+    struct surface_output_entry *entry, *next;
+    UINT removed = 0;
+
+    wl_list_for_each_safe(entry, next, &surface->output_list, entry)
+    {
+        if (only && entry->output != only) continue;
+        wl_list_remove(&entry->entry);
+        wayland_output_release(entry->output);
+        free(entry);
+        removed++;
+    }
+    return removed;
+}
+
+static void wayland_surface_handle_enter(void *private, struct wl_surface *wl_surface,
+                                         struct wl_output *wl_output)
+{
+    HWND hwnd = private;
+    struct surface_output_entry *entry;
+    struct wayland_output *output;
+    struct wayland_win_data *data;
+    struct wayland_surface *surface;
+    BOOL added = FALSE;
+
+    /* a NULL output means libwayland replaced a proxy that was already released */
+    if (!wl_output) return;
+    if (!(output = wl_output_get_user_data(wl_output))) return;
+
+    TRACE("hwnd=%p output=%s\n", hwnd, debugstr_a(output->current.name));
+
+    if (!(data = wayland_win_data_get(hwnd))) return;
+    if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface) &&
+        !find_output_entry(surface, output))
+    {
+        if (!(entry = calloc(1, sizeof(*entry))))
+        {
+            ERR("Failed to allocate output entry for hwnd=%p\n", hwnd);
+        }
+        else
+        {
+            wayland_output_add_ref(output);
+            entry->output = output;
+            wl_list_insert(&surface->output_list, &entry->entry);
+            added = TRUE;
+        }
+    }
+    wayland_win_data_release(data);
+
+    if (added) NtUserPostMessage(hwnd, WM_WINE_WINDOW_STATE_CHANGED, 0, 0);
+}
+
+static void wayland_surface_handle_leave(void *private, struct wl_surface *wl_surface,
+                                         struct wl_output *wl_output)
+{
+    HWND hwnd = private;
+    struct wayland_output *output;
+    struct wayland_win_data *data;
+    struct wayland_surface *surface;
+    UINT removed = 0;
+
+    if (!wl_output) return;
+    if (!(output = wl_output_get_user_data(wl_output))) return;
+
+    TRACE("hwnd=%p output=%s\n", hwnd, debugstr_a(output->current.name));
+
+    if (!(data = wayland_win_data_get(hwnd))) return;
+    if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface))
+        removed = wayland_surface_clear_outputs(surface, output);
+    wayland_win_data_release(data);
+
+    if (removed) NtUserPostMessage(hwnd, WM_WINE_WINDOW_STATE_CHANGED, 0, 0);
+}
+
+static const struct wl_surface_listener wayland_surface_listener =
+{
+    wayland_surface_handle_enter,
+    wayland_surface_handle_leave,
 };
 
 /**********************************************************************
@@ -850,13 +943,15 @@ struct wayland_surface *wayland_surface_create(HWND hwnd)
     TRACE("surface=%p serial=%s\n", surface, wine_dbgstr_longlong(surface->serial));
 
     surface->hwnd = hwnd;
+    wl_list_init(&surface->output_list);
     surface->wl_surface = wl_compositor_create_surface(process_wayland.wl_compositor);
     if (!surface->wl_surface)
     {
         ERR("Failed to create wl_surface Wayland surface\n");
         goto err;
     }
-    wl_surface_set_user_data(surface->wl_surface, hwnd);
+    /* the listener data is also the wl_surface user data: the hwnd */
+    wl_surface_add_listener(surface->wl_surface, &wayland_surface_listener, hwnd);
 
     surface->wp_viewport =
         wp_viewporter_get_viewport(process_wayland.wp_viewporter,
@@ -916,6 +1011,7 @@ void wayland_surface_destroy(struct wayland_surface *surface)
     pthread_mutex_unlock(&process_wayland.text_input.mutex);
 
     wayland_surface_clear_role(surface);
+    wayland_surface_clear_outputs(surface, NULL);
 
     if (surface->wp_alpha_modifier_surface_v1)
     {
@@ -1271,6 +1367,8 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
     surface->content_height = 0;
     surface->ensured_contents = WAYLAND_SURFACE_NOT_ENSURED;
     surface->expose_posted = FALSE;
+    memset(&surface->committed, 0, sizeof(surface->committed));
+    wayland_surface_clear_outputs(surface, NULL);
 
     wl_display_flush(process_wayland.wl_display);
 }
@@ -3026,6 +3124,70 @@ void wayland_surface_flash_window(struct wayland_surface *surface)
     if (!wayland_surface_is_toplevel(surface)) return;
 
     if (!(token = wayland_surface_create_token(surface, FALSE))) return;
+    xdg_activation_token_v1_add_listener(token, &activate_listener, surface->hwnd);
+    xdg_activation_token_v1_commit(token);
+}
+
+/* Saves the token for the next activation of any window of the process. */
+static void save_token_handle_done(void *user_data,
+                                   struct xdg_activation_token_v1 *xdg_activation_token_v1,
+                                   const char *token)
+{
+    char *old = InterlockedExchangePointer((void **)&process_activate_token, strdup(token));
+
+    free(old);
+    xdg_activation_token_v1_destroy(xdg_activation_token_v1);
+}
+
+static const struct xdg_activation_token_v1_listener save_token_listener = {
+    save_token_handle_done,
+};
+
+/***********************************************************************
+ *           wayland_refresh_activation_token
+ *
+ * Called with no lock held. Takes a fresh token from the compositor for the
+ * next activation, on user input.
+ */
+void wayland_refresh_activation_token(HWND hwnd)
+{
+    struct xdg_activation_token_v1 *token;
+    struct wayland_win_data *data;
+
+    if (!process_wayland.xdg_activation_v1) return;
+    if (!(data = wayland_win_data_get(hwnd))) return;
+
+    if (data->wayland_surface && wayland_surface_is_toplevel(data->wayland_surface) &&
+        (token = wayland_surface_create_token(data->wayland_surface, TRUE)))
+    {
+        xdg_activation_token_v1_add_listener(token, &save_token_listener, NULL);
+        xdg_activation_token_v1_commit(token);
+    }
+    wayland_win_data_release(data);
+}
+
+/***********************************************************************
+ *           wayland_surface_activate
+ *
+ * Called with the win_data lock held. Uses the saved process token once, or
+ * asks the compositor for a new one.
+ */
+void wayland_surface_activate(struct wayland_surface *surface)
+{
+    struct xdg_activation_token_v1 *token;
+    char *token_str;
+
+    if (!process_wayland.xdg_activation_v1) return;
+    if (!wayland_surface_is_toplevel(surface)) return;
+
+    if ((token_str = InterlockedExchangePointer((void **)&process_activate_token, NULL)))
+    {
+        xdg_activation_v1_activate(process_wayland.xdg_activation_v1, token_str, surface->wl_surface);
+        free(token_str);
+        return;
+    }
+
+    if (!(token = wayland_surface_create_token(surface, TRUE))) return;
     xdg_activation_token_v1_add_listener(token, &activate_listener, surface->hwnd);
     xdg_activation_token_v1_commit(token);
 }

@@ -34,14 +34,17 @@
 WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
 
 char *process_name = NULL;
+char *process_activate_token = NULL;
 
 static const struct user_driver_funcs waylanddrv_funcs =
 {
     .pClipboardWindowProc = WAYLAND_ClipboardWindowProc,
+    .pActivateWindow = WAYLAND_ActivateWindow,
     .pClipCursor = WAYLAND_ClipCursor,
     .pDesktopWindowProc = WAYLAND_DesktopWindowProc,
     .pDestroyWindow = WAYLAND_DestroyWindow,
     .pFlashWindowEx = WAYLAND_FlashWindowEx,
+    .pGetWindowStateUpdates = WAYLAND_GetWindowStateUpdates,
     .pSetIMECompositionRect = WAYLAND_SetIMECompositionRect,
     .pEnableIMEContext = WAYLAND_EnableIMEContext,
     .pKbdLayerDescriptor = WAYLAND_KbdLayerDescriptor,
@@ -100,6 +103,17 @@ static NTSTATUS waylanddrv_unix_init(void *arg)
     __wine_set_user_driver(&waylanddrv_funcs, WINE_GDI_DRIVER_VERSION);
 
     wayland_init_process_name();
+
+    /* the activation token of the launcher is used once, and not passed to child processes */
+    {
+        const char *token = getenv("XDG_ACTIVATION_TOKEN");
+
+        if (!token) token = getenv("DESKTOP_STARTUP_ID");
+        if (token) process_activate_token = strdup(token);
+        unsetenv("XDG_ACTIVATION_TOKEN");
+        unsetenv("DESKTOP_STARTUP_ID");
+        TRACE("activation token %s\n", debugstr_a(process_activate_token));
+    }
 
     if (!wayland_process_init()) goto err;
 

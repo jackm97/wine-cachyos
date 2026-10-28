@@ -499,6 +499,41 @@ struct wayland_output *wayland_output_for_rect(const RECT *window_rect)
 }
 
 /***********************************************************************
+ *           wayland_output_get_monitor_rect
+ *
+ * Gets the rect of an output in raw monitor pixels, as the output info
+ * array arranges them. Takes output_mutex itself and makes no NtUser call.
+ * Returns FALSE if the output is no longer in the output list.
+ */
+BOOL wayland_output_get_monitor_rect(struct wayland_output *output, RECT *rect)
+{
+    struct wl_array output_info_array;
+    struct output_info *output_info;
+    BOOL found = FALSE;
+
+    pthread_mutex_lock(&process_wayland.output_mutex);
+
+    wl_array_init(&output_info_array);
+    output_info_array_init(&output_info_array);
+
+    wl_array_for_each(output_info, &output_info_array)
+    {
+        if (CONTAINING_RECORD(output_info->output, struct wayland_output, current) != output) continue;
+        SetRect(rect, 0, 0,
+                output_info->output->current_mode->width,
+                output_info->output->current_mode->height);
+        OffsetRect(rect, output_info->x, output_info->y);
+        found = TRUE;
+        break;
+    }
+
+    wl_array_release(&output_info_array);
+    pthread_mutex_unlock(&process_wayland.output_mutex);
+
+    return found;
+}
+
+/***********************************************************************
  *      UpdateDisplayDevices (WAYLAND.@)
  */
 UINT WAYLAND_UpdateDisplayDevices(const struct gdi_device_manager *device_manager, void *param)

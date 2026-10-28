@@ -68,6 +68,7 @@ struct xkb_compose_table;
  */
 
 extern char *process_name;
+extern char *process_activate_token;
 extern struct wayland process_wayland;
 
 /**********************************************************************
@@ -78,7 +79,6 @@ enum wayland_window_message
 {
     WM_WAYLAND_INIT_DISPLAY_DEVICES = WM_WINE_FIRST_DRIVER_MSG,
     WM_WAYLAND_CONFIGURE,
-    WM_WAYLAND_SET_FOREGROUND,
     WM_WAYLAND_ACTIVATE_FOREIGN,
     WM_WAYLAND_FOREIGN_PARENT_CHANGED,
     WM_WAYLAND_EXPOSE_SURFACE,
@@ -332,6 +332,12 @@ struct wayland_shm_buffer
     HRGN damage_region;
 };
 
+struct surface_output_entry
+{
+    struct wl_list entry;
+    struct wayland_output *output;
+};
+
 struct wayland_surface
 {
     HWND hwnd;
@@ -379,6 +385,10 @@ struct wayland_surface
     enum wayland_surface_ensure_type ensured_contents;
     BOOL expose_posted; /* a WM_WAYLAND_EXPOSE_SURFACE is in flight */
     struct wayland_window_config window;
+    /* the minimized and state values last sent to the compositor */
+    struct wayland_window_config committed;
+    /* outputs the wl_surface is on, most recently entered first */
+    struct wl_list output_list;
     int content_width, content_height;
     HCURSOR hcursor;
 };
@@ -399,6 +409,7 @@ void wayland_output_release(struct wayland_output *output);
 void wayland_output_remove(struct wayland_output *output);
 void wayland_output_use_xdg_extension(struct wayland_output *output);
 struct wayland_output *wayland_output_for_rect(const RECT *rect);
+BOOL wayland_output_get_monitor_rect(struct wayland_output *output, RECT *rect);
 
 /**********************************************************************
  *          Wayland surface
@@ -437,6 +448,8 @@ void wayland_surface_assign_icon(struct wayland_surface *surface);
 void wayland_surface_set_icon_buffer(struct wayland_surface *surface, UINT type, const ICONINFO *ii);
 void wayland_surface_set_opacity(struct wayland_surface *surface, BYTE alpha, UINT flags);
 void wayland_surface_flash_window(struct wayland_surface *surface);
+void wayland_surface_activate(struct wayland_surface *surface);
+void wayland_refresh_activation_token(HWND hwnd);
 void wayland_client_surface_update_offscreen(struct wayland_client_surface *surface);
 void wayland_gl_client_surface_destroy(struct wayland_client_surface *surface);
 
@@ -512,6 +525,7 @@ void wayland_window_init(void);
 
 void wayland_keyboard_init(struct wl_keyboard *wl_keyboard);
 void wayland_keyboard_deinit(void);
+HWND wayland_keyboard_get_focused_hwnd(void);
 const KBDTABLES *WAYLAND_KbdLayerDescriptor(HKL hkl);
 void WAYLAND_ReleaseKbdTables(const KBDTABLES *);
 void activate_keyboard_hkl(HWND hwnd, BOOL ime);
@@ -573,6 +587,8 @@ BOOL WAYLAND_ClipCursor(const RECT *clip, BOOL reset);
 LRESULT WAYLAND_DesktopWindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 void WAYLAND_DestroyWindow(HWND hwnd);
 void WAYLAND_FlashWindowEx(FLASHWINFO *info);
+BOOL WAYLAND_GetWindowStateUpdates(HWND hwnd, UINT *state_cmd, UINT *swp_flags, RECT *rect, HWND *foreground);
+void WAYLAND_ActivateWindow(HWND hwnd, HWND previous);
 BOOL WAYLAND_SetIMECompositionRect(HWND hwnd, RECT rect);
 void WAYLAND_EnableIMEContext(HWND hwnd, BOOL enabled);
 void WAYLAND_SetCursor(HWND hwnd, HCURSOR hcursor);
