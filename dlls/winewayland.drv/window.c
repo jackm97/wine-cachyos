@@ -420,6 +420,8 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     switch (role)
     {
     case WAYLAND_SURFACE_ROLE_NONE:
+        /* owned popups go first: destroying the parent xdg_surface under a live popup is a protocol error */
+        if (surface->xdg_surface) wayland_surface_reparent_popups(surface);
         wayland_surface_clear_role(surface);
         break;
     case WAYLAND_SURFACE_ROLE_POPUP:

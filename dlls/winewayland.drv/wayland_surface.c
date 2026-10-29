@@ -793,7 +793,8 @@ static void xdg_popup_handle_done(void *private, struct xdg_popup *xdg_popup)
     if (!wayland_surface_is_popup(surface)) goto done;
     if (surface->xdg_popup != xdg_popup) goto done;
 
-    /* the protocol requires us to destroy the xdg_popup */
+    /* the protocol requires us to destroy the xdg_popup, after the popups it owns */
+    wayland_surface_reparent_popups(surface);
     wayland_surface_clear_role(surface);
 
     /* win_data_mutex is recursive, so taking the owner's data while holding ours is fine */
@@ -1325,6 +1326,8 @@ void wayland_surface_make_popup(struct wayland_surface *surface,
         return;
     }
 
+    /* owned popups go first: destroying the parent xdg_surface under a live popup is a protocol error */
+    if (surface->xdg_surface) wayland_surface_reparent_popups(surface);
     wayland_surface_clear_role(surface);
     surface->role = WAYLAND_SURFACE_ROLE_POPUP;
 
