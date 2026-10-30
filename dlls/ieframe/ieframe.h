@@ -322,6 +322,7 @@ HRESULT get_typeinfo(tid_t,ITypeInfo**);
 
 HRESULT WINAPI CUrlHistory_Create(IClassFactory*,IUnknown*,REFIID,void**);
 HRESULT WINAPI InternetExplorer_Create(IClassFactory*,IUnknown*,REFIID,void**);
+HRESULT WINAPI InternetFolder_Create(IClassFactory*,IUnknown*,REFIID,void**);
 HRESULT WINAPI InternetShortcut_Create(IClassFactory*,IUnknown*,REFIID,void**);
 HRESULT WINAPI WebBrowser_Create(IClassFactory*,IUnknown*,REFIID,void**);
 HRESULT WINAPI WebBrowserV1_Create(IClassFactory*,IUnknown*,REFIID,void**);

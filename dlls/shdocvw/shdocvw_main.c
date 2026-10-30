@@ -30,6 +30,8 @@
 #include "winreg.h"
 #include "wininet.h"
 #include "isguids.h"
+#include "shlobj.h"
+#include "shlguid.h"
 
 #include "initguid.h"
 
@@ -296,9 +298,40 @@ DWORD WINAPI StopWatchWFORWARD(DWORD dwClass, LPCWSTR lpszStr, DWORD dwUnknown,
  */
 HRESULT WINAPI IEParseDisplayNameWithBCW(DWORD codepage, LPCWSTR lpszDisplayName, LPBC pbc, LPITEMIDLIST *ppidl)
 {
-    /* Guessing at parameter 3 based on IShellFolder's  ParseDisplayName */
-    FIXME("stub: 0x%lx %s %p %p\n",codepage,debugstr_w(lpszDisplayName),pbc,ppidl);
-    return E_FAIL;
+    LPITEMIDLIST internet, child;
+    IClassFactory *factory;
+    IShellFolder *folder;
+    HRESULT hr;
+
+    TRACE("(0x%lx %s %p %p)\n", codepage, debugstr_w(lpszDisplayName), pbc, ppidl);
+
+    if(!ppidl)
+        return E_INVALIDARG;
+    *ppidl = NULL;
+
+    hr = get_ieframe_object(&CLSID_Internet, &IID_IClassFactory, (void**)&factory);
+    if(FAILED(hr))
+        return E_FAIL;
+
+    hr = IClassFactory_CreateInstance(factory, NULL, &IID_IShellFolder, (void**)&folder);
+    IClassFactory_Release(factory);
+    if(FAILED(hr))
+        return E_FAIL;
+
+    hr = IShellFolder_ParseDisplayName(folder, NULL, pbc, (LPWSTR)lpszDisplayName, NULL, &child, NULL);
+    IShellFolder_Release(folder);
+    if(FAILED(hr))
+        return E_FAIL;
+
+    hr = SHGetFolderLocation(NULL, CSIDL_INTERNET, NULL, 0, &internet);
+    if(SUCCEEDED(hr)) {
+        *ppidl = ILCombine(internet, child);
+        if(!*ppidl)
+            hr = E_OUTOFMEMORY;
+        ILFree(internet);
+    }
+    ILFree(child);
+    return hr;
 }
 
 /******************************************************************

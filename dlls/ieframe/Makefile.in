@@ -15,6 +15,7 @@ SOURCES = \
 	iehtmlwnd.c \
 	ietoolbar.svg \
 	iexplore.c \
+	internet.c \
 	intshcut.c \
 	navigate.c \
 	oleobject.c \
