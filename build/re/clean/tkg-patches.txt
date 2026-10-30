@@ -1,0 +1,2 @@
+[1;34m=>[1;0m [1;1mReverting your own plain-wine patch /tmp/clean/tkg/wine-tkg-git/0001-Revert-opencl-HACK-Build-a-stub-dll-if-Unix-headers-are-missing-11.myrevert[1;0m
+[1;34m=>[1;0m [1;1mApplying your own plain-wine patch /tmp/clean/tkg/wine-tkg-git/0001-Revert-winedmo-Handle-PCM-audio-big-endian-formats.mypatch[1;0m

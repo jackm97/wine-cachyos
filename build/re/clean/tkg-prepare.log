@@ -1,0 +1,142 @@
+The environment has 60 packages:
+Package           Version       Build                 Size
+_openmp_mutex     4.5           20_gnu                28.3 KiB
+autoconf          2.72          pl5321hbb4ee43_1      633.2 KiB
+automake          1.19          hfc2019e_0            624.7 KiB
+bash              5.3           hc8f965d_0            2 MiB
+bzip2             1.0.8         hda65f42_10           251.8 KiB
+c-ares            1.34.9        hebe6cf0_0            228.3 KiB
+ca-certificates   2026.10.23    hbd8a1cb_0            127 KiB
+coreutils         9.12          hebe6cf0_0            3.3 MiB
+curl              8.23.0        ha042cf0_0            193 KiB
+diffutils         3.12          h73b1eb8_0            388.1 KiB
+file              5.48          hd479b6e_1            36.2 KiB
+findutils         4.10.0        h86094a7_1            534.1 KiB
+gawk              5.4.1         h0a3468a_0            1.5 MiB
+git               2.56.0        pl5440h3795e67_0      11.4 MiB
+gmp               6.3.0         hfd2156b_3            481.9 KiB
+grep              3.12          h09507ce_2            278.4 KiB
+icu               79.1          py314hb486520_0       13.9 MiB
+keyutils          1.6.3         h7cc23a3_1            132.1 KiB
+krb5              1.22.2        hbc21106_2            1.3 MiB
+ld_impl_linux-64  2.46.1        default_hbd61a6d_103  724.7 KiB
+libasprintf       0.25.1        h0e23cf9_2            52.2 KiB
+libcurl           8.23.0        ha042cf0_0            493.8 KiB
+libedit           3.1.20260512  pl5321h373387f_0      132.7 KiB
+libev             4.33          h280c20c_3            42.2 KiB
+libexpat          2.9.0         hd2095e1_0            77 KiB
+libffi            3.7.0         h81df57d_1            66.4 KiB
+libgcc            16.2.0        ha9f2e26_7            1 MiB
+libgettextpo      0.25.1        h0e23cf9_2            182.6 KiB
+libgomp           16.2.0        he0feb66_7            625.6 KiB
+libiconv          1.18          h0cb94f2_3            771 KiB
+libltdl           2.4.3a        h5888daf_0            37.6 KiB
+liblzma           5.8.3         hb03c661_1            110.3 KiB
+libmagic          5.48          h421ea60_1            462.8 KiB
+libmpdec          4.0.0         hb03c661_2            90.6 KiB
+libnghttp2        1.70.0        hc5e5977_0            813.4 KiB
+libpsl            0.23.1        h7fe8442_2            70.9 KiB
+libsqlite         3.54.1        hf739112_1            961.9 KiB
+libssh2           1.11.1        h6154650_1            298.9 KiB
+libstdcxx         16.2.0        h934c35e_7            6.3 MiB
+libtool           2.5.4         h5888daf_0            405.3 KiB
+libuuid           2.42.4        hcfc3c73_0            33.6 KiB
+libxcrypt         4.4.38        h280c20c_0            99.6 KiB
+libzlib           1.3.2         h25fd6f3_3            62.2 KiB
+m4                1.4.21        hb03c661_0            283.8 KiB
+make              4.4.1         h1114479_4            540.4 KiB
+mpfr              4.2.2         ha2cb11d_1            713.3 KiB
+ncurses           6.6           hdb14827_1            889.8 KiB
+openssl           3.6.5         h781a0a9_0            3 MiB
+patch             2.8           h280c20c_1003         107.7 KiB
+pcre2             10.47         h8b3dc9c_1            1.2 MiB
+perl              5.44.0        1_h7cc23a3_perl5      10.9 MiB
+pkg-config        0.29.2        h1114479_1013         138.1 KiB
+python            3.15.2        h6e52b48_100_cp315    28 MiB
+python_abi        3.15          9_cp315               6.6 KiB
+readline          8.3           hd6e31c0_1            340.7 KiB
+sed               4.10          h19d0853_0            262.2 KiB
+tk                8.6.13        noxft_h1df4ec4_4      3.4 MiB
+tzdata            2026e         h5d301ff_0            116.4 KiB
+which             2.25          h171cf75_0            37.7 KiB
+zstd              1.5.7         hb78ec9c_7            587.2 KiB
+Your branch is up to date with 'origin/experimental_11.0'.
+include/wine/server_protocol.h updated
+include/wine/server_protocol.h updated
+server/request_trace.h updated
+server/request_handlers.h updated
+dlls/ntdll/ntsyscalls.h updated
+dlls/win32u/win32syscalls.h updated
+
+--- stderr ---
+ [1;34m=>[1;0m [1;1mNon-makepkg build script will be used.
+[1;0m
+ [1;34m=>[1;0m [1;1m       .---.`               `.---.[1;0m
+ [1;34m=>[1;0m [1;1m    `/syhhhyso-           -osyhhhys/`[1;0m
+ [1;34m=>[1;0m [1;1m   .syNMdhNNhss/``.---.``/sshNNhdMNys.[1;0m
+ [1;34m=>[1;0m [1;1m   +sdMh.`+MNsssssssssssssssNM+`.hMds+[1;0m
+ [1;34m=>[1;0m [1;1m   :syNNdhNNhssssssssssssssshNNhdNNys:[1;0m
+ [1;34m=>[1;0m [1;1m    /ssyhhhysssssssssssssssssyhhhyss/[1;0m
+ [1;34m=>[1;0m [1;1m    .ossssssssssssssssssssssssssssso.[1;0m
+ [1;34m=>[1;0m [1;1m   :sssssssssssssssssssssssssssssssss:[1;0m
+ [1;34m=>[1;0m [1;1m  /sssssssssssssssssssssssssssssssssss/[1;0m
+ [1;34m=>[1;0m [1;1m :sssssssssssssoosssssssoosssssssssssss:[1;0m
+ [1;34m=>[1;0m [1;1m osssssssssssssoosssssssoossssssssssssso[1;0m
+ [1;34m=>[1;0m [1;1m osssssssssssyyyyhhhhhhhyyyyssssssssssso[1;0m
+ [1;34m=>[1;0m [1;1m /yyyyyyhhdmmmmNNNNNNNNNNNmmmmdhhyyyyyy/[1;0m
+ [1;34m=>[1;0m [1;1m  smmmNNNNNNNNNNNNNNNNNNNNNNNNNNNNNmmms[1;0m
+ [1;34m=>[1;0m [1;1m   /dNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNd/[1;0m
+ [1;34m=>[1;0m [1;1m    `:sdNNNNNNNNNNNNNNNNNNNNNNNNNds:`[1;0m
+ [1;34m=>[1;0m [1;1m       `-+shdNNNNNNNNNNNNNNNdhs+-`[1;0m
+ [1;34m=>[1;0m [1;1m             `.-:///////:-.`[1;0m
+ [1;34m=>[1;0m [1;1m[1;0m
+ [1;34m=>[1;0m [1;1mExternal configuration file /tmp/clean/home/.config/frogminer/wine-tkg.cfg will be used to override customization.cfg values.[1;0m
+ [1;34m=>[1;0m [1;1m[1;0m
+ [1;34m=>[1;0m [1;1mInitial prompt skipped. Do you remember what it said? 8)[1;0m
+ [1;34m=>[1;0m [1;1mPreset configuration valve-exp-bleeding will be used to override customization.cfg values.[1;0m
+ [1;34m=>[1;0m [1;1m[1;0m
+ [1;34m=>[1;0m [1;1mOverriding default pkgname. New pkgname: wine-tkg-valve-exp-bleeding[1;0m
+ [1;34m=>[1;0m [1;1mCloning and preparing sources... Please be patient.[1;0m
+Cloning into '/tmp/clean/tkg/wine-tkg-git/src/wine-staging-git'...
+done.
+Switched to a new branch 'makepkg'
+Cloning into '/tmp/clean/tkg/wine-tkg-git/src/ValveSoftware-winegit'...
+done.
+Updating files:  85% (9559/11156)Updating files:  86% (9595/11156)Updating files:  87% (9706/11156)Updating files:  88% (9818/11156)Updating files:  89% (9929/11156)Updating files:  90% (10041/11156)Updating files:  91% (10152/11156)Updating files:  92% (10264/11156)Updating files:  93% (10376/11156)Updating files:  94% (10487/11156)Updating files:  95% (10599/11156)Updating files:  96% (10710/11156)Updating files:  97% (10822/11156)Updating files:  98% (10933/11156)Updating files:  99% (11045/11156)Updating files: 100% (11156/11156)Updating files: 100% (11156/11156), done.
+Switched to a new branch 'makepkg'
+HEAD is now at 0509a0b64a4 fixup! wmadmod: Create the decoder without using COM.
+ [1;34m=>[1;0m [1;1mCleaning wine source code tree...[1;0m
+ [1;33m==> WARNING: Disabling any known to be broken (or already patched in) community patch on valve proton tree[1;0m
+fatal: Not a valid commit name 86091d3b1f5068693e1720ae1c301d2916dc975f
+fatal: Not a valid commit name 215d78f8e18bced54b97b39fcf71ebbb2a3ab13c
+fatal: Not a valid commit name d9eb78e597833fcafeb3d957a3b7dd6fc3afaa0e
+ [1;33m==> WARNING: No de-steamify patch for this version... Yet[1;0m
+ [1;34m=>[1;0m [1;1mcherry picking...[1;0m
+ [1;34m=>[1;0m [1;1mHotfixing...[1;0m
+ [1;34m=>[1;0m [1;1m######################################################[1;0m
+ [1;34m=>[1;0m [1;1m[1;0m
+ [1;34m=>[1;0m [1;1mReverting your own plain-wine patch /tmp/clean/tkg/wine-tkg-git/0001-Revert-opencl-HACK-Build-a-stub-dll-if-Unix-headers-are-missing-11.myrevert[1;0m
+ [1;34m=>[1;0m [1;1m[1;0m
+ [1;34m=>[1;0m [1;1m######################################################[1;0m
+ [1;34m=>[1;0m [1;1m######################################################[1;0m
+ [1;34m=>[1;0m [1;1m[1;0m
+ [1;34m=>[1;0m [1;1mApplying your own plain-wine patch /tmp/clean/tkg/wine-tkg-git/0001-Revert-winedmo-Handle-PCM-audio-big-endian-formats.mypatch[1;0m
+ [1;34m=>[1;0m [1;1m[1;0m
+ [1;34m=>[1;0m [1;1m######################################################[1;0m
+autoreconf: export WARNINGS=
+autoreconf: Entering directory '.'
+autoreconf: configure.ac: not using Gettext
+autoreconf: configure.ac: not using aclocal
+autoreconf: configure.ac: tracing
+autoreconf: configure.ac: not using Libtool
+autoreconf: configure.ac: not using Intltool
+autoreconf: configure.ac: not using Gtkdoc
+autoreconf: running: /tmp/clean/home/.cache/rattler/cache/cached-envs-v0/d30ecc56a1e2568e/bin/autoconf --force
+autoreconf: running: /tmp/clean/home/.cache/rattler/cache/cached-envs-v0/d30ecc56a1e2568e/bin/autoheader --force
+autoreconf: configure.ac: not using Automake
+autoreconf: Leaving directory '.'
+ [1;34m=>[1;0m [1;1mRemoved BIG_UGLY_FROGMINER - Ribbit[1;0m
+ [1;34m=>[1;0m [1;1mRemoved Proton-tkg token - Valve Ribbit[1;0m
+ [1;34m=>[1;0m [1;1mexit cleanup done[1;0m
+
+--- exit 0 ---
