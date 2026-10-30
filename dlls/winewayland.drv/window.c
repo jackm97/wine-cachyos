@@ -72,6 +72,7 @@ static struct wayland_win_data *wayland_win_data_create(HWND hwnd, const struct 
 
     data->hwnd = hwnd;
     data->rects = *rects;
+    wl_list_init(&data->overlays);
 
     pthread_mutex_lock(&win_data_mutex);
 
@@ -100,6 +101,7 @@ static void wayland_win_data_destroy(struct wayland_win_data *data)
 
     pthread_mutex_unlock(&win_data_mutex);
 
+    wayland_destroy_overlays(data);
     if (data->wayland_surface) wayland_surface_destroy(data->wayland_surface);
     if (data->window_contents) wayland_shm_buffer_unref(data->window_contents);
     free(data);
@@ -218,6 +220,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     if ((surface = data->wayland_surface) && role && surface->role && surface->role != role)
     {
         if (client) wayland_client_surface_attach(client, NULL);
+        wayland_destroy_overlays(data);
         wayland_surface_destroy(data->wayland_surface);
         data->wayland_surface = NULL;
     }
@@ -442,12 +445,20 @@ static BOOL is_window_managed(HWND hwnd, UINT swp_flags, BOOL fullscreen)
  */
 void WAYLAND_DestroyWindow(HWND hwnd)
 {
+    HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
     struct wayland_win_data *data;
+    BOOL restack;
 
     TRACE("%p\n", hwnd);
 
     if (!(data = wayland_win_data_get(hwnd))) return;
     wayland_win_data_destroy(data);
+
+    /* drop the overlay a destroyed child may have */
+    if (!toplevel || toplevel == hwnd || !(data = wayland_win_data_get(toplevel))) return;
+    if ((restack = !wl_list_empty(&data->overlays))) data->restack_pending = TRUE;
+    wayland_win_data_release(data);
+    if (restack) wayland_restack_client_surfaces(toplevel);
 }
 
 /***********************************************************************
@@ -511,6 +522,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
 
         if (data->wayland_surface)
         {
+            wayland_destroy_overlays(data);
             wayland_surface_destroy(data->wayland_surface);
             data->wayland_surface = NULL;
         }
@@ -871,6 +883,7 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
     {
         if (wayland_surface_reconfigure(wayland_surface))
         {
+            wayland_update_overlays(data, shm_buffer, damage_region);
             wayland_surface_attach_shm(wayland_surface, shm_buffer, damage_region);
             wl_surface_commit(wayland_surface->wl_surface);
             committed = TRUE;

@@ -391,11 +391,16 @@ struct wayland_win_data
     BOOL layered_attribs_set;
     /* the client surfaces and popups of this toplevel need restacking */
     BOOL restack_pending;
+    /* surfaces showing child windows above the client surfaces of this toplevel */
+    struct wl_list overlays;
 };
 
 struct wayland_win_data *wayland_win_data_get(HWND hwnd);
 struct wayland_win_data *wayland_win_data_get_nolock(HWND hwnd);
 void wayland_win_data_release(struct wayland_win_data *data);
+void wayland_destroy_overlays(struct wayland_win_data *data);
+void wayland_update_overlays(struct wayland_win_data *data, struct wayland_shm_buffer *contents,
+                             HRGN damage_region);
 
 struct wayland_client_surface *get_client_surface(HWND hwnd);
 void set_client_surface(HWND hwnd, struct wayland_client_surface *client);
