@@ -70,6 +70,7 @@ enum wayland_window_message
     WM_WAYLAND_CONFIGURE,
     WM_WAYLAND_SET_FOREGROUND,
     WM_WAYLAND_ACTIVATE_FOREIGN,
+    WM_WAYLAND_FOREIGN_PARENT_CHANGED,
 };
 
 enum wayland_surface_config_state
@@ -327,6 +328,7 @@ void wayland_surface_destroy(struct wayland_surface *surface);
 void wayland_surface_make_toplevel(struct wayland_surface *surface);
 void wayland_surface_update_foreign_parent(struct wayland_surface *surface);
 void wayland_activate_foreign_child(HWND hwnd, uint32_t serial);
+void wayland_forget_foreign_child(HWND hwnd);
 void wayland_surface_activate_from_token(HWND hwnd);
 void wayland_surface_make_subsurface(struct wayland_surface *surface,
                                      struct wayland_surface *parent);

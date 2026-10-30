@@ -451,6 +451,7 @@ void WAYLAND_DestroyWindow(HWND hwnd)
 
     TRACE("%p\n", hwnd);
 
+    wayland_forget_foreign_child(hwnd);
     if (!(data = wayland_win_data_get(hwnd))) return;
     wayland_win_data_destroy(data);
 
@@ -679,10 +680,36 @@ static void wayland_configure_window(HWND hwnd)
 /**********************************************************************
  *           WAYLAND_WindowMessage
  */
+/* The parent of a child of another process has been hidden, destroyed or shown
+ * again, which the process of the child only sees through a new window
+ * position; a shown parent is then imported again. Called in the process of
+ * the child with no other window, or in the process of the parent with the
+ * child, whose own thread then gets the new position. */
+static void wayland_refresh_foreign_child(HWND hwnd, HWND child)
+{
+    struct wayland_win_data *data;
+    UINT flags = SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE |
+                 SWP_NOOWNERZORDER | SWP_FRAMECHANGED;
+
+    TRACE("hwnd %p child %p\n", hwnd, child);
+    if (child)
+    {
+        NtUserSetWindowPos(child, 0, 0, 0, 0, 0, flags | SWP_ASYNCWINDOWPOS);
+        return;
+    }
+    NtUserSetWindowPos(hwnd, 0, 0, 0, 0, 0, flags);
+    if (!(data = wayland_win_data_get(hwnd))) return;
+    if (data->wayland_surface) wayland_surface_update_foreign_parent(data->wayland_surface);
+    wayland_win_data_release(data);
+}
+
 LRESULT WAYLAND_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg)
     {
+    case WM_WAYLAND_FOREIGN_PARENT_CHANGED:
+        wayland_refresh_foreign_child(hwnd, (HWND)wp);
+        return 0;
     case WM_WAYLAND_INIT_DISPLAY_DEVICES:
         NtUserCallNoParam(NtUserCallNoParam_DisplayModeChanged);
         return 0;

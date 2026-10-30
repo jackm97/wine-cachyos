@@ -216,6 +216,7 @@ static void xdg_exported_v2_handle_handle(void *private,
     WCHAR handleW[MAX_ATOM_LEN + 1];
     RTL_ATOM atom, old_atom;
     size_t i, len = strlen(handle);
+    HWND child;
 
     if (surface->zxdg_exported_v2 != exported || len > MAX_ATOM_LEN) return;
 
@@ -234,6 +235,14 @@ static void xdg_exported_v2_handle_handle(void *private,
     if (old_atom) NtDeleteAtom(old_atom);
     surface->exported_handle_atom = atom;
     TRACE("exported hwnd=%p handle=%s\n", surface->hwnd, handle);
+    /* a child window of another process waits for this parent to be shown
+     * again; driver messages cannot be posted to another process, so the
+     * parent's thread tells the child */
+    if ((child = NtUserGetProp(surface->hwnd, xdg_foreign_child_prop)))
+    {
+        TRACE("foreign child %p\n", child);
+        NtUserPostMessage(surface->hwnd, WM_WAYLAND_FOREIGN_PARENT_CHANGED, (WPARAM)child, 0);
+    }
 }
 
 static const struct zxdg_exported_v2_listener xdg_exported_v2_listener =
@@ -247,14 +256,13 @@ static void xdg_imported_v2_handle_destroyed(void *private,
     struct wayland_surface *surface = private;
 
     if (surface->zxdg_imported_v2 != imported) return;
-    if (surface->foreign_parent_hwnd &&
-        NtUserGetProp(surface->foreign_parent_hwnd, xdg_foreign_child_prop) == surface->hwnd)
-        NtUserRemoveProp(surface->foreign_parent_hwnd, xdg_foreign_child_prop);
     zxdg_imported_v2_destroy(imported);
     surface->zxdg_imported_v2 = NULL;
     surface->imported_handle_atom = 0;
     surface->foreign_parent_hwnd = 0;
     surface->foreign_activation_pending = FALSE;
+    /* the parent has been hidden or destroyed, which hides this window too */
+    NtUserPostMessage(surface->hwnd, WM_WAYLAND_FOREIGN_PARENT_CHANGED, 0, 0);
 }
 
 static const struct zxdg_imported_v2_listener xdg_imported_v2_listener =
@@ -297,6 +305,16 @@ void wayland_surface_update_foreign_parent(struct wayland_surface *surface)
     wl_display_flush(process_wayland.wl_display);
     TRACE("imported parent hwnd=%p for hwnd=%p handle=%s\n",
           parent, surface->hwnd, handle);
+}
+
+/* The parent keeps its child of another process while the child surface comes
+ * and goes with the parent's visibility, until the child window is destroyed. */
+void wayland_forget_foreign_child(HWND hwnd)
+{
+    HWND root = NtUserGetAncestor(hwnd, GA_ROOT);
+
+    if (root && root != hwnd && NtUserGetProp(root, xdg_foreign_child_prop) == hwnd)
+        NtUserRemoveProp(root, xdg_foreign_child_prop);
 }
 
 static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_surface,
@@ -618,9 +636,6 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
 
     if (surface->zxdg_imported_v2)
     {
-        if (surface->foreign_parent_hwnd &&
-            NtUserGetProp(surface->foreign_parent_hwnd, xdg_foreign_child_prop) == surface->hwnd)
-            NtUserRemoveProp(surface->foreign_parent_hwnd, xdg_foreign_child_prop);
         zxdg_imported_v2_destroy(surface->zxdg_imported_v2);
         surface->zxdg_imported_v2 = NULL;
         surface->imported_handle_atom = 0;
