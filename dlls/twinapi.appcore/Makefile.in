@@ -8,4 +8,6 @@ SOURCES = \
 	application_view.c \
 	classes.idl \
 	client_device_information.c \
-	main.c
+	main.c \
+	retail_info.c \
+	winrt_factory.c

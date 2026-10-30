@@ -63,21 +63,28 @@ HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID riid, void **out )
 
 HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **factory )
 {
+    static IActivationFactory **factories[] =
+    {
+        &client_device_information_factory,
+        &analytics_info_factory,
+        &advertising_manager_factory,
+        &application_view_factory,
+        &retail_info_factory,
+    };
     const WCHAR *buffer = WindowsGetStringRawBuffer( classid, NULL );
+    struct winrt_factory *impl;
+    unsigned int i;
 
     TRACE( "class %s, factory %p.\n", debugstr_hstring(classid), factory );
 
     *factory = NULL;
 
-    if (!wcscmp( buffer, RuntimeClass_Windows_Security_ExchangeActiveSyncProvisioning_EasClientDeviceInformation ))
-        IActivationFactory_QueryInterface( client_device_information_factory, &IID_IActivationFactory, (void **)factory );
-    else if (!wcscmp( buffer, RuntimeClass_Windows_System_Profile_AnalyticsInfo ))
-        IActivationFactory_QueryInterface( analytics_info_factory, &IID_IActivationFactory, (void **)factory );
-    else if (!wcscmp( buffer, RuntimeClass_Windows_System_UserProfile_AdvertisingManager ))
-        IActivationFactory_QueryInterface( advertising_manager_factory, &IID_IActivationFactory, (void **)factory );
-    else if (!wcscmp( buffer, RuntimeClass_Windows_UI_ViewManagement_ApplicationView ))
-        IActivationFactory_QueryInterface( application_view_factory, &IID_IActivationFactory, (void **)factory );
-
-    if (*factory) return S_OK;
+    for (i = 0; i < ARRAY_SIZE(factories); ++i)
+    {
+        impl = CONTAINING_RECORD( *factories[i], struct winrt_factory, IActivationFactory_iface );
+        if (wcscmp( buffer, impl->class_name )) continue;
+        IActivationFactory_AddRef( *factory = *factories[i] );
+        return S_OK;
+    }
     return CLASS_E_CLASSNOTAVAILABLE;
 }

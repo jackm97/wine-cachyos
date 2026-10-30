@@ -141,76 +141,11 @@ static IEasClientDeviceInformationVtbl client_device_information_vtbl =
     client_device_information_get_SystemSku,
 };
 
-struct factory
-{
-    IActivationFactory IActivationFactory_iface;
-    LONG ref;
-};
-
-static inline struct factory *impl_from_IActivationFactory( IActivationFactory *iface )
-{
-    return CONTAINING_RECORD( iface, struct factory, IActivationFactory_iface );
-}
-
-static HRESULT WINAPI factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out )
-{
-    struct factory *impl = impl_from_IActivationFactory( iface );
-
-    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
-
-    if (IsEqualGUID( iid, &IID_IUnknown ) ||
-        IsEqualGUID( iid, &IID_IInspectable ) ||
-        IsEqualGUID( iid, &IID_IActivationFactory ))
-    {
-        *out = &impl->IActivationFactory_iface;
-        IInspectable_AddRef( *out );
-        return S_OK;
-    }
-
-    FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
-    *out = NULL;
-    return E_NOINTERFACE;
-}
-
-static ULONG WINAPI factory_AddRef( IActivationFactory *iface )
-{
-    struct factory *impl = impl_from_IActivationFactory( iface );
-    ULONG ref = InterlockedIncrement( &impl->ref );
-    TRACE( "iface %p increasing refcount to %lu.\n", iface, ref );
-    return ref;
-}
-
-static ULONG WINAPI factory_Release( IActivationFactory *iface )
-{
-    struct factory *impl = impl_from_IActivationFactory( iface );
-    ULONG ref = InterlockedDecrement( &impl->ref );
-    TRACE( "iface %p decreasing refcount to %lu.\n", iface, ref );
-    return ref;
-}
-
-static HRESULT WINAPI factory_GetIids( IActivationFactory *iface, ULONG *iid_count, IID **iids )
-{
-    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
-    return E_NOTIMPL;
-}
-
-static HRESULT WINAPI factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name )
-{
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
-}
-
-static HRESULT WINAPI factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *trust_level )
-{
-    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
-    return E_NOTIMPL;
-}
-
-static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInspectable **instance )
+static HRESULT create_client_device_information( IInspectable **instance )
 {
     struct client_device_information *impl;
 
-    TRACE( "iface %p, instance %p\n", iface, instance );
+    TRACE( "instance %p.\n", instance );
 
     if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
     impl->IEasClientDeviceInformation_iface.lpVtbl = &client_device_information_vtbl;
@@ -218,25 +153,17 @@ static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInsp
 
     *instance = (IInspectable *)&impl->IEasClientDeviceInformation_iface;
     return S_OK;
-}
-
-static const struct IActivationFactoryVtbl factory_vtbl =
-{
-    factory_QueryInterface,
-    factory_AddRef,
-    factory_Release,
-    /* IInspectable methods */
-    factory_GetIids,
-    factory_GetRuntimeClassName,
-    factory_GetTrustLevel,
-    /* IActivationFactory methods */
-    factory_ActivateInstance,
 };
 
-static struct factory factory =
+static struct winrt_factory factory =
 {
-    {&factory_vtbl},
+    {&winrt_factory_vtbl},
     1,
+    RuntimeClass_Windows_Security_ExchangeActiveSyncProvisioning_EasClientDeviceInformation,
+    NULL,
+    0,
+    FALSE,
+    create_client_device_information,
 };
 
 IActivationFactory *client_device_information_factory = &factory.IActivationFactory_iface;

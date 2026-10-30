@@ -195,6 +195,79 @@ static void test_AnalyticsVersionInfo(void)
     ok( ref == 1, "got ref %ld.\n", ref );
 }
 
+static void test_RetailInfo(void)
+{
+    static const WCHAR *class_name = RuntimeClass_Windows_System_Profile_RetailInfo;
+    IMapView_HSTRING_IInspectable *properties;
+    IRetailInfoStatics *retail_info_statics;
+    IActivationFactory *factory;
+    TrustLevel trust_level;
+    HSTRING str, factory_name;
+    boolean enabled;
+    UINT32 size;
+    HRESULT hr;
+    ULONG iid_count, ref;
+    IID *iids;
+    INT32 res;
+
+    hr = WindowsCreateString( class_name, wcslen(class_name), &str );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+
+    hr = RoGetActivationFactory( str, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( str );
+    ok( hr == S_OK || broken( hr == REGDB_E_CLASSNOTREG ), "got hr %#lx.\n", hr );
+    if (hr == REGDB_E_CLASSNOTREG)
+    {
+        win_skip( "%s runtimeclass not registered, skipping tests.\n", wine_dbgstr_w(class_name) );
+        return;
+    }
+
+    check_interface( factory, &IID_IUnknown, TRUE );
+    check_interface( factory, &IID_IInspectable, TRUE );
+    check_interface( factory, &IID_IAgileObject, TRUE );
+    check_interface( factory, &IID_IRetailInfoStatics, TRUE );
+
+    hr = IActivationFactory_GetIids( factory, &iid_count, &iids );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( iid_count == 1, "got iid_count %lu.\n", iid_count );
+    if (iid_count == 1) ok( IsEqualGUID( iids, &IID_IRetailInfoStatics ), "got unexpected iid %s.\n", debugstr_guid(iids) );
+    CoTaskMemFree( iids );
+
+    hr = IActivationFactory_GetRuntimeClassName( factory, &factory_name );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = WindowsCreateString( class_name, wcslen(class_name), &str );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = WindowsCompareStringOrdinal( factory_name, str, &res );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !res, "got unexpected class name %s.\n", debugstr_hstring(factory_name) );
+    WindowsDeleteString( factory_name );
+    WindowsDeleteString( str );
+
+    hr = IActivationFactory_GetTrustLevel( factory, &trust_level );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( trust_level == BaseTrust, "got trust level %u.\n", trust_level );
+
+    hr = IActivationFactory_QueryInterface( factory, &IID_IRetailInfoStatics, (void **)&retail_info_statics );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+
+    enabled = TRUE;
+    hr = IRetailInfoStatics_get_IsDemoModeEnabled( retail_info_statics, &enabled );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !enabled, "got enabled %u.\n", enabled );
+
+    hr = IRetailInfoStatics_get_Properties( retail_info_statics, &properties );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IMapView_HSTRING_IInspectable_get_Size( properties, &size );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !size, "got size %u.\n", size );
+    IMapView_HSTRING_IInspectable_Release( properties );
+
+    ref = IRetailInfoStatics_Release( retail_info_statics );
+    ok( ref == 2, "got ref %lu.\n", ref );
+    ref = IActivationFactory_Release( factory );
+    ok( ref == 1, "got ref %lu.\n", ref );
+}
+
 static void test_AdvertisingManager(void)
 {
     static const WCHAR *class_name = RuntimeClass_Windows_System_UserProfile_AdvertisingManager;
@@ -273,6 +346,7 @@ START_TEST(twinapi)
 
     test_EasClientDeviceInformation();
     test_AnalyticsVersionInfo();
+    test_RetailInfo();
     test_AdvertisingManager();
     test_ApplicationView();
 
