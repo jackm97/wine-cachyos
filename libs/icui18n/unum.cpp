@@ -36,6 +36,10 @@
 
 U_NAMESPACE_USE
 
+#if defined(__clang__) && (defined(__aarch64__) || defined(__arm64ec__))
+#pragma clang optimize off
+#endif
+
 
 U_CAPI UNumberFormat* U_EXPORT2
 unum_open(  UNumberFormatStyle    style,
@@ -972,5 +976,9 @@ unum_formatUFormattable(const UNumberFormat* fmt,
 
     return res.extract(result, resultLength, *status);
 }
+
+#if defined(__clang__) && (defined(__aarch64__) || defined(__arm64ec__))
+#pragma clang optimize on
+#endif
 
 #endif /* #if !UCONFIG_NO_FORMATTING */
