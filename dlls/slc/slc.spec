@@ -15,7 +15,7 @@
 @ stub SLGetInstalledSAMLicenseApplications
 @ stub SLGetLicense
 @ stub SLGetLicenseFileId
-@ stub SLGetLicenseInformation
+@ stdcall SLGetLicenseInformation(ptr ptr wstr ptr ptr ptr) sppc.SLGetLicenseInformation
 @ stdcall SLGetLicensingStatusInformation(ptr ptr ptr wstr ptr ptr) sppc.SLGetLicensingStatusInformation
 @ stub SLGetPKeyId
 @ stub SLGetPKeyInformation
@@ -23,11 +23,11 @@
 @ stub SLGetPolicyInformationDWORD
 @ stub SLGetProductSkuInformation
 @ stub SLGetSAMLicense
-@ stub SLGetSLIDList
+@ stdcall SLGetSLIDList(ptr long ptr long ptr ptr) sppc.SLGetSLIDList
 @ stub SLGetServiceInformation
 @ stdcall SLGetWindowsInformation(wstr ptr ptr ptr)
 @ stdcall SLGetWindowsInformationDWORD(wstr ptr)
-@ stub SLInstallLicense
+@ stdcall SLInstallLicense(ptr long ptr ptr) sppc.SLInstallLicense
 @ stub SLInstallProofOfPurchase
 @ stub SLInstallSAMLicense
 @ stdcall SLOpen(ptr) sppc.SLOpen
