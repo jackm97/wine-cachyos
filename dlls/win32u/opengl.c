@@ -507,7 +507,7 @@ static void framebuffer_surface_set_context( struct opengl_drawable *drawable, v
         if (surface->base.format == ctx->share->fbo_drawable_format)
         {
             surface->width = ctx->share->fbo_surface_width;
-            surface->height = ctx->share->fbo_surface_width;
+            surface->height = ctx->share->fbo_surface_height;
         }
         else
         {
