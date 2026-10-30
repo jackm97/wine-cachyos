@@ -24,8 +24,18 @@
 #include "objidl.h"
 #include "dxgi.h"
 #include "wine/debug.h"
+#include "wine/list.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dcomp);
+
+static CRITICAL_SECTION dcomp_cs;
+static CRITICAL_SECTION_DEBUG dcomp_cs_debug =
+{
+    0, 0, &dcomp_cs,
+    { &dcomp_cs_debug.ProcessLocksList, &dcomp_cs_debug.ProcessLocksList },
+      0, 0, { (DWORD_PTR)(__FILE__ ": dcomp_cs") }
+};
+static CRITICAL_SECTION dcomp_cs = { &dcomp_cs_debug, -1, 0, 0, 0, 0 };
 
 struct dcomp_device;
 
@@ -40,6 +50,7 @@ struct dcomp_device
     const void **lpVtbl;
     LONG refcount;
     struct dcomp_partner partner;
+    struct list targets;
 };
 
 struct dcomp_target
@@ -47,6 +58,9 @@ struct dcomp_target
     const void **lpVtbl;
     LONG refcount;
     HWND window;
+    struct dcomp_device *device;
+    struct dcomp_visual *root;
+    struct list entry;
 };
 
 struct dcomp_visual
@@ -54,6 +68,10 @@ struct dcomp_visual
     const void **lpVtbl;
     LONG refcount;
     IUnknown *content;
+    HWND content_window;
+    struct dcomp_visual *parent;
+    struct list children;
+    struct list entry;
 };
 
 struct dcomp_scale_transform
@@ -89,6 +107,11 @@ static const GUID IID_IDCompositionTransform = {0xfd55faa7, 0x37e0, 0x4c20,
         {0x95, 0xd2, 0x9b, 0xe4, 0x5b, 0xc3, 0x3f, 0x55}};
 static const GUID IID_IDCompositionScaleTransform = {0x71fde914, 0x40ef, 0x45ef,
         {0xbd, 0x51, 0x68, 0xb0, 0x37, 0xc3, 0x39, 0xf9}};
+static const GUID IID_IDXGISwapChain_local = {0x310d36a0, 0xd2e7, 0x4c0a,
+        {0xaa, 0x04, 0x6a, 0x9d, 0x23, 0xb8, 0x88, 0x6a}};
+static const WCHAR dxvk_dummy_window_classW[] = {'D','X','V','K','D','U','M','M','Y','W','N','D','C','L','A','S','S',0};
+static const WCHAR wine_dcomp_visual_propW[] = {'_','_','w','i','n','e','_','d','c','o','m','p','_','v','i','s','u','a','l',0};
+static const WCHAR wine_dcomp_target_window_propW[] = {'_','_','w','i','n','e','_','d','c','o','m','p','_','t','a','r','g','e','t','_','w','i','n','d','o','w',0};
 
 static HRESULT STDMETHODCALLTYPE dcomp_device_query_interface(struct dcomp_device *device,
         REFIID iid, void **out);
@@ -347,9 +370,34 @@ static ULONG STDMETHODCALLTYPE dcomp_device_release(struct dcomp_device *device)
     return refcount;
 }
 
+static void set_target_window(struct dcomp_visual *visual, HWND window)
+{
+    struct dcomp_visual *child;
+    IDXGISwapChain *swapchain;
+
+    if (visual->content && SUCCEEDED(IUnknown_QueryInterface(visual->content,
+            &IID_IDXGISwapChain_local, (void **)&swapchain)))
+    {
+        if (visual->content_window
+                && !SetPropW(visual->content_window, wine_dcomp_target_window_propW, (HANDLE)window))
+            WARN("Failed to map content window %p to target %p, error %lu.\n",
+                    visual->content_window, window, GetLastError());
+        IDXGISwapChain_Release(swapchain);
+    }
+    LIST_FOR_EACH_ENTRY(child, &visual->children, struct dcomp_visual, entry)
+        set_target_window(child, window);
+}
+
 static HRESULT STDMETHODCALLTYPE dcomp_device_commit(struct dcomp_device *device)
 {
+    struct dcomp_target *target;
+
     TRACE("device %p.\n", device);
+
+    EnterCriticalSection(&dcomp_cs);
+    LIST_FOR_EACH_ENTRY(target, &device->targets, struct dcomp_target, entry)
+        if (target->window && target->root) set_target_window(target->root, target->window);
+    LeaveCriticalSection(&dcomp_cs);
     return S_OK;
 }
 
@@ -377,6 +425,11 @@ static HRESULT STDMETHODCALLTYPE dcomp_device_create_target(struct dcomp_device 
     target->lpVtbl = dcomp_target_vtable;
     target->refcount = 1;
     target->window = window;
+    target->device = device;
+    dcomp_device_addref(device);
+    EnterCriticalSection(&dcomp_cs);
+    list_add_tail(&device->targets, &target->entry);
+    LeaveCriticalSection(&dcomp_cs);
     enable_window_redirection(window);
     *out = target;
     return S_OK;
@@ -393,6 +446,7 @@ static HRESULT STDMETHODCALLTYPE dcomp_device_create_visual(struct dcomp_device 
     if (!(visual = calloc(1, sizeof(*visual)))) return E_OUTOFMEMORY;
     visual->lpVtbl = dcomp_visual_vtable;
     visual->refcount = 1;
+    list_init(&visual->children);
     *out = visual;
     return S_OK;
 }
@@ -546,14 +600,33 @@ static ULONG STDMETHODCALLTYPE dcomp_target_release(struct dcomp_target *target)
 {
     ULONG refcount = InterlockedDecrement(&target->refcount);
 
-    if (!refcount) free(target);
+    if (!refcount)
+    {
+        if (target->device)
+        {
+            EnterCriticalSection(&dcomp_cs);
+            list_remove(&target->entry);
+            LeaveCriticalSection(&dcomp_cs);
+            dcomp_device_release(target->device);
+        }
+        if (target->root) dcomp_visual_release(target->root);
+        free(target);
+    }
     return refcount;
 }
 
 static HRESULT STDMETHODCALLTYPE dcomp_target_set_root(struct dcomp_target *target,
         struct dcomp_visual *visual)
 {
+    struct dcomp_visual *old;
+
     TRACE("target %p, visual %p.\n", target, visual);
+    if (visual) dcomp_visual_addref(visual);
+    EnterCriticalSection(&dcomp_cs);
+    old = target->root;
+    target->root = visual;
+    LeaveCriticalSection(&dcomp_cs);
+    if (old) dcomp_visual_release(old);
     return S_OK;
 }
 
@@ -580,6 +653,13 @@ static ULONG STDMETHODCALLTYPE dcomp_visual_release(struct dcomp_visual *visual)
 
     if (!refcount)
     {
+        dcomp_visual_remove_all(visual);
+        if (visual->content_window
+                && GetPropW(visual->content_window, wine_dcomp_visual_propW) == (HANDLE)visual)
+        {
+            RemovePropW(visual->content_window, wine_dcomp_target_window_propW);
+            RemovePropW(visual->content_window, wine_dcomp_visual_propW);
+        }
         if (visual->content) IUnknown_Release(visual->content);
         free(visual);
     }
@@ -616,33 +696,133 @@ static HRESULT STDMETHODCALLTYPE dcomp_visual_set_rect(struct dcomp_visual *visu
     return S_OK;
 }
 
+struct find_dummy_window
+{
+    struct dcomp_visual *visual;
+    HWND window;
+};
+
+static BOOL CALLBACK find_dummy_window(HWND window, LPARAM param)
+{
+    struct find_dummy_window *find = (struct find_dummy_window *)param;
+    WCHAR class_name[ARRAY_SIZE(dxvk_dummy_window_classW)];
+
+    if (!GetPropW(window, wine_dcomp_visual_propW)
+            && GetClassNameW(window, class_name, ARRAY_SIZE(class_name))
+            && !lstrcmpW(class_name, dxvk_dummy_window_classW))
+    {
+        if (SetPropW(window, wine_dcomp_visual_propW, (HANDLE)find->visual))
+        {
+            find->window = window;
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static HWND reserve_content_window(struct dcomp_visual *visual, IUnknown *content)
+{
+    struct find_dummy_window find = {visual};
+    IDXGISwapChain *swapchain;
+    DXGI_SWAP_CHAIN_DESC desc;
+    WCHAR class_name[ARRAY_SIZE(dxvk_dummy_window_classW)];
+    DWORD process_id;
+
+    if (!content || FAILED(IUnknown_QueryInterface(content, &IID_IDXGISwapChain_local,
+            (void **)&swapchain)))
+        return NULL;
+
+    if (SUCCEEDED(IDXGISwapChain_GetDesc(swapchain, &desc)) && desc.OutputWindow
+            && GetClassNameW(desc.OutputWindow, class_name, ARRAY_SIZE(class_name))
+            && !lstrcmpW(class_name, dxvk_dummy_window_classW)
+            && GetWindowThreadProcessId(desc.OutputWindow, &process_id)
+            && process_id == GetCurrentProcessId()
+            && !GetPropW(desc.OutputWindow, wine_dcomp_visual_propW))
+    {
+        if (SetPropW(desc.OutputWindow, wine_dcomp_visual_propW, (HANDLE)visual))
+            find.window = desc.OutputWindow;
+    }
+    else
+        EnumThreadWindows(GetCurrentThreadId(), find_dummy_window, (LPARAM)&find);
+
+    IDXGISwapChain_Release(swapchain);
+    return find.window;
+}
+
 static HRESULT STDMETHODCALLTYPE dcomp_visual_set_content(struct dcomp_visual *visual, IUnknown *content)
 {
     TRACE("visual %p, content %p.\n", visual, content);
     if (content) IUnknown_AddRef(content);
+    if (visual->content_window
+            && GetPropW(visual->content_window, wine_dcomp_visual_propW) == (HANDLE)visual)
+    {
+        RemovePropW(visual->content_window, wine_dcomp_target_window_propW);
+        RemovePropW(visual->content_window, wine_dcomp_visual_propW);
+    }
     if (visual->content) IUnknown_Release(visual->content);
     visual->content = content;
+    visual->content_window = reserve_content_window(visual, content);
+    TRACE("visual %p, content window %p.\n", visual, visual->content_window);
     return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE dcomp_visual_add_visual(struct dcomp_visual *visual,
         struct dcomp_visual *child, BOOL insert_above, struct dcomp_visual *reference)
 {
+    struct dcomp_visual *old;
+
     TRACE("visual %p, child %p, insert_above %d, reference %p.\n",
             visual, child, insert_above, reference);
+    if (!child) return E_INVALIDARG;
+    dcomp_visual_addref(child);
+    EnterCriticalSection(&dcomp_cs);
+    if ((old = child->parent)) list_remove(&child->entry);
+    child->parent = visual;
+    list_add_tail(&visual->children, &child->entry);
+    LeaveCriticalSection(&dcomp_cs);
+    if (old) dcomp_visual_release(child);
     return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE dcomp_visual_remove_visual(struct dcomp_visual *visual,
         struct dcomp_visual *child)
 {
+    BOOL found;
+
     TRACE("visual %p, child %p.\n", visual, child);
+    if (!child) return E_INVALIDARG;
+    EnterCriticalSection(&dcomp_cs);
+    if ((found = child->parent == visual))
+    {
+        list_remove(&child->entry);
+        child->parent = NULL;
+    }
+    LeaveCriticalSection(&dcomp_cs);
+    if (!found) return E_INVALIDARG;
+    dcomp_visual_release(child);
     return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE dcomp_visual_remove_all(struct dcomp_visual *visual)
 {
+    struct dcomp_visual *child;
+    struct list *head;
+
     TRACE("visual %p.\n", visual);
+    for (;;)
+    {
+        child = NULL;
+        EnterCriticalSection(&dcomp_cs);
+        if ((head = list_head(&visual->children)))
+        {
+            child = LIST_ENTRY(head, struct dcomp_visual, entry);
+            list_remove(head);
+            child->parent = NULL;
+        }
+        LeaveCriticalSection(&dcomp_cs);
+        if (!child) break;
+        dcomp_visual_release(child);
+    }
     return S_OK;
 }
 
@@ -727,6 +907,7 @@ static HRESULT dcomp_create_device(REFIID iid, void **out)
     device->refcount = 1;
     device->partner.lpVtbl = dcomp_partner_vtable;
     device->partner.device = device;
+    list_init(&device->targets);
     hr = dcomp_device_query_interface(device, iid, out);
     dcomp_device_release(device);
     return hr;
