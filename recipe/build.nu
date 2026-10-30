@@ -1,14 +1,11 @@
 # Does not set CC, CXX, CFLAGS, LDFLAGS or PKG_CONFIG_PATH: the compiler
 # activation and the host environment provide them.
 
-# 1. Generate the sources (the steps of autogen.sh, run through the build env's
-#    perl/python because the scripts' shebangs are /usr/bin/perl).
+# 1. Generate the sources with the fork's autogen.sh. Its scripts find perl and
+#    python3 through env, so they resolve to the build env's; autogen.sh also
+#    removes autom4te.cache.
 cd $env.SRC_DIR
-^perl tools/make_requests
-^perl tools/make_specfiles
-^python dlls/winevulkan/make_vulkan -x vk.xml -X video.xml
-^autoreconf -ifv
-rm -rf autom4te.cache
+^./autogen.sh
 
 # 2. Out-of-tree build directory; kept between runs so later builds are incremental.
 let build = ($env.SRC_DIR | path dirname | path join build)
