@@ -101,6 +101,7 @@ static inline obj_handle_t handle_global_to_local( obj_handle_t handle )
 static struct object *grab_object_for_handle( struct object *obj )
 {
     obj->handle_count++;
+    registry_open_handle( obj );
     obj->ops->type->handle_count++;
     obj->ops->type->handle_max = max( obj->ops->type->handle_max, obj->ops->type->handle_count );
     return grab_object( obj );

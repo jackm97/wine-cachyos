@@ -317,6 +317,7 @@ DECL_HANDLER(d3dkmt_object_open_name);
 DECL_HANDLER(d3dkmt_mutex_acquire);
 DECL_HANDLER(d3dkmt_mutex_release);
 DECL_HANDLER(fsync_free_shm_idx);
+DECL_HANDLER(load_app_hive);
 
 typedef void (*req_handler)( const void *req, void *reply );
 static const req_handler req_handlers[REQ_NB_REQUESTS] =
@@ -631,6 +632,7 @@ static const req_handler req_handlers[REQ_NB_REQUESTS] =
     (req_handler)req_d3dkmt_mutex_acquire,
     (req_handler)req_d3dkmt_mutex_release,
     (req_handler)req_fsync_free_shm_idx,
+    (req_handler)req_load_app_hive,
 };
 
 C_ASSERT( sizeof(abstime_t) == 8 );
@@ -2411,3 +2413,10 @@ C_ASSERT( sizeof(struct d3dkmt_mutex_release_request) == 48 );
 C_ASSERT( offsetof(struct fsync_free_shm_idx_request, shm_idx) == 12 );
 C_ASSERT( sizeof(struct fsync_free_shm_idx_request) == 16 );
 C_ASSERT( sizeof(struct fsync_free_shm_idx_reply) == 8 );
+C_ASSERT( offsetof(struct load_app_hive_request, file) == 12 );
+C_ASSERT( offsetof(struct load_app_hive_request, flags) == 16 );
+C_ASSERT( offsetof(struct load_app_hive_request, access) == 20 );
+C_ASSERT( offsetof(struct load_app_hive_request, created) == 24 );
+C_ASSERT( sizeof(struct load_app_hive_request) == 32 );
+C_ASSERT( offsetof(struct load_app_hive_reply, hkey) == 8 );
+C_ASSERT( sizeof(struct load_app_hive_reply) == 16 );

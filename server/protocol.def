@@ -4353,3 +4353,13 @@ enum fsync_type
     unsigned int shm_idx;
 @REPLY
 @END
+
+/* Load a private or shared application registry hive. */
+@REQ(load_app_hive)
+    obj_handle_t file;
+    unsigned int flags;
+    unsigned int access;
+    unsigned int created;
+@REPLY
+    obj_handle_t hkey;
+@END
