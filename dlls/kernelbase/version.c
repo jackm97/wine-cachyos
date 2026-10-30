@@ -1935,6 +1935,29 @@ LONG WINAPI GetPackagesByPackageFamily(const WCHAR *family_name, UINT32 *count, 
 
 
 /***********************************************************************
+ *         FindPackagesByPackageFamily   (kernelbase.@)
+ */
+LONG WINAPI FindPackagesByPackageFamily(const WCHAR *family_name, UINT32 filters, UINT32 *count,
+        WCHAR **full_names, UINT32 *buffer_length, WCHAR *buffer, UINT32 *properties)
+{
+    UINT32 capacity, i;
+    LONG ret;
+
+    TRACE("family_name %s, filters %#x, count %p, full_names %p, buffer_length %p, buffer %p, properties %p.\n",
+            debugstr_w(family_name), filters, count, full_names, buffer_length, buffer, properties);
+
+    if (!count || !buffer_length) return ERROR_INVALID_PARAMETER;
+
+    capacity = *count;
+    ret = GetPackagesByPackageFamily(family_name, count, full_names, buffer_length, buffer);
+    if (properties && full_names && buffer && (ret == ERROR_SUCCESS || ret == ERROR_INSUFFICIENT_BUFFER))
+        for (i = 0; i < min(capacity, *count); ++i) properties[i] = 0;
+
+    return ret;
+}
+
+
+/***********************************************************************
  *         GetPackagePath   (kernelbase.@)
  */
 LONG WINAPI GetPackagePath(const PACKAGE_ID *package_id, const UINT32 reserved, UINT32 *length, WCHAR *path)
