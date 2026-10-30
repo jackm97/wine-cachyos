@@ -1890,6 +1890,7 @@ HRESULT WINAPI RoResolveNamespace(HSTRING name, HSTRING windowsMetaDataDir,
     HSTRING *paths;
     WCHAR path[MAX_PATH];
     UINT32 name_len;
+    BOOL found = FALSE;
     HRESULT hr;
     unsigned int i;
 
@@ -1921,21 +1922,32 @@ HRESULT WINAPI RoResolveNamespace(HSTRING name, HSTRING windowsMetaDataDir,
     if (!metaDataFilePaths)
         return RO_E_METADATA_NAME_NOT_FOUND;
 
-    for (i = 0; i < ARRAY_SIZE(winmd_files); ++i)
+    /* Prefer the combined Windows.winmd; fall back to the per-namespace files when it is missing. */
+    if (namespace_matches(buffer, name_len, L"Windows"))
     {
-        if (namespace_matches(buffer, name_len, winmd_files[i].namespace))
-        {
-            filename = winmd_files[i].filename;
-            break;
-        }
+        if (FAILED(hr = build_winmd_path(windowsMetaDataDir, L"Windows.winmd", path)))
+            return hr;
+        found = GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
     }
-    if (!filename)
-        return RO_E_METADATA_NAME_NOT_FOUND;
 
-    if (FAILED(hr = build_winmd_path(windowsMetaDataDir, filename, path)))
-        return hr;
-    if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
-        return RO_E_METADATA_NAME_NOT_FOUND;
+    if (!found)
+    {
+        for (i = 0; i < ARRAY_SIZE(winmd_files); ++i)
+        {
+            if (namespace_matches(buffer, name_len, winmd_files[i].namespace))
+            {
+                filename = winmd_files[i].filename;
+                break;
+            }
+        }
+        if (!filename)
+            return RO_E_METADATA_NAME_NOT_FOUND;
+
+        if (FAILED(hr = build_winmd_path(windowsMetaDataDir, filename, path)))
+            return hr;
+        if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
+            return RO_E_METADATA_NAME_NOT_FOUND;
+    }
 
     if (!(paths = CoTaskMemAlloc(sizeof(*paths))))
         return E_OUTOFMEMORY;
