@@ -154,6 +154,17 @@ static void test_WinHttpQueryOption(void)
     ok(GetLastError() == ERROR_WINHTTP_INCORRECT_HANDLE_TYPE,
        "expected ERROR_WINHTTP_INCORRECT_HANDLE_TYPE, got %lu\n", GetLastError());
 
+    feature = TRUE;
+    SetLastError(0xdeadbeef);
+    ret = WinHttpSetOption(session, WINHTTP_OPTION_IPV6_FAST_FALLBACK, &feature, sizeof(feature) - 1);
+    ok(!ret, "should fail to set IPv6 fast fallback with an invalid buffer size\n");
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER,
+       "expected ERROR_INSUFFICIENT_BUFFER, got %lu\n", GetLastError());
+
+    SetLastError(0xdeadbeef);
+    ret = WinHttpSetOption(session, WINHTTP_OPTION_IPV6_FAST_FALLBACK, &feature, sizeof(feature));
+    ok(ret, "failed to set IPv6 fast fallback %lu\n", GetLastError());
+
     SetLastError(0xdeadbeef);
     connection = WinHttpConnect(session, L"test.winehq.org", INTERNET_DEFAULT_HTTP_PORT, 0);
     ok(connection != NULL, "WinHttpConnect failed to open a connection, error: %lu\n", GetLastError());
@@ -184,6 +195,29 @@ static void test_WinHttpQueryOption(void)
         skip("Network unreachable, skipping the test\n");
         goto done;
     }
+
+    feature = 0xdeadbeef;
+    size = sizeof(feature);
+    SetLastError(0xdeadbeef);
+    ret = WinHttpQueryOption(request, WINHTTP_OPTION_AUTOLOGON_POLICY, &feature, &size);
+    ok(ret, "failed to query autologon policy %lu\n", GetLastError());
+    ok(size == sizeof(feature), "expected size %Iu, got %lu\n", sizeof(feature), size);
+    ok(feature == WINHTTP_AUTOLOGON_SECURITY_LEVEL_MEDIUM,
+       "expected WINHTTP_AUTOLOGON_SECURITY_LEVEL_MEDIUM, got %#lx\n", feature);
+
+    feature = WINHTTP_AUTOLOGON_SECURITY_LEVEL_LOW;
+    SetLastError(0xdeadbeef);
+    ret = WinHttpSetOption(request, WINHTTP_OPTION_AUTOLOGON_POLICY, &feature, sizeof(feature));
+    ok(ret, "failed to set autologon policy %lu\n", GetLastError());
+
+    feature = 0xdeadbeef;
+    size = sizeof(feature);
+    SetLastError(0xdeadbeef);
+    ret = WinHttpQueryOption(request, WINHTTP_OPTION_AUTOLOGON_POLICY, &feature, &size);
+    ok(ret, "failed to query autologon policy %lu\n", GetLastError());
+    ok(size == sizeof(feature), "expected size %Iu, got %lu\n", sizeof(feature), size);
+    ok(feature == WINHTTP_AUTOLOGON_SECURITY_LEVEL_LOW,
+       "expected WINHTTP_AUTOLOGON_SECURITY_LEVEL_LOW, got %#lx\n", feature);
 
     feature = 0xdeadbeef;
     size = sizeof(feature);

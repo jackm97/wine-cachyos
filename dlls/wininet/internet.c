@@ -3631,6 +3631,9 @@ BOOL WINAPI InternetSetOptionW(HINTERNET hInternet, DWORD dwOption,
         SetLastError(ERROR_INVALID_PARAMETER);
         ret = FALSE;
         break;
+    case INTERNET_OPTION_LISTEN_TIMEOUT:
+        ret = TRUE;
+        break;
     case INTERNET_OPTION_PER_CONNECTION_OPTION: {
         INTERNET_PER_CONN_OPTION_LISTW *con = lpBuffer;
         LONG res;
