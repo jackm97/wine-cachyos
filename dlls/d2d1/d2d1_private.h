@@ -97,6 +97,8 @@ struct d2d_brush_cb
             D2D1_POINT_2F start;
             D2D1_POINT_2F end;
             unsigned int stop_count;
+            D2D1_GAMMA gamma;
+            D2D1_EXTEND_MODE extend_mode;
         } linear;
         struct
         {
@@ -105,7 +107,9 @@ struct d2d_brush_cb
             D2D1_POINT_2F ra;
             D2D1_POINT_2F rb;
             unsigned int stop_count;
-            float pad[3];
+            D2D1_GAMMA gamma;
+            D2D1_EXTEND_MODE extend_mode;
+            float pad;
         } radial;
         struct
         {
@@ -318,6 +322,8 @@ struct d2d_gradient
     ID3D11ShaderResourceView *view;
     D2D1_GRADIENT_STOP *stops;
     UINT32 stop_count;
+    D2D1_GAMMA gamma;
+    D2D1_EXTEND_MODE extend_mode;
 };
 
 HRESULT d2d_gradient_create(ID2D1Factory *factory, ID3D11Device1 *device, const D2D1_GRADIENT_STOP *stops,
