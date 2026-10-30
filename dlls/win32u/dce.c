@@ -1796,10 +1796,17 @@ HDC WINAPI NtUserBeginPaint( HWND hwnd, PAINTSTRUCT *ps )
 BOOL WINAPI NtUserEndPaint( HWND hwnd, const PAINTSTRUCT *ps )
 {
     struct window_surface *surface;
+    DWORD style, ex_style;
 
     NtUserShowCaret( hwnd );
     flush_window_surfaces( FALSE );
-    if ((surface = window_surface_get( hwnd ))) window_surface_release( surface );
+    if ((surface = window_surface_get( hwnd )))
+    {
+        style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
+        ex_style = NtUserGetWindowLongW( hwnd, GWL_EXSTYLE );
+        if ((style & WS_POPUP) && (ex_style & WS_EX_TOOLWINDOW)) window_surface_flush( surface );
+        window_surface_release( surface );
+    }
     else                                        user_driver->pProcessEvents( 0 );
     if (!ps) return FALSE;
     release_dc( hwnd, ps->hdc, TRUE );
