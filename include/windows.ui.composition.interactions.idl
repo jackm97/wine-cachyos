@@ -78,6 +78,7 @@ namespace Windows.UI.Composition.Interactions
     interface ICompositionConditionalValue;
     interface ICompositionConditionalValueStatics;
     interface IInteractionTracker;
+    interface IInteractionTracker4;
     interface IInteractionTracker5;
     interface IInteractionTrackerOwner;
     interface IInteractionTrackerCustomAnimationStateEnteredArgs;
@@ -368,6 +369,26 @@ namespace Windows.UI.Composition.Interactions
     }
 
     [
+        contract(Windows.Foundation.UniversalApiContract, 7.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTracker),
+        uuid(ebd222bc-04af-4ac7-847d-06ea36e80a16)
+    ]
+    interface IInteractionTracker4 : IInspectable
+    {
+        HRESULT TryUpdatePositionWithOption(
+            [in] Windows.Foundation.Numerics.Vector3 value,
+            [in] Windows.UI.Composition.Interactions.InteractionTrackerClampingOption option,
+            [out, retval] INT32 *request_id
+        );
+        HRESULT TryUpdatePositionByWithOption(
+            [in] Windows.Foundation.Numerics.Vector3 amount,
+            [in] Windows.UI.Composition.Interactions.InteractionTrackerClampingOption option,
+            [out, retval] INT32 *request_id
+        );
+        [propget] HRESULT IsInertiaFromImpulse([out, retval] boolean *value);
+    }
+
+    [
         contract(Windows.Foundation.UniversalApiContract, 10.0),
         exclusiveto(Windows.UI.Composition.Interactions.InteractionTracker),
         uuid(d3ef5da2-a254-40e4-88d5-44e4e16b5809)
@@ -453,6 +474,7 @@ namespace Windows.UI.Composition.Interactions
     runtimeclass InteractionTracker
     {
         [default] interface Windows.UI.Composition.Interactions.IInteractionTracker;
+        interface Windows.UI.Composition.Interactions.IInteractionTracker4;
         interface Windows.UI.Composition.Interactions.IInteractionTracker5;
     }
 
