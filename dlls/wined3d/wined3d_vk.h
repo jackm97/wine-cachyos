@@ -47,18 +47,18 @@ struct wined3d_device_vk;
     /* Vulkan 1.1 */ \
     VK_INSTANCE_EXT_PFN(vkGetPhysicalDeviceFeatures2) \
     VK_INSTANCE_EXT_PFN(vkGetPhysicalDeviceProperties2) \
-    /* VK_KHR_surface */ \
+    /* VK_KHR_video_queue */ \
+    VK_INSTANCE_EXT_PFN(vkGetPhysicalDeviceVideoCapabilitiesKHR) \
+    /* VK_EXT_host_query_reset */ \
+    VK_INSTANCE_EXT_PFN(vkResetQueryPoolEXT)
+
+#define VK_INSTANCE_WSI_FUNCS() \
     VK_INSTANCE_PFN(vkDestroySurfaceKHR) \
     VK_INSTANCE_PFN(vkGetPhysicalDeviceSurfaceCapabilitiesKHR) \
     VK_INSTANCE_PFN(vkGetPhysicalDeviceSurfaceFormatsKHR) \
     VK_INSTANCE_PFN(vkGetPhysicalDeviceSurfacePresentModesKHR) \
     VK_INSTANCE_PFN(vkGetPhysicalDeviceSurfaceSupportKHR) \
-    /* VK_KHR_video_queue */ \
-    VK_INSTANCE_EXT_PFN(vkGetPhysicalDeviceVideoCapabilitiesKHR) \
-    /* VK_KHR_win32_surface */ \
-    VK_INSTANCE_PFN(vkCreateWin32SurfaceKHR) \
-    /* VK_EXT_host_query_reset */ \
-    VK_INSTANCE_EXT_PFN(vkResetQueryPoolEXT)
+    VK_INSTANCE_PFN(vkCreateWin32SurfaceKHR)
 
 #define VK_DEVICE_FUNCS() \
     VK_DEVICE_PFN(vkAllocateCommandBuffers) \
@@ -209,12 +209,6 @@ struct wined3d_device_vk;
     VK_DEVICE_EXT_PFN(vkCmdBindTransformFeedbackBuffersEXT) \
     VK_DEVICE_EXT_PFN(vkCmdEndQueryIndexedEXT) \
     VK_DEVICE_EXT_PFN(vkCmdEndTransformFeedbackEXT) \
-    /* VK_KHR_swapchain */ \
-    VK_DEVICE_PFN(vkAcquireNextImageKHR) \
-    VK_DEVICE_PFN(vkCreateSwapchainKHR) \
-    VK_DEVICE_PFN(vkDestroySwapchainKHR) \
-    VK_DEVICE_PFN(vkGetSwapchainImagesKHR) \
-    VK_DEVICE_PFN(vkQueuePresentKHR) \
     /* VK_KHR_external_memory_win32 */ \
     VK_DEVICE_EXT_PFN(vkGetMemoryWin32HandleKHR) \
     VK_DEVICE_EXT_PFN(vkGetMemoryWin32HandlePropertiesKHR) \
@@ -231,6 +225,13 @@ struct wined3d_device_vk;
     VK_DEVICE_EXT_PFN(vkDestroyVideoSessionParametersKHR) \
     VK_DEVICE_EXT_PFN(vkGetVideoSessionMemoryRequirementsKHR)
 
+#define VK_DEVICE_WSI_FUNCS() \
+    VK_DEVICE_PFN(vkAcquireNextImageKHR) \
+    VK_DEVICE_PFN(vkCreateSwapchainKHR) \
+    VK_DEVICE_PFN(vkDestroySwapchainKHR) \
+    VK_DEVICE_PFN(vkGetSwapchainImagesKHR) \
+    VK_DEVICE_PFN(vkQueuePresentKHR)
+
 #define DECLARE_VK_PFN(name) PFN_##name name;
 
 struct vulkan_ops
@@ -240,7 +241,9 @@ struct vulkan_ops
 #define VK_DEVICE_PFN       DECLARE_VK_PFN
 #define VK_DEVICE_EXT_PFN   DECLARE_VK_PFN
     VK_DEVICE_FUNCS()
+    VK_DEVICE_WSI_FUNCS()
     VK_INSTANCE_FUNCS()
+    VK_INSTANCE_WSI_FUNCS()
 #undef VK_INSTANCE_PFN
 #undef VK_INSTANCE_EXT_PFN
 #undef VK_DEVICE_PFN

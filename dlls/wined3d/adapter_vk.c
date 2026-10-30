@@ -439,6 +439,7 @@ static HRESULT adapter_vk_create_device(struct wined3d *wined3d, const struct wi
 #define VK_DEVICE_EXT_PFN(name) \
     device_vk->vk_info.vk_ops.name = (void *)VK_CALL(vkGetDeviceProcAddr(vk_device, #name));
     VK_DEVICE_FUNCS()
+    VK_DEVICE_WSI_FUNCS()
 #undef VK_DEVICE_EXT_PFN
 #undef VK_DEVICE_PFN
 
@@ -1926,17 +1927,18 @@ static const struct
     const char *name;
     unsigned int core_since_version;
     BOOL required;
+    BOOL surface;
 }
 vulkan_instance_extensions[] =
 {
-    {VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, VK_API_VERSION_1_1, FALSE},
-    {VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,                  VK_API_VERSION_1_1, FALSE},
-    {VK_KHR_SURFACE_EXTENSION_NAME,                          ~0u,                TRUE},
-    {VK_KHR_WIN32_SURFACE_EXTENSION_NAME,                    ~0u,                TRUE},
+    {VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, VK_API_VERSION_1_1, FALSE, FALSE},
+    {VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,                  VK_API_VERSION_1_1, FALSE, FALSE},
+    {VK_KHR_SURFACE_EXTENSION_NAME,                          ~0u,                TRUE,  TRUE},
+    {VK_KHR_WIN32_SURFACE_EXTENSION_NAME,                    ~0u,                TRUE,  TRUE},
 };
 
 static BOOL enable_vulkan_instance_extensions(uint32_t *extension_count,
-        const char *enabled_extensions[], const struct wined3d_vk_info *vk_info)
+        const char *enabled_extensions[], const struct wined3d_vk_info *vk_info, BOOL surface)
 {
     PFN_vkEnumerateInstanceExtensionProperties pfn_vkEnumerateInstanceExtensionProperties;
     VkExtensionProperties *extensions = NULL;
@@ -1977,6 +1979,8 @@ static BOOL enable_vulkan_instance_extensions(uint32_t *extension_count,
 
     for (i = 0; i < ARRAY_SIZE(vulkan_instance_extensions); ++i)
     {
+        if (!surface && vulkan_instance_extensions[i].surface)
+            continue;
         if (vulkan_instance_extensions[i].core_since_version <= vk_info->api_version)
             continue;
 
@@ -2006,7 +2010,7 @@ done:
     return success;
 }
 
-static BOOL wined3d_init_vulkan(struct wined3d_vk_info *vk_info)
+static BOOL wined3d_init_vulkan(struct wined3d_vk_info *vk_info, BOOL surface)
 {
     const char *enabled_instance_extensions[ARRAY_SIZE(vulkan_instance_extensions)];
     PFN_vkEnumerateInstanceVersion pfn_vkEnumerateInstanceVersion;
@@ -2049,7 +2053,7 @@ static BOOL wined3d_init_vulkan(struct wined3d_vk_info *vk_info)
     instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_info.pApplicationInfo = &app_info;
     instance_info.ppEnabledExtensionNames = enabled_instance_extensions;
-    if (!enable_vulkan_instance_extensions(&instance_info.enabledExtensionCount, enabled_instance_extensions, vk_info))
+    if (!enable_vulkan_instance_extensions(&instance_info.enabledExtensionCount, enabled_instance_extensions, vk_info, surface))
         goto fail;
 
     memset(vk_info->supported, 0, sizeof(vk_info->supported));
@@ -2077,6 +2081,11 @@ static BOOL wined3d_init_vulkan(struct wined3d_vk_info *vk_info)
 #define VK_DEVICE_EXT_PFN   LOAD_INSTANCE_OPT_PFN
     VK_INSTANCE_FUNCS()
     VK_DEVICE_FUNCS()
+    if (surface)
+    {
+        VK_INSTANCE_WSI_FUNCS()
+        VK_DEVICE_WSI_FUNCS()
+    }
 #undef VK_INSTANCE_PFN
 #undef VK_INSTANCE_EXT_PFN
 #undef VK_DEVICE_PFN
@@ -2151,7 +2160,7 @@ struct wined3d_shared_allocator_vk *wined3d_shared_allocator_vk_create(const GUI
 
     if (!(allocator = calloc(1, sizeof(*allocator)))) return NULL;
     vk_info = &allocator->vk_info;
-    if (!wined3d_init_vulkan(vk_info))
+    if (!wined3d_init_vulkan(vk_info, FALSE))
     {
         free(allocator);
         return NULL;
@@ -2803,7 +2812,7 @@ static BOOL wined3d_adapter_vk_init(struct wined3d_adapter_vk *adapter_vk,
     TRACE("adapter_vk %p, ordinal %u, wined3d_creation_flags %#x.\n",
             adapter_vk, ordinal, wined3d_creation_flags);
 
-    if (!wined3d_init_vulkan(vk_info))
+    if (!wined3d_init_vulkan(vk_info, TRUE))
     {
         WARN("Failed to initialize Vulkan.\n");
         return FALSE;
