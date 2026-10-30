@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "eagle_trace.h"
 #include <assert.h>
 #include <math.h>
 
@@ -6044,7 +6045,7 @@ static HRESULT WINAPI glyphrunanalysis_CreateAlphaTexture(IDWriteGlyphRunAnalysi
     TRACE("%p, %d, %s, %p, %u.\n", iface, type, wine_dbgstr_rect(bounds), bitmap, size);
 
     if (!bounds || !bitmap || (UINT32)type > DWRITE_TEXTURE_CLEARTYPE_3x1)
-        return E_INVALIDARG;
+        do { HRESULT eagle_result = E_INVALIDARG; if (eagle_trace_enabled(2)) eagle_trace_event(2, "dwrite.alpha_texture", eagle_result, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->right - bounds->left : 0, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->bottom - bounds->top : 0, size, type, NULL, NULL, __builtin_return_address(0)); return eagle_result; } while (0);
 
     /* make sure buffer is large enough for requested texture type */
     required = (bounds->right - bounds->left) * (bounds->bottom - bounds->top);
@@ -6052,11 +6053,11 @@ static HRESULT WINAPI glyphrunanalysis_CreateAlphaTexture(IDWriteGlyphRunAnalysi
         required *= 3;
 
     if (size < required)
-        return E_NOT_SUFFICIENT_BUFFER;
+        do { HRESULT eagle_result = E_NOT_SUFFICIENT_BUFFER; if (eagle_trace_enabled(2)) eagle_trace_event(2, "dwrite.alpha_texture", eagle_result, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->right - bounds->left : 0, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->bottom - bounds->top : 0, size, type, NULL, NULL, __builtin_return_address(0)); return eagle_result; } while (0);
 
     /* validate requested texture type */
     if (analysis->texture_type != type)
-        return DWRITE_E_UNSUPPORTEDOPERATION;
+        do { HRESULT eagle_result = DWRITE_E_UNSUPPORTEDOPERATION; if (eagle_trace_enabled(2)) eagle_trace_event(2, "dwrite.alpha_texture", eagle_result, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->right - bounds->left : 0, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->bottom - bounds->top : 0, size, type, NULL, NULL, __builtin_return_address(0)); return eagle_result; } while (0);
 
     memset(bitmap, 0, size);
     glyphrunanalysis_get_texturebounds(analysis, &runbounds);
@@ -6074,7 +6075,7 @@ static HRESULT WINAPI glyphrunanalysis_CreateAlphaTexture(IDWriteGlyphRunAnalysi
             HRESULT hr;
 
             if (FAILED(hr = glyphrunanalysis_render(analysis)))
-                return hr;
+                do { HRESULT eagle_result = hr; if (eagle_trace_enabled(2)) eagle_trace_event(2, "dwrite.alpha_texture", eagle_result, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->right - bounds->left : 0, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->bottom - bounds->top : 0, size, type, NULL, NULL, __builtin_return_address(0)); return eagle_result; } while (0);
         }
 
         src = get_pixel_ptr(analysis->bitmap, type, &runbounds, &analysis->bounds);
@@ -6087,7 +6088,7 @@ static HRESULT WINAPI glyphrunanalysis_CreateAlphaTexture(IDWriteGlyphRunAnalysi
         }
     }
 
-    return S_OK;
+    do { HRESULT eagle_result = S_OK; if (eagle_trace_enabled(2)) eagle_trace_event(2, "dwrite.alpha_texture", eagle_result, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->right - bounds->left : 0, bounds && bitmap && type <= DWRITE_TEXTURE_CLEARTYPE_3x1 ? bounds->bottom - bounds->top : 0, size, type, NULL, NULL, __builtin_return_address(0)); return eagle_result; } while (0);
 }
 
 static HRESULT WINAPI glyphrunanalysis_GetAlphaBlendParams(IDWriteGlyphRunAnalysis *iface, IDWriteRenderingParams *params,

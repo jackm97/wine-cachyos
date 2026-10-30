@@ -17,6 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 #define COBJMACROS
+#include "eagle_trace.h"
 #include "objbase.h"
 #include "initguid.h"
 #include "roapi.h"
@@ -155,16 +156,16 @@ HRESULT WINAPI DECLSPEC_HOTPATCH RoGetActivationFactory(HSTRING classid, REFIID 
     FIXME("(%s, %s, %p): semi-stub\n", debugstr_hstring(classid), debugstr_guid(iid), class_factory);
 
     if (!iid || !class_factory)
-        return E_INVALIDARG;
+        do { HRESULT eagle_result = E_INVALIDARG; if (eagle_trace_enabled(1)) eagle_trace_event(1, "winrt.activation", eagle_result, 0, 0, 0, 0, classid && iid && class_factory ? WindowsGetStringRawBuffer(classid, NULL) : NULL, iid, __builtin_return_address(0)); return eagle_result; } while (0);
 
     if (FAILED(hr = ensure_mta()))
-        return hr;
+        do { HRESULT eagle_result = hr; if (eagle_trace_enabled(1)) eagle_trace_event(1, "winrt.activation", eagle_result, 0, 0, 0, 0, classid && iid && class_factory ? WindowsGetStringRawBuffer(classid, NULL) : NULL, iid, __builtin_return_address(0)); return eagle_result; } while (0);
 
     hr = get_library_for_classid(WindowsGetStringRawBuffer(classid, NULL), &library);
     if (FAILED(hr))
     {
         ERR("Failed to find library for %s\n", debugstr_hstring(classid));
-        return hr;
+        do { HRESULT eagle_result = hr; if (eagle_trace_enabled(1)) eagle_trace_event(1, "winrt.activation", eagle_result, 0, 0, 0, 0, classid && iid && class_factory ? WindowsGetStringRawBuffer(classid, NULL) : NULL, iid, __builtin_return_address(0)); return eagle_result; } while (0);
     }
 
     if (!(module = LoadLibraryW(library)))
@@ -202,7 +203,7 @@ HRESULT WINAPI DECLSPEC_HOTPATCH RoGetActivationFactory(HSTRING classid, REFIID 
 done:
     free(library);
     if (module) FreeLibrary(module);
-    return hr;
+    do { HRESULT eagle_result = hr; if (eagle_trace_enabled(1)) eagle_trace_event(1, "winrt.activation", eagle_result, 0, 0, 0, 0, classid && iid && class_factory ? WindowsGetStringRawBuffer(classid, NULL) : NULL, iid, __builtin_return_address(0)); return eagle_result; } while (0);
 }
 
 /***********************************************************************

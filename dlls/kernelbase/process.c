@@ -32,6 +32,7 @@
 
 #include "kernelbase.h"
 #include "wine/debug.h"
+#include "eagle_trace.h"
 #include "wine/condrv.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(process);
@@ -419,6 +420,7 @@ static NTSTATUS create_cmd_process( HANDLE token, HANDLE debug, SECURITY_ATTRIBU
  */
 BOOL WINAPI DECLSPEC_HOTPATCH CloseHandle( HANDLE handle )
 {
+    BOOL ret;
     if (handle == (HANDLE)STD_INPUT_HANDLE)
         handle = InterlockedExchangePointer( &NtCurrentTeb()->Peb->ProcessParameters->hStdInput, 0 );
     else if (handle == (HANDLE)STD_OUTPUT_HANDLE)
@@ -426,7 +428,9 @@ BOOL WINAPI DECLSPEC_HOTPATCH CloseHandle( HANDLE handle )
     else if (handle == (HANDLE)STD_ERROR_HANDLE)
         handle = InterlockedExchangePointer( &NtCurrentTeb()->Peb->ProcessParameters->hStdError, 0 );
 
-    return set_ntstatus( NtClose( handle ));
+    ret = set_ntstatus( NtClose( handle ));
+    eagle_trace_wait("HandleClose", handle, ret, 0);
+    return ret;
 }
 
 

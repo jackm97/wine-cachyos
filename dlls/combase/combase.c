@@ -30,6 +30,7 @@
 #include "combase_private.h"
 
 #include "wine/debug.h"
+#include "eagle_trace.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
@@ -1597,6 +1598,7 @@ static HRESULT return_multi_qi(IUnknown *unk, DWORD count, MULTI_QI *mqi, BOOL i
     for (; index < count; index++)
     {
         mqi[index].hr = IUnknown_QueryInterface(unk, mqi[index].pIID, (void **)&mqi[index].pItf);
+        eagle_trace_com("ActivationQueryInterface", mqi[index].hr, NULL, mqi[index].pIID, unk, 0, index, __builtin_return_address(0));
         if (mqi[index].hr == S_OK)
             fetched++;
     }
@@ -1982,7 +1984,7 @@ static HRESULT com_get_class_object(REFCLSID rclsid, DWORD clscontext,
 /***********************************************************************
  *           CoCreateInstanceEx    (combase.@)
  */
-HRESULT WINAPI DECLSPEC_HOTPATCH CoCreateInstanceEx(REFCLSID rclsid, IUnknown *outer, DWORD cls_context,
+static HRESULT create_instance_ex(REFCLSID rclsid, IUnknown *outer, DWORD cls_context,
         COSERVERINFO *server_info, ULONG count, MULTI_QI *results)
 {
     IClassFactory *factory;
@@ -2022,15 +2024,28 @@ HRESULT WINAPI DECLSPEC_HOTPATCH CoCreateInstanceEx(REFCLSID rclsid, IUnknown *o
     return return_multi_qi(unk, count, results, TRUE);
 }
 
+HRESULT WINAPI DECLSPEC_HOTPATCH CoCreateInstanceEx(REFCLSID rclsid, IUnknown *outer, DWORD cls_context,
+        COSERVERINFO *server_info, ULONG count, MULTI_QI *results)
+{
+    HRESULT hr = create_instance_ex(rclsid, outer, cls_context, server_info, count, results);
+    eagle_trace_com("CoCreateInstanceEx", hr, rclsid, count && results ? results[0].pIID : NULL,
+                    count && results && SUCCEEDED(results[0].hr) ? results[0].pItf : NULL,
+                    cls_context, count, __builtin_return_address(0));
+    return hr;
+}
+
 /***********************************************************************
  *           CoGetClassObject    (combase.@)
  */
 HRESULT WINAPI DECLSPEC_HOTPATCH CoGetClassObject(REFCLSID rclsid, DWORD clscontext,
         COSERVERINFO *server_info, REFIID riid, void **obj)
 {
+    HRESULT hr;
     TRACE("%s, %#lx, %s\n", debugstr_guid(rclsid), clscontext, debugstr_guid(riid));
 
-    return com_get_class_object(rclsid, clscontext, server_info, riid, obj);
+    hr = com_get_class_object(rclsid, clscontext, server_info, riid, obj);
+    eagle_trace_com("CoGetClassObject", hr, rclsid, riid, SUCCEEDED(hr) && obj ? *obj : NULL, clscontext, 0, __builtin_return_address(0));
+    return hr;
 }
 
 /***********************************************************************
@@ -2912,7 +2927,7 @@ HRESULT WINAPI CoInitializeWOW(DWORD arg1, DWORD arg2)
 /******************************************************************************
  *                    CoInitializeEx    (combase.@)
  */
-HRESULT WINAPI DECLSPEC_HOTPATCH CoInitializeEx(void *reserved, DWORD model)
+static HRESULT initialize_ex(void *reserved, DWORD model)
 {
     struct tlsdata *tlsdata;
     struct init_spy *cursor;
@@ -2945,6 +2960,13 @@ HRESULT WINAPI DECLSPEC_HOTPATCH CoInitializeEx(void *reserved, DWORD model)
     }
     unlock_init_spies(tlsdata);
 
+    return hr;
+}
+
+HRESULT WINAPI DECLSPEC_HOTPATCH CoInitializeEx(void *reserved, DWORD model)
+{
+    HRESULT hr = initialize_ex(reserved, model);
+    eagle_trace_com("CoInitializeEx", hr, NULL, NULL, NULL, model, 0, __builtin_return_address(0));
     return hr;
 }
 
@@ -2984,6 +3006,7 @@ void WINAPI DECLSPEC_HOTPATCH CoUninitialize(void)
         return;
     }
 
+    eagle_trace_com("CoUninitialize", S_OK, NULL, NULL, NULL, 0, tlsdata->inits, __builtin_return_address(0));
     leave_apartment(tlsdata);
 
     /*

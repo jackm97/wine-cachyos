@@ -37,6 +37,7 @@
 #include "wine/asm.h"
 #include "wine/exception.h"
 #include "wine/debug.h"
+#include "eagle_trace.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(sync);
 
@@ -411,6 +412,7 @@ DWORD WINAPI DECLSPEC_HOTPATCH WaitForSingleObjectEx( HANDLE handle, DWORD timeo
     NTSTATUS status;
     LARGE_INTEGER time;
 
+    eagle_trace_wait("WaitBegin", normalize_std_handle(handle), alertable, timeout);
     status = NtWaitForSingleObject( normalize_std_handle( handle ), alertable,
                                     get_nt_timeout( &time, timeout ) );
 
@@ -419,6 +421,7 @@ DWORD WINAPI DECLSPEC_HOTPATCH WaitForSingleObjectEx( HANDLE handle, DWORD timeo
         SetLastError( RtlNtStatusToDosError(status) );
         status = WAIT_FAILED;
     }
+    eagle_trace_wait("WaitEnd", normalize_std_handle(handle), status, timeout);
     return status;
 }
 
@@ -759,6 +762,7 @@ HANDLE WINAPI DECLSPEC_HOTPATCH CreateMutexExW( SECURITY_ATTRIBUTES *sa, LPCWSTR
         SetLastError( ERROR_ALREADY_EXISTS );
     else
         SetLastError( RtlNtStatusToDosError(status) );
+    if (ret) eagle_trace_wait("MutexCreate", ret, status != STATUS_OBJECT_NAME_EXISTS && (flags & CREATE_MUTEX_INITIAL_OWNER), 0);
     return ret;
 }
 
@@ -786,7 +790,9 @@ HANDLE WINAPI DECLSPEC_HOTPATCH OpenMutexW( DWORD access, BOOL inherit, LPCWSTR 
  */
 BOOL WINAPI DECLSPEC_HOTPATCH ReleaseMutex( HANDLE handle )
 {
-    return set_ntstatus( NtReleaseMutant( handle, NULL ));
+    BOOL ret = set_ntstatus( NtReleaseMutant( handle, NULL ));
+    eagle_trace_wait("MutexRelease", handle, ret, 0);
+    return ret;
 }
 
 
