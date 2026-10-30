@@ -67,6 +67,8 @@ extern IActivationFactory *interaction_tracker_factory;
 extern IActivationFactory *visual_interaction_source_factory;
 
 HRESULT composition_property_set_create( ICompositor *compositor, ICompositionPropertySet **result );
+HRESULT expression_animation_clone( IExpressionAnimation *animation, IExpressionAnimation **result );
+HRESULT expression_animation_evaluate_scalar( IExpressionAnimation *animation, ICompositionObject *target, FLOAT *value );
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \
