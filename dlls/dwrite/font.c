@@ -5868,7 +5868,7 @@ static void glyphrunanalysis_get_texturebounds(struct dwrite_glyphrunanalysis *a
         if (bitmap_size > analysis->max_glyph_bitmap_size)
             analysis->max_glyph_bitmap_size = bitmap_size;
 
-        OffsetRect(bbox, analysis->origins[i].x, analysis->origins[i].y);
+        OffsetRect(bbox, floorf(analysis->origins[i].x), floorf(analysis->origins[i].y));
         UnionRect(&analysis->bounds, &analysis->bounds, bbox);
     }
 
@@ -5964,7 +5964,7 @@ static HRESULT glyphrunanalysis_render(struct dwrite_glyphrunanalysis *analysis)
             continue;
         }
 
-        OffsetRect(bbox, analysis->origins[i].x, analysis->origins[i].y);
+        OffsetRect(bbox, floorf(analysis->origins[i].x), floorf(analysis->origins[i].y));
 
         /* blit to analysis bitmap */
         clipped = *bbox;
