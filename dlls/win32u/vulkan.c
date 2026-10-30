@@ -2578,7 +2578,7 @@ static BOOL is_dxvk_composition_surface( struct surface *surface )
 static BOOL surface_get_fshack_dpi( struct surface *surface )
 {
     UINT dpi = NtUserGetDpiForWindow( surface->hwnd ), raw = NtUserGetWinMonitorDpi( surface->hwnd, MDT_RAW_DPI );
-    return fshack_enabled && dpi != raw ? raw : 0;
+    return fshack_enabled && !surface->client->host_scaled && dpi != raw ? raw : 0;
 }
 
 static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwapchainCreateInfoKHR *create_info,

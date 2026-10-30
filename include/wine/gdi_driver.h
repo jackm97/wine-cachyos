@@ -266,9 +266,17 @@ struct client_surface
     HWND                               hwnd;           /* window the surface was created for */
     LONG                               updated;        /* has been moved / resized / reparented */
     LONG                               offscreen;      /* client window is offscreen */
+    BOOL                               host_scaled;    /* host surface applies DPI scaling */
+    BOOL                               reusable;       /* keep the host surface across drawable recreation */
+    BOOL                               cached;         /* surface is owned by the unused cache */
+    int                                format;         /* pixel format of the surface */
+    BOOL                               raw;            /* surface uses raw physical coordinates */
 };
 
 W32KAPI void *client_surface_create( UINT size, const struct client_surface_funcs *funcs, HWND hwnd );
+W32KAPI void *reusable_client_surface_create( UINT size, const struct client_surface_funcs *funcs,
+                                             HWND hwnd, int format, BOOL raw );
+W32KAPI struct client_surface *get_unused_client_surface( HWND hwnd, int format, BOOL raw );
 W32KAPI void client_surface_add_ref( struct client_surface *surface );
 W32KAPI void client_surface_release( struct client_surface *surface );
 W32KAPI void client_surface_present( struct client_surface *surface );
