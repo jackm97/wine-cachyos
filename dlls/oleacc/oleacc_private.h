@@ -28,6 +28,7 @@ struct win_class_data {
 const struct win_class_data* find_class_data(HWND, const struct win_class_data*);
 
 HRESULT create_client_object(HWND, const IID*, void**);
+HRESULT create_client_object_for_class(HWND, const WCHAR*, const IID*, void**);
 HRESULT create_window_object(HWND, const IID*, void**);
 HRESULT get_accpropservices_factory(REFIID, void**);
 
