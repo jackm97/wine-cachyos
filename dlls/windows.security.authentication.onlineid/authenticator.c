@@ -80,20 +80,25 @@ static ULONG WINAPI factory_Release( IActivationFactory *iface )
 
 static HRESULT WINAPI factory_GetIids( IActivationFactory *iface, ULONG *iid_count, IID **iids )
 {
-    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
-    return E_NOTIMPL;
+    if (!iid_count || !iids) return E_POINTER;
+    *iid_count = 1;
+    if (!(*iids = CoTaskMemAlloc( sizeof(**iids) ))) return E_OUTOFMEMORY;
+    **iids = IID_IOnlineIdSystemAuthenticatorStatics;
+    return S_OK;
 }
 
 static HRESULT WINAPI factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name )
 {
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    const WCHAR *name = RuntimeClass_Windows_Security_Authentication_OnlineId_OnlineIdSystemAuthenticator;
+    if (!class_name) return E_POINTER;
+    return WindowsCreateString( name, wcslen( name ), class_name );
 }
 
 static HRESULT WINAPI factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *trust_level )
 {
-    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
-    return E_NOTIMPL;
+    if (!trust_level) return E_POINTER;
+    *trust_level = BaseTrust;
+    return S_OK;
 }
 
 static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInspectable **instance )
@@ -119,6 +124,7 @@ struct authenticator
 {
     IOnlineIdSystemAuthenticatorForUser IOnlineIdSystemAuthenticatorForUser_iface;
     LONG ref;
+    GUID application_id;
 };
 
 static inline struct authenticator *impl_from_IOnlineIdSystemAuthenticatorForUser( IOnlineIdSystemAuthenticatorForUser *iface )
@@ -168,45 +174,62 @@ static ULONG WINAPI authenticator_Release( IOnlineIdSystemAuthenticatorForUser *
 
 static HRESULT WINAPI authenticator_GetIids( IOnlineIdSystemAuthenticatorForUser *iface, ULONG *iid_count, IID **iids )
 {
-    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
-    return E_NOTIMPL;
+    if (!iid_count || !iids) return E_POINTER;
+    *iid_count = 1;
+    if (!(*iids = CoTaskMemAlloc( sizeof(**iids) ))) return E_OUTOFMEMORY;
+    **iids = IID_IOnlineIdSystemAuthenticatorForUser;
+    return S_OK;
 }
 
 static HRESULT WINAPI authenticator_GetRuntimeClassName( IOnlineIdSystemAuthenticatorForUser *iface, HSTRING *class_name )
 {
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    const WCHAR *name = RuntimeClass_Windows_Security_Authentication_OnlineId_OnlineIdSystemAuthenticatorForUser;
+    if (!class_name) return E_POINTER;
+    return WindowsCreateString( name, wcslen( name ), class_name );
 }
 
 static HRESULT WINAPI authenticator_GetTrustLevel( IOnlineIdSystemAuthenticatorForUser *iface, TrustLevel *trust_level )
 {
-    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
-    return E_NOTIMPL;
+    if (!trust_level) return E_POINTER;
+    *trust_level = BaseTrust;
+    return S_OK;
 }
 
 static HRESULT WINAPI authenticator_GetTicketAsync( IOnlineIdSystemAuthenticatorForUser *iface, IOnlineIdServiceTicketRequest *request,
                                                     IAsyncOperation_OnlineIdSystemTicketResult **operation )
 {
-    FIXME( "iface %p, request %p, operation %p stub!\n", iface, request, operation );
-    return E_NOTIMPL;
+    static const GUID empty_guid;
+    struct authenticator *impl = impl_from_IOnlineIdSystemAuthenticatorForUser( iface );
+
+    TRACE( "iface %p, request %p, operation %p.\n", iface, request, operation );
+    if (!request || !operation) return E_POINTER;
+    if (IsEqualGUID( &impl->application_id, &empty_guid )) return E_ILLEGAL_METHOD_CALL;
+    return async_operation_ticket_result_create( (IUnknown *)iface, request, &impl->application_id, operation );
 }
 
 static HRESULT WINAPI authenticator_put_ApplicationId( IOnlineIdSystemAuthenticatorForUser *iface, GUID value )
 {
-    FIXME( "iface %p, value %s stub!\n", iface, debugstr_guid( &value ) );
-    return E_NOTIMPL;
+    struct authenticator *impl = impl_from_IOnlineIdSystemAuthenticatorForUser( iface );
+    TRACE( "iface %p, value %s.\n", iface, debugstr_guid( &value ) );
+    impl->application_id = value;
+    return S_OK;
 }
 
 static HRESULT WINAPI authenticator_get_ApplicationId( IOnlineIdSystemAuthenticatorForUser *iface, GUID *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    struct authenticator *impl = impl_from_IOnlineIdSystemAuthenticatorForUser( iface );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    if (!value) return E_POINTER;
+    *value = impl->application_id;
+    return S_OK;
 }
 
 static HRESULT WINAPI authenticator_get_User( IOnlineIdSystemAuthenticatorForUser *iface, __x_ABI_CWindows_CSystem_CIUser **user )
 {
-    FIXME( "iface %p, user %p stub!\n", iface, user );
-    return E_NOTIMPL;
+    TRACE( "iface %p, user %p.\n", iface, user );
+    if (!user) return E_POINTER;
+    *user = NULL;
+    return S_OK;
 }
 
 static const struct IOnlineIdSystemAuthenticatorForUserVtbl authenticator_vtbl =
@@ -227,29 +250,36 @@ static const struct IOnlineIdSystemAuthenticatorForUserVtbl authenticator_vtbl =
 
 DEFINE_IINSPECTABLE( authenticator_statics, IOnlineIdSystemAuthenticatorStatics, struct authenticator_statics, IActivationFactory_iface )
 
-static HRESULT WINAPI authenticator_statics_get_Default( IOnlineIdSystemAuthenticatorStatics *iface,
-                                                         IOnlineIdSystemAuthenticatorForUser **value )
+static HRESULT authenticator_create( IOnlineIdSystemAuthenticatorForUser **value )
 {
     struct authenticator *impl;
 
-    TRACE( "iface %p, value %p\n", iface, value );
-
     if (!value) return E_POINTER;
+    *value = NULL;
     if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
-
     impl->IOnlineIdSystemAuthenticatorForUser_iface.lpVtbl = &authenticator_vtbl;
     impl->ref = 1;
-
     *value = &impl->IOnlineIdSystemAuthenticatorForUser_iface;
-    TRACE( "created IOnlineIdSystemAuthenticatorForUser %p.\n", *value );
     return S_OK;
+}
+
+static HRESULT WINAPI authenticator_statics_get_Default( IOnlineIdSystemAuthenticatorStatics *iface,
+                                                         IOnlineIdSystemAuthenticatorForUser **value )
+{
+    HRESULT hr;
+
+    TRACE( "iface %p, value %p\n", iface, value );
+    hr = authenticator_create( value );
+    if (SUCCEEDED(hr)) TRACE( "created IOnlineIdSystemAuthenticatorForUser %p.\n", *value );
+    return hr;
 }
 
 static HRESULT WINAPI authenticator_statics_GetForUser( IOnlineIdSystemAuthenticatorStatics *iface, __x_ABI_CWindows_CSystem_CIUser *user,
                                                         IOnlineIdSystemAuthenticatorForUser **value )
 {
-    FIXME( "iface %p, user %p, value %p stub!\n", iface, user, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, user %p, value %p.\n", iface, user, value );
+    if (!user) return E_INVALIDARG;
+    return authenticator_create( value );
 }
 
 static const struct IOnlineIdSystemAuthenticatorStaticsVtbl authenticator_statics_vtbl =

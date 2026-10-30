@@ -1,8 +1,23 @@
 MODULE  = windows.security.authentication.onlineid.dll
-IMPORTS = combase
+UNIXLIB = windows.security.authentication.onlineid.so
+UNIX_CFLAGS = $(SECRET_CFLAGS)
+UNIX_LIBS = $(PTHREAD_LIBS)
+IMPORTS = combase crypt32 ole32 shell32 user32 winhttp
 
 SOURCES = \
+	async.c \
 	authenticator.c \
 	classes.idl \
+	device_code.c \
+	identity_bridge.c \
 	main.c \
-	ticket.c
+	native_store.c \
+	result.c \
+	string_map.c \
+	ticket.c \
+	web_account.c \
+	web_accounts.c \
+	web_async.c \
+	web_core.c \
+	web_token.c \
+	unixlib.c

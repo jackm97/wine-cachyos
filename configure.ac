@@ -31,6 +31,7 @@ AC_ARG_WITH(capi,      AS_HELP_STRING([--without-capi],[do not use CAPI (ISDN su
 AC_ARG_WITH(coreaudio, AS_HELP_STRING([--without-coreaudio],[do not use the CoreAudio sound support]))
 AC_ARG_WITH(cups,      AS_HELP_STRING([--without-cups],[do not use CUPS]))
 AC_ARG_WITH(dbus,      AS_HELP_STRING([--without-dbus],[do not use DBus (dynamic device support)]))
+AC_ARG_WITH(secret,    AS_HELP_STRING([--without-secret],[do not use Secret Service for identity credentials]))
 AC_ARG_WITH(ffmpeg,    AS_HELP_STRING([--without-ffmpeg],[do not use the FFmpeg library]))
 AC_ARG_WITH(fontconfig,AS_HELP_STRING([--without-fontconfig],[do not use fontconfig]))
 AC_ARG_WITH(freetype,  AS_HELP_STRING([--without-freetype],[do not use the FreeType library]))
@@ -1561,6 +1562,15 @@ case $host_os in
   *) WINE_NOTICE_WITH(dbus,[test "x$ac_cv_lib_soname_dbus_1" = "x"],
                       [libdbus ${notice_platform}development files not found, no dynamic device support.]) ;;
 esac
+
+dnl **** Check for libsecret ****
+if test "x$with_secret" != "xno"
+then
+    WINE_PACKAGE_FLAGS(SECRET,[libsecret-1],,,,
+        [AC_CHECK_HEADER([libsecret/secret.h],
+            [WINE_CHECK_SONAME(secret-1, secret_password_lookup_sync,,[SECRET_CFLAGS=""],[$SECRET_LIBS])],
+            [SECRET_CFLAGS=""])])
+fi
 
 dnl **** Check for libgnutls ****
 if test "x$with_gnutls" != "xno"
