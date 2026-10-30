@@ -1043,6 +1043,7 @@ SOURCES = \
 	windows.graphics.imaging.idl \
 	windows.h \
 	windows.management.deployment.idl \
+	windows.management.idl \
 	windows.media.capture.idl \
 	windows.media.closedcaptioning.idl \
 	windows.media.core.idl \
@@ -1098,6 +1099,7 @@ SOURCES = \
 	windows.ui.xaml.hosting.desktopwindowxamlsource.idl \
 	windows.ui.xaml.idl \
 	windows.ui.xaml.interop.idl \
+	windows.web.http.idl \
 	windowscontracts.idl \
 	windowsx.h \
 	wine/afd.h \
@@ -1247,8 +1249,10 @@ SOURCES = \
 
 INSTALL_LIB = \
 	windows.applicationmodel.winmd \
+	windows.foundation.winmd \
 	windows.globalization.winmd \
 	windows.graphics.winmd \
+	windows.management.winmd \
 	windows.media.winmd \
 	windows.networking.winmd \
 	windows.perception.winmd \

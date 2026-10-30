@@ -759,6 +759,9 @@ HKLM,SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86,"Version",2,"14.42.344
 11,,urlmon.dll,1
 11,,vidreszr.dll,1
 11,,windowscodecs.dll,1
+11,,windows.applicationmodel.dll,1
+11,,windows.networking.dll,1
+11,,windows.security.enterprisedata.dll,1
 11,,winegstreamer.dll,1
 55,,wineps.drv,1
 11,,winevulkan.dll,1
@@ -1367,8 +1370,10 @@ sortdefault.nls
 
 [WinmdFiles]
 windows.applicationmodel.winmd
+windows.foundation.winmd
 windows.globalization.winmd
 windows.graphics.winmd
+windows.management.winmd
 windows.media.winmd
 windows.networking.winmd
 windows.perception.winmd
