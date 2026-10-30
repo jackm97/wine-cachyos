@@ -1941,6 +1941,36 @@ static void d2d_device_context_draw_bitmap(struct d2d_device_context *context, I
     ID2D1Brush_Release(&brush->ID2D1Brush_iface);
 }
 
+static void d2d_device_context_draw_bitmap_units(struct d2d_device_context *context, ID2D1Bitmap *bitmap,
+        const D2D1_RECT_F *dst_rect, float opacity, D2D1_INTERPOLATION_MODE interpolation_mode,
+        const D2D1_RECT_F *src_rect, const D2D1_MATRIX_4X4_F *perspective_transform)
+{
+    D2D1_RECT_F source, destination;
+    float dpi_x, dpi_y;
+
+    if (context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS)
+    {
+        D2D1_SIZE_U size = ID2D1Bitmap_GetPixelSize(bitmap);
+        d2d_rect_set(&source, 0.0f, 0.0f, size.width, size.height);
+        if (src_rect && src_rect->left <= src_rect->right && src_rect->top <= src_rect->bottom)
+            d2d_rect_intersect(&source, src_rect);
+        if (source.right <= source.left || source.bottom <= source.top) return;
+        if (!dst_rect)
+        {
+            d2d_rect_set(&destination, 0.0f, 0.0f, source.right - source.left, source.bottom - source.top);
+            dst_rect = &destination;
+        }
+        ID2D1Bitmap_GetDpi(bitmap, &dpi_x, &dpi_y);
+        source.left *= 96.0f / dpi_x;
+        source.right *= 96.0f / dpi_x;
+        source.top *= 96.0f / dpi_y;
+        source.bottom *= 96.0f / dpi_y;
+        src_rect = &source;
+    }
+    d2d_device_context_draw_bitmap(context, bitmap, dst_rect, opacity, interpolation_mode,
+            src_rect, NULL, perspective_transform);
+}
+
 static void STDMETHODCALLTYPE d2d_device_context_DrawBitmap(ID2D1DeviceContext6 *iface,
         ID2D1Bitmap *bitmap, const D2D1_RECT_F *dst_rect, float opacity,
         D2D1_BITMAP_INTERPOLATION_MODE interpolation_mode, const D2D1_RECT_F *src_rect)
@@ -1973,8 +2003,8 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawBitmap(ID2D1DeviceContext6 
     }
     else
     {
-        d2d_device_context_draw_bitmap(context, bitmap, dst_rect, opacity,
-                d2d1_1_interp_mode_from_d2d1(interpolation_mode), src_rect, NULL, NULL);
+        d2d_device_context_draw_bitmap_units(context, bitmap, dst_rect, opacity,
+                d2d1_1_interp_mode_from_d2d1(interpolation_mode), src_rect, NULL);
     }
 }
 
@@ -4250,8 +4280,8 @@ static void STDMETHODCALLTYPE d2d_device_context_ID2D1DeviceContext_DrawBitmap(I
     }
     else
     {
-        d2d_device_context_draw_bitmap(context, bitmap, dst_rect, opacity, interpolation_mode, src_rect,
-                NULL, perspective_transform);
+        d2d_device_context_draw_bitmap_units(context, bitmap, dst_rect, opacity, interpolation_mode,
+                src_rect, perspective_transform);
     }
 }
 
