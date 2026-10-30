@@ -14,6 +14,7 @@
 
 #include "winternl.h"
 #include "unixlib.h"
+#include "eagle_identity_trace.h"
 
 #define BRIDGE_MAGIC 0x31424953
 #define BRIDGE_VERSION 1
@@ -79,6 +80,7 @@ struct message_builder
 static INIT_ONCE unix_init_once = INIT_ONCE_STATIC_INIT;
 static BOOL unix_lib_initialized;
 static LONG request_counter;
+static LONG trace_counter;
 
 static BOOL WINAPI init_unix_lib_once( INIT_ONCE *once, void *param, void **context )
 {
@@ -312,10 +314,18 @@ static HRESULT bridge_exchange( UINT16 opcode, const struct message_builder *bui
     struct bridge_header request, response;
     struct exchange_params params = {0};
     BYTE *request_data = NULL, *response_data = NULL;
+    ULONG trace_id;
     NTSTATUS status;
     HRESULT hr;
 
-    if (!init_unix_lib()) return HRESULT_FROM_WIN32( ERROR_SERVICE_NOT_ACTIVE );
+    trace_id = InterlockedIncrement( &trace_counter );
+    eagle_trace_identity( trace_id, opcode, EAGLE_IDENTITY_BEGIN, E_PENDING, __builtin_return_address(0) );
+    if (!init_unix_lib())
+    {
+        hr = HRESULT_FROM_WIN32( ERROR_SERVICE_NOT_ACTIVE );
+        eagle_trace_identity( trace_id, opcode, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
+        return hr;
+    }
     request.magic = BRIDGE_MAGIC;
     request.version = BRIDGE_VERSION;
     request.opcode = opcode;
@@ -338,8 +348,10 @@ static HRESULT bridge_exchange( UINT16 opcode, const struct message_builder *bui
     if ((status = ONLINEID_CALL( exchange, &params )))
     {
         hr = status == STATUS_CANCELLED ? HRESULT_FROM_WIN32( ERROR_CANCELLED ) : HRESULT_FROM_NT( status );
+        eagle_trace_identity( trace_id, opcode, EAGLE_IDENTITY_TRANSPORT, hr, __builtin_return_address(0) );
         goto done;
     }
+    eagle_trace_identity( trace_id, opcode, EAGLE_IDENTITY_TRANSPORT, S_OK, __builtin_return_address(0) );
     if (params.response_size < sizeof(response))
     {
         hr = E_INVALIDARG;
@@ -355,10 +367,12 @@ static HRESULT bridge_exchange( UINT16 opcode, const struct message_builder *bui
         goto done;
     }
     hr = parse_response( &response, response_data + sizeof(response), reply );
+    eagle_trace_identity( trace_id, opcode, EAGLE_IDENTITY_RESPONSE, hr, __builtin_return_address(0) );
 
 done:
     free( response_data );
     free( request_data );
+    eagle_trace_identity( trace_id, opcode, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
     return hr;
 }
 

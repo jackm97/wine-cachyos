@@ -1,4 +1,5 @@
 SOURCES = \
+	eagle_identity_trace.h \
 	eagle_trace.h \
 	accctrl.h \
 	access.idl \

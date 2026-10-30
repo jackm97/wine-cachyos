@@ -16,8 +16,11 @@
 #include "wincrypt.h"
 #include "winhttp.h"
 #include "unixlib.h"
+#include "eagle_identity_trace.h"
 #define IDENTITY_HOST L"login.microsoftonline.com"
 #define MAX_HTTP_RESPONSE (4 * 1024 * 1024)
+
+static LONG trace_counter;
 
 static BOOL form_unreserved( BYTE value )
 {
@@ -563,10 +566,21 @@ HRESULT identity_device_list_accounts( HSTRING client_id, HSTRING authority, HAN
     UINT32 length, returned = 0;
     INT32 comparison;
     HRESULT hr;
+    ULONG trace_id = InterlockedIncrement( &trace_counter );
 
-    if (!reply) return E_POINTER;
+    eagle_trace_native_identity( trace_id, 5, EAGLE_IDENTITY_BEGIN, E_PENDING, __builtin_return_address(0) );
+    if (!reply)
+    {
+        eagle_trace_native_identity( trace_id, 5, EAGLE_IDENTITY_COMPLETE, E_POINTER, __builtin_return_address(0) );
+        return E_POINTER;
+    }
     memset( reply, 0, sizeof(*reply) );
-    if (cancelled( cancel )) return reply->error = HRESULT_FROM_WIN32( ERROR_CANCELLED );
+    if (cancelled( cancel ))
+    {
+        hr = reply->error = HRESULT_FROM_WIN32( ERROR_CANCELLED );
+        eagle_trace_native_identity( trace_id, 5, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
+        return hr;
+    }
     if (FAILED(hr = build_endpoint( authority, L"token", path ))) goto done;
     if (WindowsGetStringLen( client_id ))
     {
@@ -585,8 +599,11 @@ HRESULT identity_device_list_accounts( HSTRING client_id, HSTRING authority, HAN
         hr = E_OUTOFMEMORY;
         goto done;
     }
-    if (FAILED(hr = identity_native_credentials( credential_list, client, authority,
-                                                 records, MAX_HTTP_RESPONSE, &size ))) goto done;
+    eagle_trace_native_identity( trace_id, 5, EAGLE_IDENTITY_CACHE, E_PENDING, __builtin_return_address(0) );
+    hr = identity_native_credentials( credential_list, client, authority,
+                                      records, MAX_HTTP_RESPONSE, &size );
+    eagle_trace_native_identity( trace_id, 5, EAGLE_IDENTITY_CACHE, hr, __builtin_return_address(0) );
+    if (FAILED(hr)) goto done;
     if (size < sizeof(count) || size > MAX_HTTP_RESPONSE)
     {
         hr = E_INVALIDARG;
@@ -696,6 +713,7 @@ done:
         identity_reply_clear( reply );
         reply->error = hr;
     }
+    eagle_trace_native_identity( trace_id, 5, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
     return hr;
 }
 
@@ -838,10 +856,21 @@ HRESULT identity_device_get_token( const GUID *application_id, HSTRING service, 
     DWORD size, status;
     INT32 comparison;
     HRESULT hr;
+    ULONG trace_id = InterlockedIncrement( &trace_counter );
 
-    if (!application_id || !reply) return E_POINTER;
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_BEGIN, E_PENDING, __builtin_return_address(0) );
+    if (!application_id || !reply)
+    {
+        eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_COMPLETE, E_POINTER, __builtin_return_address(0) );
+        return E_POINTER;
+    }
     memset( reply, 0, sizeof(*reply) );
-    if (cancelled( cancel )) return reply->error = HRESULT_FROM_WIN32( ERROR_CANCELLED );
+    if (cancelled( cancel ))
+    {
+        hr = reply->error = HRESULT_FROM_WIN32( ERROR_CANCELLED );
+        eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
+        return hr;
+    }
     if (FAILED(hr = guid_to_utf8( application_id, client_id )) ||
         FAILED(hr = build_endpoint( authority, L"token", path )) ||
         FAILED(hr = build_scopes( service, &scopes ))) goto done;
@@ -850,8 +879,11 @@ HRESULT identity_device_get_token( const GUID *application_id, HSTRING service, 
         hr = E_OUTOFMEMORY;
         goto done;
     }
-    if (FAILED(hr = identity_native_credentials( credential_lookup, client_id, authority,
-                                                 record, MAX_HTTP_RESPONSE, &size ))) goto done;
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_CACHE, E_PENDING, __builtin_return_address(0) );
+    hr = identity_native_credentials( credential_lookup, client_id, authority,
+                                      record, MAX_HTTP_RESPONSE, &size );
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_CACHE, hr, __builtin_return_address(0) );
+    if (FAILED(hr)) goto done;
     if (size < 5 || size > MAX_HTTP_RESPONSE || record[size - 1] || strncmp(record, "1\n", 2) ||
         !(id = strchr( record + 2, '\n' )))
     {
@@ -896,22 +928,28 @@ HRESULT identity_device_get_token( const GUID *application_id, HSTRING service, 
     }
     snprintf( body, size, "grant_type=refresh_token&client_info=1&client_id=%s&refresh_token=%s&scope=%s",
               client_id, encoded_refresh, encoded_scopes );
-    if (FAILED(hr = http_post( path, body, cancel, &response, &status ))) goto done;
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_REQUEST, E_PENDING, __builtin_return_address(0) );
+    hr = http_post( path, body, cancel, &response, &status );
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_REQUEST, hr, __builtin_return_address(0) );
+    if (FAILED(hr)) goto done;
     if (status != 200)
     {
         hr = E_ACCESSDENIED;
         goto done;
     }
-    if (FAILED(hr = token_reply( response, id, client_id, reply )) ||
-        FAILED(hr = WindowsCompareStringOrdinal( previous.account_id, reply->account_id, &comparison ))) goto done;
+    hr = token_reply( response, id, client_id, reply );
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_RESPONSE, hr, __builtin_return_address(0) );
+    if (FAILED(hr) || FAILED(hr = WindowsCompareStringOrdinal( previous.account_id, reply->account_id, &comparison ))) goto done;
     if (!reply->scopes && FAILED(hr = utf8_to_hstring( scopes, &reply->scopes ))) goto done;
     if (comparison)
     {
         hr = E_ACCESSDENIED;
         goto done;
     }
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_PERSIST, E_PENDING, __builtin_return_address(0) );
     hr = cancelled( cancel ) ? HRESULT_FROM_WIN32( ERROR_CANCELLED ) :
                               save_native_tokens( response, refresh, id, client_id, authority );
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_PERSIST, hr, __builtin_return_address(0) );
 
 done:
     identity_reply_clear( &previous );
@@ -930,6 +968,7 @@ done:
     free( scopes );
     free( body );
     free( response );
+    eagle_trace_native_identity( trace_id, 3, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
     return hr;
 }
 
@@ -943,20 +982,38 @@ HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, 
     DWORD status;
     SIZE_T size;
     HRESULT hr;
+    ULONG trace_id = InterlockedIncrement( &trace_counter );
     WCHAR device_path[80], token_path[80];
 
-    if (!application_id || !reply) return E_POINTER;
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_BEGIN, E_PENDING, __builtin_return_address(0) );
+    if (!application_id || !reply)
+    {
+        eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_COMPLETE, E_POINTER, __builtin_return_address(0) );
+        return E_POINTER;
+    }
     memset( reply, 0, sizeof(*reply) );
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_CACHE, E_PENDING, __builtin_return_address(0) );
     hr = identity_device_get_token( application_id, service, authority, NULL, login_hint, cancel, reply );
-    if (SUCCEEDED(hr)) return S_OK;
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_CACHE, hr, __builtin_return_address(0) );
+    if (SUCCEEDED(hr))
+    {
+        eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_COMPLETE, S_OK, __builtin_return_address(0) );
+        return S_OK;
+    }
     if (hr == HRESULT_FROM_WIN32( ERROR_SERVICE_NOT_ACTIVE ))
     {
         static const WCHAR message[] = L"Secure credential storage is unavailable. Start or unlock a Secret Service-compatible keyring and try again.";
         WindowsCreateString( message, ARRAY_SIZE(message) - 1, &reply->error_message );
+        eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
         return hr;
     }
     identity_reply_clear( reply );
-    if (cancelled( cancel )) return reply->error = HRESULT_FROM_WIN32( ERROR_CANCELLED );
+    if (cancelled( cancel ))
+    {
+        hr = reply->error = HRESULT_FROM_WIN32( ERROR_CANCELLED );
+        eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
+        return hr;
+    }
     if (FAILED(hr = guid_to_utf8( application_id, client_id )) ||
         FAILED(hr = build_endpoint( authority, L"devicecode", device_path )) ||
         FAILED(hr = build_endpoint( authority, L"token", token_path )) ||
@@ -974,7 +1031,10 @@ HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, 
         goto done;
     }
     snprintf( body, size, "client_id=%s&scope=%s", client_id, encoded_scopes );
-    if (FAILED(hr = http_post( device_path, body, cancel, &response, &status ))) goto done;
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_REQUEST, E_PENDING, __builtin_return_address(0) );
+    hr = http_post( device_path, body, cancel, &response, &status );
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_REQUEST, hr, __builtin_return_address(0) );
+    if (FAILED(hr)) goto done;
     if (status != 200)
     {
         hr = E_ACCESSDENIED;
@@ -993,7 +1053,10 @@ HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, 
         hr = HRESULT_FROM_WIN32( ERROR_CANCELLED );
         goto done;
     }
-    if (FAILED(hr = show_device_prompt( verification_uri, user_code, cancel ))) goto done;
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_PROMPT, E_PENDING, __builtin_return_address(0) );
+    hr = show_device_prompt( verification_uri, user_code, cancel );
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_PROMPT, hr, __builtin_return_address(0) );
+    if (FAILED(hr)) goto done;
     if (!(encoded_code = form_encode( device_code )))
     {
         hr = E_OUTOFMEMORY;
@@ -1021,7 +1084,10 @@ HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, 
         response = NULL;
         free( error );
         error = NULL;
-        if (FAILED(hr = http_post( token_path, body, cancel, &response, &status ))) goto done;
+        eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_REQUEST, E_PENDING, __builtin_return_address(0) );
+        hr = http_post( token_path, body, cancel, &response, &status );
+        eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_REQUEST, hr, __builtin_return_address(0) );
+        if (FAILED(hr)) goto done;
         if (status == 200) break;
         if (FAILED(json_string( response, "error", &error )))
         {
@@ -1045,9 +1111,14 @@ HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, 
         hr = HRESULT_FROM_WIN32( ERROR_CANCELLED );
         goto done;
     }
-    if (FAILED(hr = token_reply( response, NULL, client_id, reply ))) goto done;
+    hr = token_reply( response, NULL, client_id, reply );
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_RESPONSE, hr, __builtin_return_address(0) );
+    if (FAILED(hr)) goto done;
     if (!reply->scopes && FAILED(hr = utf8_to_hstring( scopes, &reply->scopes ))) goto done;
-    if (FAILED(hr = save_native_tokens( response, NULL, NULL, client_id, authority ))) goto done;
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_PERSIST, E_PENDING, __builtin_return_address(0) );
+    hr = save_native_tokens( response, NULL, NULL, client_id, authority );
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_PERSIST, hr, __builtin_return_address(0) );
+    if (FAILED(hr)) goto done;
     reply->error = S_OK;
     hr = S_OK;
 
@@ -1066,5 +1137,6 @@ done:
     free( user_code );
     free( verification_uri );
     free( error );
+    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_COMPLETE, hr, __builtin_return_address(0) );
     return hr;
 }
