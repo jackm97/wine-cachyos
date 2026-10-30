@@ -188,12 +188,17 @@ static HRESULT interaction_source_collection_create( ICompositionInteractionSour
 struct composition_conditional_value
 {
     ICompositionConditionalValue ICompositionConditionalValue_iface;
+    IInteractionTrackerInertiaRestingValue IInteractionTrackerInertiaRestingValue_iface;
+    IInteractionTrackerInertiaModifier IInteractionTrackerInertiaModifier_iface;
     ICompositionObject ICompositionObject_iface;
     IClosable IClosable_iface;
     IExpressionAnimation *condition;
     IExpressionAnimation *value;
     ICompositionPropertySet *properties;
     ICompositor *compositor;
+    CRITICAL_SECTION cs;
+    BOOL inertia_resting_value;
+    BOOL closed;
     LONG ref;
 };
 
@@ -220,8 +225,15 @@ static HRESULT composition_conditional_value_query_interface( struct composition
 {
     if (!out) return E_POINTER;
     if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
-        IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID_ICompositionConditionalValue ))
+        IsEqualGUID( iid, &IID_IAgileObject ))
+        *out = impl->inertia_resting_value ? (void *)&impl->IInteractionTrackerInertiaRestingValue_iface :
+                                           (void *)&impl->ICompositionConditionalValue_iface;
+    else if (!impl->inertia_resting_value && IsEqualGUID( iid, &IID_ICompositionConditionalValue ))
         *out = &impl->ICompositionConditionalValue_iface;
+    else if (impl->inertia_resting_value && IsEqualGUID( iid, &IID_IInteractionTrackerInertiaRestingValue ))
+        *out = &impl->IInteractionTrackerInertiaRestingValue_iface;
+    else if (impl->inertia_resting_value && IsEqualGUID( iid, &IID_IInteractionTrackerInertiaModifier ))
+        *out = &impl->IInteractionTrackerInertiaModifier_iface;
     else if (IsEqualGUID( iid, &IID_ICompositionObject ))
         *out = &impl->ICompositionObject_iface;
     else if (IsEqualGUID( iid, &IID_IClosable ))
@@ -248,23 +260,27 @@ static ULONG composition_conditional_value_release( struct composition_condition
     {
         if (impl->condition) IExpressionAnimation_Release( impl->condition );
         if (impl->value) IExpressionAnimation_Release( impl->value );
-        ICompositionPropertySet_Release( impl->properties );
-        ICompositor_Release( impl->compositor );
+        if (impl->properties) ICompositionPropertySet_Release( impl->properties );
+        if (impl->compositor) ICompositor_Release( impl->compositor );
+        DeleteCriticalSection( &impl->cs );
         free( impl );
     }
     return ref;
 }
 
-static HRESULT composition_conditional_value_get_iids( ULONG *count, IID **iids )
+static HRESULT composition_conditional_value_get_iids( struct composition_conditional_value *impl,
+        ULONG *count, IID **iids )
 {
     IID *values;
+    ULONG size = impl->inertia_resting_value ? 4 : 3;
 
     if (!count || !iids) return E_POINTER;
-    if (!(values = CoTaskMemAlloc( 3 * sizeof(*values) ))) return E_OUTOFMEMORY;
-    values[0] = IID_ICompositionConditionalValue;
+    if (!(values = CoTaskMemAlloc( size * sizeof(*values) ))) return E_OUTOFMEMORY;
+    values[0] = impl->inertia_resting_value ? IID_IInteractionTrackerInertiaRestingValue : IID_ICompositionConditionalValue;
     values[1] = IID_ICompositionObject;
     values[2] = IID_IClosable;
-    *count = 3;
+    if (impl->inertia_resting_value) values[3] = IID_IInteractionTrackerInertiaModifier;
+    *count = size;
     *iids = values;
     return S_OK;
 }
@@ -276,6 +292,21 @@ static HRESULT composition_conditional_value_get_class_name( HSTRING *name )
             RuntimeClass_Windows_UI_Composition_Interactions_CompositionConditionalValue,
             ARRAY_SIZE(RuntimeClass_Windows_UI_Composition_Interactions_CompositionConditionalValue) - 1,
             name );
+}
+
+static HRESULT inertia_resting_value_class_name( HSTRING *name )
+{
+    if (!name) return E_POINTER;
+    return WindowsCreateString(
+            RuntimeClass_Windows_UI_Composition_Interactions_InteractionTrackerInertiaRestingValue,
+            ARRAY_SIZE(RuntimeClass_Windows_UI_Composition_Interactions_InteractionTrackerInertiaRestingValue) - 1,
+            name );
+}
+
+static HRESULT conditional_value_class_name( struct composition_conditional_value *impl, HSTRING *name )
+{
+    if (impl->inertia_resting_value) return inertia_resting_value_class_name( name );
+    return composition_conditional_value_get_class_name( name );
 }
 
 static HRESULT composition_conditional_value_get_trust_level( TrustLevel *level )
@@ -305,13 +336,13 @@ static ULONG WINAPI composition_conditional_value_Release( ICompositionCondition
 static HRESULT WINAPI composition_conditional_value_GetIids( ICompositionConditionalValue *iface,
         ULONG *count, IID **iids )
 {
-    return composition_conditional_value_get_iids( count, iids );
+    return composition_conditional_value_get_iids( impl_from_ICompositionConditionalValue( iface ), count, iids );
 }
 
 static HRESULT WINAPI composition_conditional_value_GetRuntimeClassName(
         ICompositionConditionalValue *iface, HSTRING *name )
 {
-    return composition_conditional_value_get_class_name( name );
+    return conditional_value_class_name( impl_from_ICompositionConditionalValue( iface ), name );
 }
 
 static HRESULT WINAPI composition_conditional_value_GetTrustLevel(
@@ -320,50 +351,69 @@ static HRESULT WINAPI composition_conditional_value_GetTrustLevel(
     return composition_conditional_value_get_trust_level( level );
 }
 
-static HRESULT composition_conditional_value_get_animation( IExpressionAnimation *animation,
-        IExpressionAnimation **value )
+static HRESULT composition_conditional_value_get_animation( struct composition_conditional_value *impl,
+        IExpressionAnimation **current, IExpressionAnimation **value )
 {
+    HRESULT hr = S_OK;
+
     if (!value) return E_POINTER;
-    if (animation) IExpressionAnimation_AddRef( animation );
-    *value = animation;
-    return S_OK;
+    *value = NULL;
+    EnterCriticalSection( &impl->cs );
+    if (impl->closed) hr = RO_E_CLOSED;
+    else
+    {
+        *value = *current;
+        if (*value) IExpressionAnimation_AddRef( *value );
+    }
+    LeaveCriticalSection( &impl->cs );
+    return hr;
 }
 
-static HRESULT composition_conditional_value_put_animation( IExpressionAnimation **current,
-        IExpressionAnimation *value )
+static HRESULT composition_conditional_value_put_animation( struct composition_conditional_value *impl,
+        IExpressionAnimation **current, IExpressionAnimation *value )
 {
+    IExpressionAnimation *old;
+
+    EnterCriticalSection( &impl->cs );
+    if (impl->closed)
+    {
+        LeaveCriticalSection( &impl->cs );
+        return RO_E_CLOSED;
+    }
     if (value) IExpressionAnimation_AddRef( value );
-    if (*current) IExpressionAnimation_Release( *current );
+    old = *current;
     *current = value;
+    LeaveCriticalSection( &impl->cs );
+    if (old) IExpressionAnimation_Release( old );
     return S_OK;
 }
 
 static HRESULT WINAPI composition_conditional_value_get_Condition( ICompositionConditionalValue *iface,
         IExpressionAnimation **value )
 {
-    return composition_conditional_value_get_animation(
-            impl_from_ICompositionConditionalValue( iface )->condition, value );
+    struct composition_conditional_value *impl = impl_from_ICompositionConditionalValue( iface );
+    return composition_conditional_value_get_animation( impl, &impl->condition, value );
 }
 
 static HRESULT WINAPI composition_conditional_value_put_Condition( ICompositionConditionalValue *iface,
         IExpressionAnimation *value )
 {
-    return composition_conditional_value_put_animation(
-            &impl_from_ICompositionConditionalValue( iface )->condition, value );
+    struct composition_conditional_value *impl = impl_from_ICompositionConditionalValue( iface );
+    return composition_conditional_value_put_animation( impl, &impl->condition, value );
 }
 
 static HRESULT WINAPI composition_conditional_value_get_Value( ICompositionConditionalValue *iface,
         IExpressionAnimation **value )
 {
-    return composition_conditional_value_get_animation(
-            impl_from_ICompositionConditionalValue( iface )->value, value );
+    struct composition_conditional_value *impl = impl_from_ICompositionConditionalValue( iface );
+    return composition_conditional_value_get_animation( impl, &impl->value, value );
 }
 
 static HRESULT WINAPI composition_conditional_value_put_Value( ICompositionConditionalValue *iface,
         IExpressionAnimation *value )
 {
-    return composition_conditional_value_put_animation(
-            &impl_from_ICompositionConditionalValue( iface )->value, value );
+    struct composition_conditional_value *impl = impl_from_ICompositionConditionalValue( iface );
+    return composition_conditional_value_put_animation( impl, &impl->value, value );
 }
 
 static const ICompositionConditionalValueVtbl composition_conditional_value_vtbl =
@@ -400,13 +450,13 @@ static ULONG WINAPI conditional_value_composition_object_Release( ICompositionOb
 static HRESULT WINAPI conditional_value_composition_object_GetIids( ICompositionObject *iface,
         ULONG *count, IID **iids )
 {
-    return composition_conditional_value_get_iids( count, iids );
+    return composition_conditional_value_get_iids( conditional_value_from_ICompositionObject( iface ), count, iids );
 }
 
 static HRESULT WINAPI conditional_value_composition_object_GetRuntimeClassName(
         ICompositionObject *iface, HSTRING *name )
 {
-    return composition_conditional_value_get_class_name( name );
+    return conditional_value_class_name( conditional_value_from_ICompositionObject( iface ), name );
 }
 
 static HRESULT WINAPI conditional_value_composition_object_GetTrustLevel( ICompositionObject *iface,
@@ -419,44 +469,78 @@ static HRESULT WINAPI conditional_value_composition_object_get_Compositor( IComp
         ICompositor **value )
 {
     struct composition_conditional_value *impl = conditional_value_from_ICompositionObject( iface );
+    HRESULT hr = S_OK;
 
     if (!value) return E_POINTER;
-    ICompositor_AddRef( impl->compositor );
-    *value = impl->compositor;
-    return S_OK;
+    *value = NULL;
+    EnterCriticalSection( &impl->cs );
+    if (impl->closed) hr = RO_E_CLOSED;
+    else
+    {
+        ICompositor_AddRef( impl->compositor );
+        *value = impl->compositor;
+    }
+    LeaveCriticalSection( &impl->cs );
+    return hr;
 }
 
 static HRESULT WINAPI conditional_value_composition_object_get_Dispatcher( ICompositionObject *iface,
         ICoreDispatcher **value )
 {
+    struct composition_conditional_value *impl = conditional_value_from_ICompositionObject( iface );
+    HRESULT hr;
+
     if (!value) return E_POINTER;
     *value = NULL;
-    return S_OK;
+    EnterCriticalSection( &impl->cs );
+    hr = impl->closed ? RO_E_CLOSED : S_OK;
+    LeaveCriticalSection( &impl->cs );
+    return hr;
 }
 
 static HRESULT WINAPI conditional_value_composition_object_get_Properties( ICompositionObject *iface,
         ICompositionPropertySet **value )
 {
     struct composition_conditional_value *impl = conditional_value_from_ICompositionObject( iface );
+    HRESULT hr = S_OK;
 
     if (!value) return E_POINTER;
-    ICompositionPropertySet_AddRef( impl->properties );
-    *value = impl->properties;
-    return S_OK;
+    *value = NULL;
+    EnterCriticalSection( &impl->cs );
+    if (impl->closed) hr = RO_E_CLOSED;
+    else
+    {
+        ICompositionPropertySet_AddRef( impl->properties );
+        *value = impl->properties;
+    }
+    LeaveCriticalSection( &impl->cs );
+    return hr;
 }
 
 static HRESULT WINAPI conditional_value_composition_object_StartAnimation( ICompositionObject *iface,
         HSTRING name, ICompositionAnimation *animation )
 {
+    struct composition_conditional_value *impl = conditional_value_from_ICompositionObject( iface );
+    HRESULT hr;
+
     TRACE( "iface %p, name %s, animation %p.\n", iface, debugstr_hstring( name ), animation );
-    return S_OK;
+    EnterCriticalSection( &impl->cs );
+    hr = impl->closed ? RO_E_CLOSED : impl->inertia_resting_value ? E_NOTIMPL : S_OK;
+    LeaveCriticalSection( &impl->cs );
+    return hr;
 }
 
 static HRESULT WINAPI conditional_value_composition_object_StopAnimation( ICompositionObject *iface,
         HSTRING name )
 {
+    struct composition_conditional_value *impl = conditional_value_from_ICompositionObject( iface );
+    HRESULT hr;
+
     TRACE( "iface %p, name %s.\n", iface, debugstr_hstring( name ) );
-    return S_OK;
+    EnterCriticalSection( &impl->cs );
+    hr = impl->closed ? RO_E_CLOSED : impl->inertia_resting_value ? E_NOTIMPL : S_OK;
+    LeaveCriticalSection( &impl->cs );
+    return hr;
 }
 
 static const ICompositionObjectVtbl conditional_value_composition_object_vtbl =
@@ -493,12 +577,12 @@ static ULONG WINAPI conditional_value_closable_Release( IClosable *iface )
 
 static HRESULT WINAPI conditional_value_closable_GetIids( IClosable *iface, ULONG *count, IID **iids )
 {
-    return composition_conditional_value_get_iids( count, iids );
+    return composition_conditional_value_get_iids( conditional_value_from_IClosable( iface ), count, iids );
 }
 
 static HRESULT WINAPI conditional_value_closable_GetRuntimeClassName( IClosable *iface, HSTRING *name )
 {
-    return composition_conditional_value_get_class_name( name );
+    return conditional_value_class_name( conditional_value_from_IClosable( iface ), name );
 }
 
 static HRESULT WINAPI conditional_value_closable_GetTrustLevel( IClosable *iface, TrustLevel *level )
@@ -508,7 +592,27 @@ static HRESULT WINAPI conditional_value_closable_GetTrustLevel( IClosable *iface
 
 static HRESULT WINAPI conditional_value_closable_Close( IClosable *iface )
 {
+    struct composition_conditional_value *impl = conditional_value_from_IClosable( iface );
+    IExpressionAnimation *condition, *value;
+    ICompositionPropertySet *properties;
+    ICompositor *compositor;
+
     TRACE( "iface %p.\n", iface );
+    if (!impl->inertia_resting_value) return S_OK;
+    EnterCriticalSection( &impl->cs );
+    impl->closed = TRUE;
+    condition = impl->condition;
+    value = impl->value;
+    properties = impl->properties;
+    compositor = impl->compositor;
+    impl->condition = impl->value = NULL;
+    impl->properties = NULL;
+    impl->compositor = NULL;
+    LeaveCriticalSection( &impl->cs );
+    if (condition) IExpressionAnimation_Release( condition );
+    if (value) IExpressionAnimation_Release( value );
+    if (properties) ICompositionPropertySet_Release( properties );
+    if (compositor) ICompositor_Release( compositor );
     return S_OK;
 }
 
@@ -523,7 +627,67 @@ static const IClosableVtbl conditional_value_closable_vtbl =
     conditional_value_closable_Close,
 };
 
-static HRESULT composition_conditional_value_create( ICompositor *compositor,
+DEFINE_IINSPECTABLE_( inertia_resting_value, IInteractionTrackerInertiaRestingValue,
+        struct composition_conditional_value, impl_from_IInteractionTrackerInertiaRestingValue,
+        IInteractionTrackerInertiaRestingValue_iface, &impl->ICompositionConditionalValue_iface )
+
+static HRESULT WINAPI inertia_resting_value_get_Condition( IInteractionTrackerInertiaRestingValue *iface,
+        IExpressionAnimation **value )
+{
+    struct composition_conditional_value *impl = impl_from_IInteractionTrackerInertiaRestingValue( iface );
+    return composition_conditional_value_get_animation( impl, &impl->condition, value );
+}
+
+static HRESULT WINAPI inertia_resting_value_put_Condition( IInteractionTrackerInertiaRestingValue *iface,
+        IExpressionAnimation *value )
+{
+    struct composition_conditional_value *impl = impl_from_IInteractionTrackerInertiaRestingValue( iface );
+    return composition_conditional_value_put_animation( impl, &impl->condition, value );
+}
+
+static HRESULT WINAPI inertia_resting_value_get_RestingValue( IInteractionTrackerInertiaRestingValue *iface,
+        IExpressionAnimation **value )
+{
+    struct composition_conditional_value *impl = impl_from_IInteractionTrackerInertiaRestingValue( iface );
+    return composition_conditional_value_get_animation( impl, &impl->value, value );
+}
+
+static HRESULT WINAPI inertia_resting_value_put_RestingValue( IInteractionTrackerInertiaRestingValue *iface,
+        IExpressionAnimation *value )
+{
+    struct composition_conditional_value *impl = impl_from_IInteractionTrackerInertiaRestingValue( iface );
+    return composition_conditional_value_put_animation( impl, &impl->value, value );
+}
+
+static const IInteractionTrackerInertiaRestingValueVtbl inertia_resting_value_vtbl =
+{
+    inertia_resting_value_QueryInterface,
+    inertia_resting_value_AddRef,
+    inertia_resting_value_Release,
+    inertia_resting_value_GetIids,
+    inertia_resting_value_GetRuntimeClassName,
+    inertia_resting_value_GetTrustLevel,
+    inertia_resting_value_get_Condition,
+    inertia_resting_value_put_Condition,
+    inertia_resting_value_get_RestingValue,
+    inertia_resting_value_put_RestingValue,
+};
+
+DEFINE_IINSPECTABLE_( inertia_modifier, IInteractionTrackerInertiaModifier,
+        struct composition_conditional_value, impl_from_IInteractionTrackerInertiaModifier,
+        IInteractionTrackerInertiaModifier_iface, &impl->ICompositionConditionalValue_iface )
+
+static const IInteractionTrackerInertiaModifierVtbl inertia_modifier_vtbl =
+{
+    inertia_modifier_QueryInterface,
+    inertia_modifier_AddRef,
+    inertia_modifier_Release,
+    inertia_modifier_GetIids,
+    inertia_modifier_GetRuntimeClassName,
+    inertia_modifier_GetTrustLevel,
+};
+
+static HRESULT composition_conditional_value_create( ICompositor *compositor, BOOL inertia_resting_value,
         ICompositionConditionalValue **result )
 {
     struct composition_conditional_value *impl;
@@ -533,10 +697,14 @@ static HRESULT composition_conditional_value_create( ICompositor *compositor,
     *result = NULL;
     if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
     impl->ICompositionConditionalValue_iface.lpVtbl = &composition_conditional_value_vtbl;
+    impl->IInteractionTrackerInertiaRestingValue_iface.lpVtbl = &inertia_resting_value_vtbl;
+    impl->IInteractionTrackerInertiaModifier_iface.lpVtbl = &inertia_modifier_vtbl;
     impl->ICompositionObject_iface.lpVtbl = &conditional_value_composition_object_vtbl;
     impl->IClosable_iface.lpVtbl = &conditional_value_closable_vtbl;
     impl->compositor = compositor;
+    impl->inertia_resting_value = inertia_resting_value;
     impl->ref = 1;
+    InitializeCriticalSection( &impl->cs );
     ICompositor_AddRef( compositor );
     if (FAILED(hr = composition_property_set_create( compositor, &impl->properties )))
     {
@@ -682,7 +850,7 @@ static HRESULT WINAPI composition_conditional_value_statics_Create(
         ICompositionConditionalValue **result )
 {
     TRACE( "iface %p, compositor %p, result %p.\n", iface, compositor, result );
-    return composition_conditional_value_create( compositor, result );
+    return composition_conditional_value_create( compositor, FALSE, result );
 }
 
 static const ICompositionConditionalValueStaticsVtbl composition_conditional_value_statics_vtbl =
@@ -705,6 +873,129 @@ static struct composition_conditional_value_factory composition_conditional_valu
 
 IActivationFactory *composition_conditional_value_factory =
     &composition_conditional_value_factory_impl.IActivationFactory_iface;
+
+struct inertia_resting_value_factory
+{
+    IActivationFactory IActivationFactory_iface;
+    IInteractionTrackerInertiaRestingValueStatics IInteractionTrackerInertiaRestingValueStatics_iface;
+    LONG ref;
+};
+
+static inline struct inertia_resting_value_factory *resting_value_factory_from_IActivationFactory(
+        IActivationFactory *iface )
+{
+    return CONTAINING_RECORD( iface, struct inertia_resting_value_factory, IActivationFactory_iface );
+}
+
+static HRESULT WINAPI inertia_resting_value_factory_QueryInterface( IActivationFactory *iface,
+        REFIID iid, void **out )
+{
+    struct inertia_resting_value_factory *impl = resting_value_factory_from_IActivationFactory( iface );
+
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID_IActivationFactory ))
+        *out = &impl->IActivationFactory_iface;
+    else if (IsEqualGUID( iid, &IID_IInteractionTrackerInertiaRestingValueStatics ))
+        *out = &impl->IInteractionTrackerInertiaRestingValueStatics_iface;
+    else return E_NOINTERFACE;
+    IUnknown_AddRef( (IUnknown *)*out );
+    return S_OK;
+}
+
+static ULONG WINAPI inertia_resting_value_factory_AddRef( IActivationFactory *iface )
+{
+    return InterlockedIncrement( &resting_value_factory_from_IActivationFactory( iface )->ref );
+}
+
+static ULONG WINAPI inertia_resting_value_factory_Release( IActivationFactory *iface )
+{
+    return InterlockedDecrement( &resting_value_factory_from_IActivationFactory( iface )->ref );
+}
+
+static HRESULT WINAPI inertia_resting_value_factory_GetIids( IActivationFactory *iface,
+        ULONG *count, IID **iids )
+{
+    IID *values;
+
+    if (!count || !iids) return E_POINTER;
+    if (!(values = CoTaskMemAlloc( 2 * sizeof(*values) ))) return E_OUTOFMEMORY;
+    values[0] = IID_IActivationFactory;
+    values[1] = IID_IInteractionTrackerInertiaRestingValueStatics;
+    *count = 2;
+    *iids = values;
+    return S_OK;
+}
+
+static HRESULT WINAPI inertia_resting_value_factory_GetRuntimeClassName( IActivationFactory *iface,
+        HSTRING *name )
+{
+    return inertia_resting_value_class_name( name );
+}
+
+static HRESULT WINAPI inertia_resting_value_factory_GetTrustLevel( IActivationFactory *iface,
+        TrustLevel *level )
+{
+    return composition_conditional_value_get_trust_level( level );
+}
+
+static HRESULT WINAPI inertia_resting_value_factory_ActivateInstance( IActivationFactory *iface,
+        IInspectable **instance )
+{
+    if (!instance) return E_POINTER;
+    *instance = NULL;
+    return E_NOTIMPL;
+}
+
+static const IActivationFactoryVtbl inertia_resting_value_factory_vtbl =
+{
+    inertia_resting_value_factory_QueryInterface,
+    inertia_resting_value_factory_AddRef,
+    inertia_resting_value_factory_Release,
+    inertia_resting_value_factory_GetIids,
+    inertia_resting_value_factory_GetRuntimeClassName,
+    inertia_resting_value_factory_GetTrustLevel,
+    inertia_resting_value_factory_ActivateInstance,
+};
+
+DEFINE_IINSPECTABLE_( inertia_resting_value_statics, IInteractionTrackerInertiaRestingValueStatics,
+        struct inertia_resting_value_factory, impl_from_IInteractionTrackerInertiaRestingValueStatics,
+        IInteractionTrackerInertiaRestingValueStatics_iface, &impl->IActivationFactory_iface )
+
+static HRESULT WINAPI inertia_resting_value_statics_Create( IInteractionTrackerInertiaRestingValueStatics *iface,
+        ICompositor *compositor, IInteractionTrackerInertiaRestingValue **value )
+{
+    ICompositionConditionalValue *object;
+    HRESULT hr;
+
+    if (!value) return E_POINTER;
+    *value = NULL;
+    if (FAILED(hr = composition_conditional_value_create( compositor, TRUE, &object ))) return hr;
+    hr = ICompositionConditionalValue_QueryInterface( object, &IID_IInteractionTrackerInertiaRestingValue, (void **)value );
+    ICompositionConditionalValue_Release( object );
+    return hr;
+}
+
+static const IInteractionTrackerInertiaRestingValueStaticsVtbl inertia_resting_value_statics_vtbl =
+{
+    inertia_resting_value_statics_QueryInterface,
+    inertia_resting_value_statics_AddRef,
+    inertia_resting_value_statics_Release,
+    inertia_resting_value_statics_GetIids,
+    inertia_resting_value_statics_GetRuntimeClassName,
+    inertia_resting_value_statics_GetTrustLevel,
+    inertia_resting_value_statics_Create,
+};
+
+static struct inertia_resting_value_factory inertia_resting_value_factory_impl =
+{
+    {&inertia_resting_value_factory_vtbl},
+    {&inertia_resting_value_statics_vtbl},
+    1,
+};
+
+IActivationFactory *inertia_resting_value_factory = &inertia_resting_value_factory_impl.IActivationFactory_iface;
 
 static CRITICAL_SECTION tracker_binding_cs;
 static CRITICAL_SECTION_DEBUG tracker_binding_cs_debug =

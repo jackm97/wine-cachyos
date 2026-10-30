@@ -66,6 +66,9 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
     if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Interactions_InteractionTracker ))
         IActivationFactory_QueryInterface( interaction_tracker_factory, &IID_IActivationFactory, (void **)factory );
 
+    if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Interactions_InteractionTrackerInertiaRestingValue ))
+        IActivationFactory_QueryInterface( inertia_resting_value_factory, &IID_IActivationFactory, (void **)factory );
+
     if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Interactions_VisualInteractionSource ))
         IActivationFactory_QueryInterface( visual_interaction_source_factory, &IID_IActivationFactory,
                                            (void **)factory );

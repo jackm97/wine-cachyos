@@ -77,6 +77,9 @@ namespace Windows.UI.Composition.Interactions
     interface ICompositionInteractionSourceCollection;
     interface ICompositionConditionalValue;
     interface ICompositionConditionalValueStatics;
+    interface IInteractionTrackerInertiaModifier;
+    interface IInteractionTrackerInertiaRestingValue;
+    interface IInteractionTrackerInertiaRestingValueStatics;
     interface IInteractionTracker;
     interface IInteractionTracker4;
     interface IInteractionTracker5;
@@ -98,6 +101,8 @@ namespace Windows.UI.Composition.Interactions
     interface IVisualInteractionSourceStatics;
     runtimeclass CompositionInteractionSourceCollection;
     runtimeclass CompositionConditionalValue;
+    runtimeclass InteractionTrackerInertiaModifier;
+    runtimeclass InteractionTrackerInertiaRestingValue;
     runtimeclass InteractionTracker;
     runtimeclass InteractionTrackerCustomAnimationStateEnteredArgs;
     runtimeclass InteractionTrackerIdleStateEnteredArgs;
@@ -106,6 +111,61 @@ namespace Windows.UI.Composition.Interactions
     runtimeclass InteractionTrackerRequestIgnoredArgs;
     runtimeclass InteractionTrackerValuesChangedArgs;
     runtimeclass VisualInteractionSource;
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 3.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTrackerInertiaModifier),
+        uuid(a0e2c920-26b4-4da2-8b61-5e683979bbe2)
+    ]
+    interface IInteractionTrackerInertiaModifier : IInspectable
+    {
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 3.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTrackerInertiaRestingValue),
+        uuid(86f7ec09-5096-4170-9cc8-df2fe101bb93)
+    ]
+    interface IInteractionTrackerInertiaRestingValue : IInspectable
+    {
+        [propget] HRESULT Condition([out, retval] Windows.UI.Composition.ExpressionAnimation **value);
+        [propput] HRESULT Condition([in] Windows.UI.Composition.ExpressionAnimation *value);
+        [propget] HRESULT RestingValue([out, retval] Windows.UI.Composition.ExpressionAnimation **value);
+        [propput] HRESULT RestingValue([in] Windows.UI.Composition.ExpressionAnimation *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 3.0),
+        exclusiveto(Windows.UI.Composition.Interactions.InteractionTrackerInertiaRestingValue),
+        uuid(18ed4699-0745-4096-bcab-3a4e99569bcf)
+    ]
+    interface IInteractionTrackerInertiaRestingValueStatics : IInspectable
+    {
+        HRESULT Create([in] Windows.UI.Composition.Compositor *compositor,
+                [out, retval] Windows.UI.Composition.Interactions.InteractionTrackerInertiaRestingValue **value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 3.0),
+        marshaling_behavior(agile),
+        threading(both)
+    ]
+    runtimeclass InteractionTrackerInertiaModifier : Windows.UI.Composition.CompositionObject
+    {
+        [default] interface Windows.UI.Composition.Interactions.IInteractionTrackerInertiaModifier;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 3.0),
+        marshaling_behavior(agile),
+        threading(both),
+        static(Windows.UI.Composition.Interactions.IInteractionTrackerInertiaRestingValueStatics,
+               Windows.Foundation.UniversalApiContract, 3.0)
+    ]
+    runtimeclass InteractionTrackerInertiaRestingValue : Windows.UI.Composition.Interactions.InteractionTrackerInertiaModifier
+    {
+        [default] interface Windows.UI.Composition.Interactions.IInteractionTrackerInertiaRestingValue;
+    }
 
     [
         contract(Windows.Foundation.UniversalApiContract, 3.0),
