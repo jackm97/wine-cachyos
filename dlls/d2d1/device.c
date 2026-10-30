@@ -122,8 +122,10 @@ struct d2d_svg_element
     WCHAR *tag;
     WCHAR *path_data;
     D2D1_COLOR_F color;
+    D2D1_RECT_F view_box;
     float opacity;
     BOOL has_color;
+    BOOL has_view_box;
 };
 
 struct d2d_svg_document
@@ -139,6 +141,9 @@ static inline struct d2d_svg_element *impl_from_ID2D1SvgElement(IUnknown *iface)
 {
     return CONTAINING_RECORD(iface, struct d2d_svg_element, IUnknown_iface);
 }
+
+static void svg_skip_separators(const WCHAR **p);
+static BOOL svg_read_float(const WCHAR **p, float *value);
 
 static HRESULT STDMETHODCALLTYPE d2d_svg_element_QueryInterface(IUnknown *iface, REFIID iid, void **out)
 {
@@ -400,12 +405,13 @@ static HRESULT STDMETHODCALLTYPE d2d_svg_element_SetAttributeValuePod(IUnknown *
 
     TRACE("iface %p, name %s, type %u, value %p, size %u.\n",
             iface, debugstr_w(name), type, value, size);
-    if (!wcscmp(name, L"color") && size == sizeof(element->color))
+    if ((!wcscmp(name, L"color") || !wcscmp(name, L"fill")) && size == sizeof(element->color))
     {
         memcpy(&element->color, value, size);
         element->has_color = TRUE;
     }
-    else if (!wcscmp(name, L"opacity") && size == sizeof(element->opacity))
+    else if ((!wcscmp(name, L"opacity") || !wcscmp(name, L"fill-opacity")) &&
+            size == sizeof(element->opacity))
     {
         memcpy(&element->opacity, value, size);
     }
@@ -425,6 +431,19 @@ static HRESULT STDMETHODCALLTYPE d2d_svg_element_SetAttributeValueString(IUnknow
         if (!(copy = wcsdup(value))) return E_OUTOFMEMORY;
         free(element->path_data);
         element->path_data = copy;
+    }
+    else if (!wcscmp(name, L"viewBox"))
+    {
+        const WCHAR *p = value;
+        float x, y, width, height;
+
+        if (svg_read_float(&p, &x) && svg_read_float(&p, &y) &&
+                svg_read_float(&p, &width) && svg_read_float(&p, &height) &&
+                width > 0.0f && height > 0.0f)
+        {
+            element->view_box = (D2D1_RECT_F){x, y, x + width, y + height};
+            element->has_view_box = TRUE;
+        }
     }
     return S_OK;
 }
@@ -2655,8 +2674,7 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_EndDraw(ID2D1DeviceContext6 
 
     if (context->target.type == D2D_TARGET_COMMAND_LIST)
     {
-        FIXME("Unimplemented for command list target.\n");
-        return E_NOTIMPL;
+        return context->error.code;
     }
 
     if (tag1)
@@ -3255,6 +3273,7 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
 {
     struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
     ID2D1Bitmap *bitmap;
+    ID2D1CommandList *command_list;
 
     TRACE("iface %p, image %p, target_offset %s, image_rect %s, interpolation_mode %#x, composite_mode %#x.\n",
             iface, image, debug_d2d_point_2f(target_offset), debug_d2d_rect_f(image_rect),
@@ -3284,6 +3303,14 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
         d2d_device_context_draw_bitmap(context, bitmap, NULL, 1.0f, interpolation_mode, image_rect, target_offset, NULL);
 
         ID2D1Bitmap_Release(bitmap);
+        return;
+    }
+
+    if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1CommandList, (void **)&command_list)))
+    {
+        HRESULT hr = d2d_command_list_replay(command_list, (ID2D1DeviceContext *)iface);
+        ID2D1CommandList_Release(command_list);
+        if (FAILED(hr)) d2d_device_context_set_error(context, hr);
         return;
     }
 
@@ -3758,6 +3785,7 @@ static HRESULT d2d_svg_path_create_geometry(ID2D1Factory *factory, const WCHAR *
         ID2D1PathGeometry **geometry)
 {
     D2D1_POINT_2F current = {0.0f, 0.0f}, start = {0.0f, 0.0f}, point;
+    D2D1_POINT_2F control, end;
     D2D1_BEZIER_SEGMENT bezier;
     ID2D1GeometrySink *sink;
     WCHAR command = 0;
@@ -3833,6 +3861,24 @@ static HRESULT d2d_svg_path_create_geometry(ID2D1Factory *factory, const WCHAR *
                 ID2D1GeometrySink_AddBezier(sink, &bezier);
                 break;
 
+            case 'Q': case 'q':
+                if (!svg_read_float(&path, &control.x) || !svg_read_float(&path, &control.y)
+                        || !svg_read_float(&path, &end.x) || !svg_read_float(&path, &end.y))
+                {
+                    hr = E_INVALIDARG;
+                    goto done;
+                }
+                control = svg_absolute_point(control, current, relative);
+                end = svg_absolute_point(end, current, relative);
+                bezier.point1.x = current.x + (control.x - current.x) * 2.0f / 3.0f;
+                bezier.point1.y = current.y + (control.y - current.y) * 2.0f / 3.0f;
+                bezier.point2.x = end.x + (control.x - end.x) * 2.0f / 3.0f;
+                bezier.point2.y = end.y + (control.y - end.y) * 2.0f / 3.0f;
+                bezier.point3 = end;
+                current = end;
+                ID2D1GeometrySink_AddBezier(sink, &bezier);
+                break;
+
             case 'Z': case 'z':
                 if (figure_open) ID2D1GeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
                 current = start;
@@ -3865,20 +3911,27 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawSvgDocument(ID2D1DeviceCont
 {
     struct d2d_svg_document *document = impl_from_ID2D1SvgDocument(svg_document);
     struct d2d_svg_element *root, *element;
+    D2D1_MATRIX_3X2_F transform, previous_transform;
     ID2D1SolidColorBrush *brush;
     ID2D1PathGeometry *geometry;
     D2D1_COLOR_F color;
+    float scale, width, height;
     HRESULT hr;
 
     TRACE("iface %p, svg_document %p.\n", iface, svg_document);
     if (!document || !document->root) return;
     root = impl_from_ID2D1SvgElement(document->root);
-    color = root->has_color ? root->color : (D2D1_COLOR_F){0.0f, 0.0f, 0.0f, 1.0f};
-    color.a *= root->opacity;
-    if (FAILED(hr = ID2D1DeviceContext6_CreateSolidColorBrush(iface, &color, NULL, &brush)))
+    ID2D1DeviceContext6_GetTransform(iface, &previous_transform);
+    if (root->has_view_box)
     {
-        WARN("Failed to create SVG fill brush, hr %#lx.\n", hr);
-        return;
+        width = root->view_box.right - root->view_box.left;
+        height = root->view_box.bottom - root->view_box.top;
+        scale = min(document->viewport_size.width / width, document->viewport_size.height / height);
+        transform = (D2D1_MATRIX_3X2_F){scale, 0.0f, 0.0f, scale,
+                (document->viewport_size.width - width * scale) / 2.0f - root->view_box.left * scale,
+                (document->viewport_size.height - height * scale) / 2.0f - root->view_box.top * scale};
+        d2d_matrix_multiply(&transform, &previous_transform);
+        ID2D1DeviceContext6_SetTransform(iface, &transform);
     }
 
     for (element = root->first_child; element; element = element->next)
@@ -3889,10 +3942,20 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawSvgDocument(ID2D1DeviceCont
             WARN("Failed to create SVG path geometry, hr %#lx.\n", hr);
             continue;
         }
+        color = element->has_color ? element->color :
+                (root->has_color ? root->color : (D2D1_COLOR_F){0.0f, 0.0f, 0.0f, 1.0f});
+        color.a *= root->opacity * element->opacity;
+        if (FAILED(hr = ID2D1DeviceContext6_CreateSolidColorBrush(iface, &color, NULL, &brush)))
+        {
+            WARN("Failed to create SVG fill brush, hr %#lx.\n", hr);
+            ID2D1PathGeometry_Release(geometry);
+            continue;
+        }
         ID2D1DeviceContext6_FillGeometry(iface, (ID2D1Geometry *)geometry, (ID2D1Brush *)brush, NULL);
+        ID2D1SolidColorBrush_Release(brush);
         ID2D1PathGeometry_Release(geometry);
     }
-    ID2D1SolidColorBrush_Release(brush);
+    ID2D1DeviceContext6_SetTransform(iface, &previous_transform);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateColorContextFromDxgiColorSpace(
