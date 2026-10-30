@@ -1219,7 +1219,7 @@ static BOOL initialize_vk_device( TEB *teb, struct context *ctx )
         };
         VkApplicationInfo app_info =
         {
-            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
             .pEngineName = "Wine WGL",
             .engineVersion = 1,
         };
