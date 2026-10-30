@@ -2827,6 +2827,10 @@ static INSTALLSTATE MSI_GetComponentPath( const WCHAR *szProduct, const WCHAR *s
         }
     }
 
+    if (!path && (ctx & MSIINSTALLCONTEXT_MACHINE) &&
+        !msi_get_c2r_component_path( szProduct, szComponent, &path ))
+        state = GetFileAttributesW( path ) != INVALID_FILE_ATTRIBUTES ? INSTALLSTATE_LOCAL : INSTALLSTATE_ABSENT;
+
     if (!path)
         return INSTALLSTATE_UNKNOWN;
 
