@@ -742,6 +742,51 @@ static void test_DesignMode(void)
     ok( ref == 1, "got ref %ld.\n", ref );
 }
 
+static void test_CoreApplication(void)
+{
+    static const GUID IID_ICoreApplicationPrivate =
+        {0x17b0e613, 0x942a, 0x422d, {0x90, 0x4c, 0xf9, 0x0d, 0xc7, 0x1a, 0x7d, 0xae}};
+    IActivationFactory *factory;
+    ICoreApplication *statics;
+    IPropertySet *properties;
+    IUnknown *private;
+    HSTRING class_name, id;
+    HRESULT hr;
+
+    hr = WindowsCreateString( RuntimeClass_Windows_ApplicationModel_Core_CoreApplication,
+            ARRAY_SIZE(RuntimeClass_Windows_ApplicationModel_Core_CoreApplication) - 1, &class_name );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = RoGetActivationFactory( class_name, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( class_name );
+    ok( hr == S_OK || broken( hr == REGDB_E_CLASSNOTREG ), "got hr %#lx.\n", hr );
+    if (FAILED( hr ))
+    {
+        win_skip( "CoreApplication runtimeclass not registered, skipping tests.\n" );
+        return;
+    }
+
+    check_interface( factory, &IID_IUnknown, TRUE, FALSE );
+    check_interface( factory, &IID_IInspectable, TRUE, FALSE );
+    check_interface( factory, &IID_IAgileObject, TRUE, FALSE );
+    check_interface( factory, &IID_ICoreApplication, TRUE, FALSE );
+    check_interface( factory, &IID_ICoreApplicationPrivate, TRUE, FALSE );
+
+    hr = IActivationFactory_QueryInterface( factory, &IID_ICoreApplication, (void **)&statics );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = ICoreApplication_get_Id( statics, &id );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    WindowsDeleteString( id );
+    hr = ICoreApplication_get_Properties( statics, &properties );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    IPropertySet_Release( properties );
+    ICoreApplication_Release( statics );
+
+    hr = IActivationFactory_QueryInterface( factory, &IID_ICoreApplicationPrivate, (void **)&private );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    IUnknown_Release( private );
+    IActivationFactory_Release( factory );
+}
+
 static void test_LimitedAccessFeatures(void)
 {
     static const WCHAR feature_id_value[] = L"wine.test.limited-access-feature";
@@ -821,6 +866,7 @@ START_TEST(model)
     test_PackageStatics();
     test_StagePackageOptions();
     test_DesignMode();
+    test_CoreApplication();
     test_LimitedAccessFeatures();
 
     RoUninitialize();
