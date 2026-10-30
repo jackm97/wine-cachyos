@@ -224,7 +224,7 @@ _ACRTIMP float __cdecl fabsf(float);
 static inline float fabsf(float x) { return fabs(x); }
 #endif
 
-#if !defined(__i386__) || _MSVCR_VER>=120 || defined(_NO_CRT_MATH_INLINE)
+#if !defined(__i386__) || defined(_UCRT) || _MSVCR_VER>=120 || defined(_NO_CRT_MATH_INLINE)
 
 _ACRTIMP float __cdecl _chgsignf(float);
 _ACRTIMP float __cdecl _copysignf(float, float);
