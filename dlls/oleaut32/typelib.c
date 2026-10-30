@@ -190,6 +190,21 @@ static BOOL find_typelib_key( REFGUID guid, WORD *wMaj, WORD *wMin )
 
         if (sscanf(key_name, "%x.%x", &v_maj, &v_min) == 2)
         {
+            DWORD subkeys = 0;
+            HKEY version_key;
+
+            if (!RegOpenKeyExA(hkey, key_name, 0, KEY_READ, &version_key))
+            {
+                RegQueryInfoKeyA(version_key, NULL, NULL, NULL, &subkeys, NULL,
+                        NULL, NULL, NULL, NULL, NULL, NULL);
+                RegCloseKey(version_key);
+            }
+            /* Assembly metadata alone does not register a type library. */
+            if (!subkeys)
+            {
+                len = sizeof(key_name);
+                continue;
+            }
             TRACE("found %s: %x.%x\n", debugstr_w(buffer), v_maj, v_min);
 
             if (*wMaj == 0xffff && *wMin == 0xffff)
