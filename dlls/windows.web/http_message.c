@@ -286,6 +286,103 @@ HEADER_VTBL( request_headers, IHttpRequestHeaderCollection, request_iface, heade
 HEADER_VTBL( response_headers, IHttpResponseHeaderCollection, response_iface, headers_from_response )
 HEADER_VTBL( content_headers, IHttpContentHeaderCollection, content_iface, headers_from_content )
 
+
+/* Keep all SDK property slots even where a typed header is not implemented yet. */
+#define HEADER_PROPERTY( prefix, type, name ) \
+    static HRESULT WINAPI prefix##_get_##name( type *iface, IInspectable **value ) \
+    { \
+        if (!value) return E_POINTER; \
+        *value = NULL; \
+        return E_NOTIMPL; \
+    }
+#define HEADER_PROPERTY_SETTER( prefix, type, name ) \
+    static HRESULT WINAPI prefix##_put_##name( type *iface, IInspectable *value ) \
+    { \
+        return E_NOTIMPL; \
+    }
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, Accept )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, AcceptEncoding )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, AcceptLanguage )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, Authorization )
+HEADER_PROPERTY_SETTER( request_headers, IHttpRequestHeaderCollection, Authorization )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, CacheControl )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, Connection )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, Cookie )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, Date )
+HEADER_PROPERTY_SETTER( request_headers, IHttpRequestHeaderCollection, Date )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, Expect )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, Host )
+HEADER_PROPERTY_SETTER( request_headers, IHttpRequestHeaderCollection, Host )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, IfModifiedSince )
+HEADER_PROPERTY_SETTER( request_headers, IHttpRequestHeaderCollection, IfModifiedSince )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, IfUnmodifiedSince )
+HEADER_PROPERTY_SETTER( request_headers, IHttpRequestHeaderCollection, IfUnmodifiedSince )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, MaxForwards )
+HEADER_PROPERTY_SETTER( request_headers, IHttpRequestHeaderCollection, MaxForwards )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, ProxyAuthorization )
+HEADER_PROPERTY_SETTER( request_headers, IHttpRequestHeaderCollection, ProxyAuthorization )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, Referer )
+HEADER_PROPERTY_SETTER( request_headers, IHttpRequestHeaderCollection, Referer )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, TransferEncoding )
+HEADER_PROPERTY( request_headers, IHttpRequestHeaderCollection, UserAgent )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, Age )
+HEADER_PROPERTY_SETTER( response_headers, IHttpResponseHeaderCollection, Age )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, Allow )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, CacheControl )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, Connection )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, Date )
+HEADER_PROPERTY_SETTER( response_headers, IHttpResponseHeaderCollection, Date )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, Location )
+HEADER_PROPERTY_SETTER( response_headers, IHttpResponseHeaderCollection, Location )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, ProxyAuthenticate )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, RetryAfter )
+HEADER_PROPERTY_SETTER( response_headers, IHttpResponseHeaderCollection, RetryAfter )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, TransferEncoding )
+HEADER_PROPERTY( response_headers, IHttpResponseHeaderCollection, WwwAuthenticate )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, ContentDisposition )
+HEADER_PROPERTY_SETTER( content_headers, IHttpContentHeaderCollection, ContentDisposition )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, ContentEncoding )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, ContentLanguage )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, ContentLength )
+HEADER_PROPERTY_SETTER( content_headers, IHttpContentHeaderCollection, ContentLength )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, ContentLocation )
+HEADER_PROPERTY_SETTER( content_headers, IHttpContentHeaderCollection, ContentLocation )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, ContentMD5 )
+HEADER_PROPERTY_SETTER( content_headers, IHttpContentHeaderCollection, ContentMD5 )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, ContentRange )
+HEADER_PROPERTY_SETTER( content_headers, IHttpContentHeaderCollection, ContentRange )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, ContentType )
+HEADER_PROPERTY_SETTER( content_headers, IHttpContentHeaderCollection, ContentType )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, Expires )
+HEADER_PROPERTY_SETTER( content_headers, IHttpContentHeaderCollection, Expires )
+HEADER_PROPERTY( content_headers, IHttpContentHeaderCollection, LastModified )
+HEADER_PROPERTY_SETTER( content_headers, IHttpContentHeaderCollection, LastModified )
+
+#undef HEADER_PROPERTY
+#undef HEADER_PROPERTY_SETTER
+
+static HRESULT WINAPI request_headers_get_From( IHttpRequestHeaderCollection *iface, HSTRING *value )
+{
+    HSTRING_HEADER header;
+    HSTRING name;
+    HRESULT hr;
+
+    if (!value) return E_POINTER;
+    *value = NULL;
+    WindowsCreateStringReference( L"From", 4, &header, &name );
+    hr = headers_lookup( headers_from_request( iface ), name, value );
+    return hr == E_BOUNDS ? S_OK : hr;
+}
+
+static HRESULT WINAPI request_headers_put_From( IHttpRequestHeaderCollection *iface, HSTRING value )
+{
+    HSTRING_HEADER header;
+    HSTRING name;
+
+    WindowsCreateStringReference( L"From", 4, &header, &name );
+    return headers_append( headers_from_request( iface ), name, value );
+}
+
 static HRESULT WINAPI map_QueryInterface( IMap_HSTRING_HSTRING *iface, REFIID iid, void **out )
 {
     return headers_query( headers_from_map( iface ), iid, out );
@@ -517,30 +614,95 @@ static HRESULT WINAPI iterable_First( IIterable_IKeyValuePair_HSTRING_HSTRING *i
 static const IIterable_IKeyValuePair_HSTRING_HSTRINGVtbl iterable_vtbl = {
     iterable_QueryInterface,      iterable_AddRef,        iterable_Release, iterable_GetIids,
     iterable_GetRuntimeClassName, iterable_GetTrustLevel, iterable_First };
-static const IHttpRequestHeaderCollectionVtbl request_headers_vtbl = { request_headers_QueryInterface,
-                                                                       request_headers_AddRef,
-                                                                       request_headers_Release,
-                                                                       request_headers_GetIids,
-                                                                       request_headers_GetRuntimeClassName,
-                                                                       request_headers_GetTrustLevel,
-                                                                       request_headers_Append,
-                                                                       request_headers_TryAppendWithoutValidation };
-static const IHttpResponseHeaderCollectionVtbl response_headers_vtbl = { response_headers_QueryInterface,
-                                                                         response_headers_AddRef,
-                                                                         response_headers_Release,
-                                                                         response_headers_GetIids,
-                                                                         response_headers_GetRuntimeClassName,
-                                                                         response_headers_GetTrustLevel,
-                                                                         response_headers_Append,
-                                                                         response_headers_TryAppendWithoutValidation };
-static const IHttpContentHeaderCollectionVtbl content_headers_vtbl = { content_headers_QueryInterface,
-                                                                       content_headers_AddRef,
-                                                                       content_headers_Release,
-                                                                       content_headers_GetIids,
-                                                                       content_headers_GetRuntimeClassName,
-                                                                       content_headers_GetTrustLevel,
-                                                                       content_headers_Append,
-                                                                       content_headers_TryAppendWithoutValidation };
+static const IHttpRequestHeaderCollectionVtbl request_headers_vtbl = {
+    request_headers_QueryInterface,
+    request_headers_AddRef,
+    request_headers_Release,
+    request_headers_GetIids,
+    request_headers_GetRuntimeClassName,
+    request_headers_GetTrustLevel,
+    request_headers_get_Accept,
+    request_headers_get_AcceptEncoding,
+    request_headers_get_AcceptLanguage,
+    request_headers_get_Authorization,
+    request_headers_put_Authorization,
+    request_headers_get_CacheControl,
+    request_headers_get_Connection,
+    request_headers_get_Cookie,
+    request_headers_get_Date,
+    request_headers_put_Date,
+    request_headers_get_Expect,
+    request_headers_get_From,
+    request_headers_put_From,
+    request_headers_get_Host,
+    request_headers_put_Host,
+    request_headers_get_IfModifiedSince,
+    request_headers_put_IfModifiedSince,
+    request_headers_get_IfUnmodifiedSince,
+    request_headers_put_IfUnmodifiedSince,
+    request_headers_get_MaxForwards,
+    request_headers_put_MaxForwards,
+    request_headers_get_ProxyAuthorization,
+    request_headers_put_ProxyAuthorization,
+    request_headers_get_Referer,
+    request_headers_put_Referer,
+    request_headers_get_TransferEncoding,
+    request_headers_get_UserAgent,
+    request_headers_Append,
+    request_headers_TryAppendWithoutValidation
+};
+static const IHttpResponseHeaderCollectionVtbl response_headers_vtbl = {
+    response_headers_QueryInterface,
+    response_headers_AddRef,
+    response_headers_Release,
+    response_headers_GetIids,
+    response_headers_GetRuntimeClassName,
+    response_headers_GetTrustLevel,
+    response_headers_get_Age,
+    response_headers_put_Age,
+    response_headers_get_Allow,
+    response_headers_get_CacheControl,
+    response_headers_get_Connection,
+    response_headers_get_Date,
+    response_headers_put_Date,
+    response_headers_get_Location,
+    response_headers_put_Location,
+    response_headers_get_ProxyAuthenticate,
+    response_headers_get_RetryAfter,
+    response_headers_put_RetryAfter,
+    response_headers_get_TransferEncoding,
+    response_headers_get_WwwAuthenticate,
+    response_headers_Append,
+    response_headers_TryAppendWithoutValidation
+};
+static const IHttpContentHeaderCollectionVtbl content_headers_vtbl = {
+    content_headers_QueryInterface,
+    content_headers_AddRef,
+    content_headers_Release,
+    content_headers_GetIids,
+    content_headers_GetRuntimeClassName,
+    content_headers_GetTrustLevel,
+    content_headers_get_ContentDisposition,
+    content_headers_put_ContentDisposition,
+    content_headers_get_ContentEncoding,
+    content_headers_get_ContentLanguage,
+    content_headers_get_ContentLength,
+    content_headers_put_ContentLength,
+    content_headers_get_ContentLocation,
+    content_headers_put_ContentLocation,
+    content_headers_get_ContentMD5,
+    content_headers_put_ContentMD5,
+    content_headers_get_ContentRange,
+    content_headers_put_ContentRange,
+    content_headers_get_ContentType,
+    content_headers_put_ContentType,
+    content_headers_get_Expires,
+    content_headers_put_Expires,
+    content_headers_get_LastModified,
+    content_headers_put_LastModified,
+    content_headers_Append,
+    content_headers_TryAppendWithoutValidation
+};
 
 HRESULT http_headers_create( enum header_kind kind, IHttpRequestHeaderCollection **request,
                              IHttpResponseHeaderCollection **response, IHttpContentHeaderCollection **content )
