@@ -146,10 +146,11 @@ static char *join_hostnames( const char *scheme, char **hostnames, ULONG portnum
         i++;
     }
 
-    size += (i - 1) * strlen( sep );
+    if (i) size += (i - 1) * strlen( sep );
     if (!(res = malloc( size + 1 ))) return NULL;
 
     p = res;
+    *p = 0;
     for (v = hostnames; *v; v++)
     {
         if (v != hostnames)
