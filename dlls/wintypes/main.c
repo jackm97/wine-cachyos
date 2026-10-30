@@ -28,13 +28,14 @@ static const struct
 }
 present_contracts[] =
 {
-    { L"Windows.Foundation.UniversalApiContract", 10, },
+    { L"Windows.Foundation.UniversalApiContract", 12, },
 };
 
-static BOOLEAN is_api_contract_present( const HSTRING hname, unsigned int version )
+static BOOL is_api_contract_present( const WCHAR *name, unsigned int version )
 {
-    const WCHAR *name = WindowsGetStringRawBuffer( hname, NULL );
     unsigned int i;
+
+    if (!name) return FALSE;
 
     for (i = 0; i < ARRAY_SIZE(present_contracts); ++i)
         if (!wcsicmp( name, present_contracts[i].name )) return version <= present_contracts[i].max_major;
@@ -249,7 +250,7 @@ static HRESULT STDMETHODCALLTYPE api_information_statics_IsApiContractPresentByM
     if (!contract_name)
         return E_INVALIDARG;
 
-    *value = is_api_contract_present( contract_name, major_version );
+    *value = is_api_contract_present( WindowsGetStringRawBuffer( contract_name, NULL ), major_version );
     return S_OK;
 }
 
@@ -1806,8 +1807,77 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, IActivationFactory **fac
 
 HRESULT WINAPI RoIsApiContractMajorVersionPresent(const WCHAR *name, UINT16 major, BOOL *result)
 {
-    FIXME("name %s, major %u, result %p\n", debugstr_w(name), major, result);
-    *result = FALSE;
+    TRACE("name %s, major %u, result %p.\n", debugstr_w(name), major, result);
+    *result = is_api_contract_present(name, major);
+    return S_OK;
+}
+
+static const struct
+{
+    const WCHAR *namespace;
+    const WCHAR *filename;
+}
+winmd_files[] =
+{
+    { L"Windows.ApplicationModel", L"windows.applicationmodel.winmd" },
+    { L"Windows.Foundation", L"windows.foundation.winmd" },
+    { L"Windows.Globalization", L"windows.globalization.winmd" },
+    { L"Windows.Graphics", L"windows.graphics.winmd" },
+    { L"Windows.Management", L"windows.management.winmd" },
+    { L"Windows.Media", L"windows.media.winmd" },
+    { L"Windows.Networking", L"windows.networking.winmd" },
+    { L"Windows.Perception", L"windows.perception.winmd" },
+    { L"Windows.Storage", L"windows.storage.winmd" },
+    { L"Windows.System", L"windows.system.winmd" },
+    { L"Windows.UI.Xaml", L"windows.ui.xaml.winmd" },
+    { L"Windows.UI", L"windows.ui.winmd" },
+};
+
+static BOOL namespace_matches(const WCHAR *name, UINT32 name_len, const WCHAR *namespace)
+{
+    size_t namespace_len = wcslen(namespace);
+
+    return name_len >= namespace_len && !wcsnicmp(name, namespace, namespace_len)
+            && (name_len == namespace_len || name[namespace_len] == '.');
+}
+
+static HRESULT build_winmd_path(HSTRING windows_metadata_dir, const WCHAR *filename, WCHAR path[MAX_PATH])
+{
+    const WCHAR *dir;
+    UINT32 dir_len;
+    BOOL wow64;
+
+    if ((dir = WindowsGetStringRawBuffer(windows_metadata_dir, &dir_len)) && dir_len)
+    {
+        if (dir_len >= MAX_PATH)
+            return HRESULT_FROM_WIN32(ERROR_FILENAME_EXCED_RANGE);
+        memcpy(path, dir, dir_len * sizeof(*path));
+        path[dir_len] = 0;
+    }
+    else
+    {
+        if (IsWow64Process(GetCurrentProcess(), &wow64) && wow64)
+        {
+            dir_len = GetWindowsDirectoryW(path, MAX_PATH);
+            if (!dir_len || dir_len >= MAX_PATH - ARRAY_SIZE(L"\\SysNative\\WinMetadata"))
+                return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+            wcscpy(path + dir_len, L"\\SysNative\\WinMetadata");
+            dir_len += ARRAY_SIZE(L"\\SysNative\\WinMetadata") - 1;
+        }
+        else
+        {
+            dir_len = GetSystemDirectoryW(path, MAX_PATH);
+            if (!dir_len || dir_len >= MAX_PATH - ARRAY_SIZE(L"\\WinMetadata"))
+                return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+            wcscpy(path + dir_len, L"\\WinMetadata");
+            dir_len += ARRAY_SIZE(L"\\WinMetadata") - 1;
+        }
+    }
+
+    if (dir_len + (path[dir_len - 1] != '\\') + wcslen(filename) >= MAX_PATH)
+        return HRESULT_FROM_WIN32(ERROR_FILENAME_EXCED_RANGE);
+    if (path[dir_len - 1] != '\\') path[dir_len++] = '\\';
+    wcscpy(path + dir_len, filename);
     return S_OK;
 }
 
@@ -1816,14 +1886,68 @@ HRESULT WINAPI RoResolveNamespace(HSTRING name, HSTRING windowsMetaDataDir,
                                   DWORD *metaDataFilePathsCount, HSTRING **metaDataFilePaths,
                                   DWORD *subNamespacesCount, HSTRING **subNamespaces)
 {
-    FIXME("name %s, windowsMetaDataDir %s, metaDataFilePaths %p, subNamespaces %p stub!\n",
+    const WCHAR *buffer, *filename = NULL;
+    HSTRING *paths;
+    WCHAR path[MAX_PATH];
+    UINT32 name_len;
+    HRESULT hr;
+    unsigned int i;
+
+    TRACE("name %s, windowsMetaDataDir %s, metaDataFilePaths %p, subNamespaces %p.\n",
             debugstr_hstring(name), debugstr_hstring(windowsMetaDataDir),
             metaDataFilePaths, subNamespaces);
 
     if (!metaDataFilePaths && !subNamespaces)
         return E_INVALIDARG;
 
-    return RO_E_METADATA_NAME_NOT_FOUND;
+    if ((metaDataFilePaths && !metaDataFilePathsCount) || (subNamespaces && !subNamespacesCount))
+        return E_INVALIDARG;
+
+    if (metaDataFilePaths)
+    {
+        *metaDataFilePathsCount = 0;
+        *metaDataFilePaths = NULL;
+    }
+    if (subNamespaces)
+    {
+        *subNamespacesCount = 0;
+        *subNamespaces = NULL;
+    }
+
+    buffer = WindowsGetStringRawBuffer(name, &name_len);
+    if (!buffer || !name_len || wcslen(buffer) != name_len)
+        return E_INVALIDARG;
+
+    if (!metaDataFilePaths)
+        return RO_E_METADATA_NAME_NOT_FOUND;
+
+    for (i = 0; i < ARRAY_SIZE(winmd_files); ++i)
+    {
+        if (namespace_matches(buffer, name_len, winmd_files[i].namespace))
+        {
+            filename = winmd_files[i].filename;
+            break;
+        }
+    }
+    if (!filename)
+        return RO_E_METADATA_NAME_NOT_FOUND;
+
+    if (FAILED(hr = build_winmd_path(windowsMetaDataDir, filename, path)))
+        return hr;
+    if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
+        return RO_E_METADATA_NAME_NOT_FOUND;
+
+    if (!(paths = CoTaskMemAlloc(sizeof(*paths))))
+        return E_OUTOFMEMORY;
+    if (FAILED(hr = WindowsCreateString(path, wcslen(path), paths)))
+    {
+        CoTaskMemFree(paths);
+        return hr;
+    }
+
+    *metaDataFilePathsCount = 1;
+    *metaDataFilePaths = paths;
+    return S_OK;
 }
 
 struct parse_type_context

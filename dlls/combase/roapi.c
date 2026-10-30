@@ -539,6 +539,24 @@ BOOL WINAPI RoOriginateErrorW(HRESULT error, UINT max_len, const WCHAR *message)
 }
 
 /***********************************************************************
+ *      RoTransformError (combase.@)
+ */
+BOOL WINAPI RoTransformError(HRESULT old_error, HRESULT new_error, HSTRING message)
+{
+    FIXME("%#lx, %#lx, %s: stub\n", old_error, new_error, debugstr_hstring(message));
+    return FALSE;
+}
+
+/***********************************************************************
+ *      RoTransformErrorW (combase.@)
+ */
+BOOL WINAPI RoTransformErrorW(HRESULT old_error, HRESULT new_error, UINT max_len, const WCHAR *message)
+{
+    FIXME("%#lx, %#lx, %u, %p: stub\n", old_error, new_error, max_len, message);
+    return FALSE;
+}
+
+/***********************************************************************
  *      RoReportUnhandledError (combase.@)
  */
 HRESULT WINAPI RoReportUnhandledError(IRestrictedErrorInfo *info)

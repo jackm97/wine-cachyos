@@ -452,7 +452,7 @@ static void test_IApiInformationStatics(void)
     }
     present_contracts[] =
     {
-        { L"Windows.Foundation.UniversalApiContract", 10, },
+        { L"Windows.Foundation.UniversalApiContract", 12, },
     };
 
     static const WCHAR *class_name = L"Windows.Foundation.Metadata.ApiInformation";
@@ -855,10 +855,16 @@ static void test_IApiInformationStatics(void)
         for (j = 0; j <= present_contracts[i].max_major; ++j)
         {
             ret = FALSE;
-            hr = IApiInformationStatics_IsApiContractPresentByMajor(statics, str, i, &ret);
+            hr = IApiInformationStatics_IsApiContractPresentByMajor(statics, str, j, &ret);
             ok(hr == S_OK, "IsApiContractPresentByMajor failed, hr %#lx, i %u, major %u.\n", hr, i, j);
             ok(ret == TRUE, "IsApiContractPresentByMajor returned FALSE, i %u, major %u.\n", i, j);
         }
+
+        ret = TRUE;
+        hr = IApiInformationStatics_IsApiContractPresentByMajor(statics, str,
+                present_contracts[i].max_major + 1, &ret);
+        ok(hr == S_OK, "IsApiContractPresentByMajor failed, hr %#lx, i %u.\n", hr, i);
+        ok(ret == FALSE, "IsApiContractPresentByMajor returned TRUE, i %u.\n", i);
         WindowsDeleteString(str);
     }
 
@@ -1211,6 +1217,8 @@ static void test_RoResolveNamespace(void)
     static const WCHAR foundation_wow64[] = L"c:\\windows\\sysnative\\winmetadata\\windows.foundation.winmd";
     static const WCHAR networking[] = L"c:\\windows\\system32\\winmetadata\\windows.networking.winmd";
     static const WCHAR networking_wow64[] = L"c:\\windows\\sysnative\\winmetadata\\windows.networking.winmd";
+    static const WCHAR management[] = L"c:\\windows\\system32\\winmetadata\\windows.management.winmd";
+    static const WCHAR management_wow64[] = L"c:\\windows\\sysnative\\winmetadata\\windows.management.winmd";
     HSTRING name, *paths;
     DWORD count, i;
     HRESULT hr;
@@ -1220,13 +1228,17 @@ static void test_RoResolveNamespace(void)
         DWORD        len_namespace;
         const WCHAR *path;
         const WCHAR *path_wow64;
+        BOOL         todo;
     }
     tests[] =
     {
         { L"Windows.Networking.Connectivity", ARRAY_SIZE(L"Windows.Networking.Connectivity") - 1,
-          networking, networking_wow64 },
+          networking, networking_wow64, FALSE },
         { L"Windows.Foundation", ARRAY_SIZE(L"Windows.Foundation") - 1,
-          foundation, foundation_wow64 },
+          foundation, foundation_wow64, FALSE },
+        { L"Windows.Management.Deployment.DeploymentOptions",
+          ARRAY_SIZE(L"Windows.Management.Deployment.DeploymentOptions") - 1,
+          management, management_wow64, FALSE },
     };
 
     hr = RoInitialize(RO_INIT_MULTITHREADED);
@@ -1240,7 +1252,10 @@ static void test_RoResolveNamespace(void)
 
         count = 0;
         hr = RoResolveNamespace(name, NULL, 0, NULL, &count, &paths, 0, NULL);
-        todo_wine ok(hr == S_OK, "got %#lx\n", hr);
+        if (tests[i].todo)
+            todo_wine ok(hr == S_OK, "got %#lx\n", hr);
+        else
+            ok(hr == S_OK, "got %#lx\n", hr);
         if (hr == S_OK)
         {
             const WCHAR *str = WindowsGetStringRawBuffer(paths[0], NULL);
