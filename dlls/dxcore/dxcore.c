@@ -186,24 +186,17 @@ static HRESULT dxcore_probe_d3d12(IDXCoreAdapter *iface, D3D_FEATURE_LEVEL featu
 
 typedef HRESULT (WINAPI *dxcore_create_dxgi_factory1)(REFIID riid, void **factory);
 
-static HRESULT dxcore_probe_d3d11(const LUID *luid)
+/* Gets the DXGI adapter with the given LUID, as the requested interface. */
+static HRESULT dxcore_get_dxgi_adapter(const LUID *luid, REFIID iid, void **out)
 {
-    PFN_D3D11_CREATE_DEVICE d3d11_create_device;
     dxcore_create_dxgi_factory1 create_dxgi_factory1;
-    IDXGIAdapter *dxgi_adapter;
     IDXGIFactory4 *factory;
-    HMODULE d3d11, dxgi;
+    HMODULE dxgi;
     HRESULT hr;
 
     if (!(dxgi = LoadLibraryW(L"dxgi.dll")))
     {
         WARN("Failed to load dxgi.dll, error %lu.\n", GetLastError());
-        return E_FAIL;
-    }
-
-    if (!(d3d11 = LoadLibraryW(L"d3d11.dll")))
-    {
-        WARN("Failed to load d3d11.dll, error %lu.\n", GetLastError());
         return E_FAIL;
     }
 
@@ -213,25 +206,41 @@ static HRESULT dxcore_probe_d3d11(const LUID *luid)
         return E_FAIL;
     }
 
-    if (!(d3d11_create_device = (void *)GetProcAddress(d3d11, "D3D11CreateDevice")))
-    {
-        WARN("Failed to get D3D11CreateDevice, error %lu.\n", GetLastError());
-        return E_FAIL;
-    }
-
     if (FAILED(hr = create_dxgi_factory1(&IID_IDXGIFactory4, (void **)&factory)))
     {
         WARN("Failed to create DXGI factory, hr %#lx.\n", hr);
         return hr;
     }
 
-    hr = IDXGIFactory4_EnumAdapterByLuid(factory, *luid, &IID_IDXGIAdapter, (void **)&dxgi_adapter);
+    hr = IDXGIFactory4_EnumAdapterByLuid(factory, *luid, iid, out);
     IDXGIFactory4_Release(factory);
     if (FAILED(hr))
-    {
         WARN("Failed to get DXGI adapter for LUID %08lx:%08lx, hr %#lx.\n", luid->HighPart, luid->LowPart, hr);
-        return hr;
+
+    return hr;
+}
+
+static HRESULT dxcore_probe_d3d11(const LUID *luid)
+{
+    PFN_D3D11_CREATE_DEVICE d3d11_create_device;
+    IDXGIAdapter *dxgi_adapter;
+    HMODULE d3d11;
+    HRESULT hr;
+
+    if (!(d3d11 = LoadLibraryW(L"d3d11.dll")))
+    {
+        WARN("Failed to load d3d11.dll, error %lu.\n", GetLastError());
+        return E_FAIL;
     }
+
+    if (!(d3d11_create_device = (void *)GetProcAddress(d3d11, "D3D11CreateDevice")))
+    {
+        WARN("Failed to get D3D11CreateDevice, error %lu.\n", GetLastError());
+        return E_FAIL;
+    }
+
+    if (FAILED(hr = dxcore_get_dxgi_adapter(luid, &IID_IDXGIAdapter, (void **)&dxgi_adapter)))
+        return hr;
 
     /* All output parameters are NULL, so no device is created. */
     hr = d3d11_create_device(dxgi_adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0, NULL, 0,
@@ -544,13 +553,64 @@ static HRESULT STDMETHODCALLTYPE dxcore_adapter_GetPropertySize(IDXCoreAdapter *
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsQueryStateSupported(IDXCoreAdapter *iface, DXCoreAdapterState property)
 {
-    FIXME("iface %p, property %u stub!\n", iface, property);
-    return FALSE;
+    TRACE("iface %p, property %u.\n", iface, property);
+    return property == AdapterMemoryBudget;
 }
 
 static HRESULT STDMETHODCALLTYPE dxcore_adapter_QueryState(IDXCoreAdapter *iface, DXCoreAdapterState state, size_t state_details_size,
         const void *state_details, size_t buffer_size, void *buffer)
 {
+    struct dxcore_adapter *adapter = impl_from_IDXCoreAdapter(iface);
+
+    if (state == AdapterMemoryBudget)
+    {
+        const DXCoreAdapterMemoryBudgetNodeSegmentGroup *input = state_details;
+        DXCoreAdapterMemoryBudget *budget = buffer;
+        DXGI_QUERY_VIDEO_MEMORY_INFO info;
+        DXGI_MEMORY_SEGMENT_GROUP group;
+        IDXGIAdapter3 *dxgi_adapter;
+        HRESULT hr;
+
+        TRACE("iface %p, state %u, state_details_size %Iu, state_details %p, buffer_size %Iu, buffer %p.\n",
+                iface, state, state_details_size, state_details, buffer_size, buffer);
+
+        if (!state_details || state_details_size != sizeof(*input) || !buffer || buffer_size < sizeof(*budget))
+            return E_INVALIDARG;
+
+        switch (input->segmentGroup)
+        {
+            case Local:
+                group = DXGI_MEMORY_SEGMENT_GROUP_LOCAL;
+                break;
+
+            case NonLocal:
+                group = DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL;
+                break;
+
+            default:
+                return E_INVALIDARG;
+        }
+
+        if (FAILED(hr = dxcore_get_dxgi_adapter(&adapter->identifier.adapter_luid, &IID_IDXGIAdapter3,
+                (void **)&dxgi_adapter)))
+            return hr;
+
+        hr = IDXGIAdapter3_QueryVideoMemoryInfo(dxgi_adapter, input->nodeIndex, group, &info);
+        IDXGIAdapter3_Release(dxgi_adapter);
+        if (FAILED(hr))
+            return hr;
+
+        budget->budget = info.Budget;
+        budget->currentUsage = info.CurrentUsage;
+        budget->availableForReservation = info.AvailableForReservation;
+        budget->currentReservation = info.CurrentReservation;
+
+        TRACE("node %u, group %u, budget %I64u, usage %I64u, available for reservation %I64u, reservation %I64u.\n",
+                input->nodeIndex, input->segmentGroup, budget->budget, budget->currentUsage,
+                budget->availableForReservation, budget->currentReservation);
+        return S_OK;
+    }
+
     FIXME("iface %p, state %u, state_details_size %Iu, state_details %p, buffer_size %Iu, buffer %p stub!\n",
             iface, state, state_details_size, state_details, buffer_size, buffer);
     return E_NOTIMPL;
