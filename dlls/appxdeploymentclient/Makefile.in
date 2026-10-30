@@ -1,7 +1,10 @@
 MODULE  = appxdeploymentclient.dll
-IMPORTS = combase
+IMPORTS = $(ZLIB_PE_LIBS) combase shlwapi xmllite
+EXTRAINCL = $(ZLIB_PE_CFLAGS)
 
 SOURCES = \
+	add_options.c \
 	classes.idl \
 	main.c \
-	package.c
+	package.c \
+	stage_options.c

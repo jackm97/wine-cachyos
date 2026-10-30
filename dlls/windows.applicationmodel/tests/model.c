@@ -443,6 +443,8 @@ static void test_PackageManager(void)
     IIterable_Package *packages;
     IInspectable *inspectable;
     IPackageManager2 *manager2;
+    IPackageManager6 *manager6;
+    IPackageManager9 *manager9;
     IPackageManager *manager;
     IIterator_Package *iter;
     IPackage *package;
@@ -474,6 +476,30 @@ static void test_PackageManager(void)
 
     hr = IInspectable_QueryInterface( inspectable, &IID_IPackageManager, (void **)&manager );
     ok( hr == S_OK, "got hr %#lx.\n", hr );
+
+    hr = IPackageManager_QueryInterface( manager, &IID_IPackageManager6, (void **)&manager6 );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    if (SUCCEEDED(hr))
+    {
+        inspectable = NULL;
+        hr = IPackageManager6_QueryInterface( manager6, &IID_IInspectable, (void **)&inspectable );
+        ok( hr == S_OK, "got hr %#lx.\n", hr );
+        ok( inspectable == (IInspectable *)manager, "got inspectable %p, manager %p.\n", inspectable, manager );
+        if (inspectable) IInspectable_Release( inspectable );
+        IPackageManager6_Release( manager6 );
+    }
+
+    hr = IPackageManager_QueryInterface( manager, &IID_IPackageManager9, (void **)&manager9 );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    if (SUCCEEDED(hr))
+    {
+        inspectable = NULL;
+        hr = IPackageManager9_QueryInterface( manager9, &IID_IInspectable, (void **)&inspectable );
+        ok( hr == S_OK, "got hr %#lx.\n", hr );
+        ok( inspectable == (IInspectable *)manager, "got inspectable %p, manager %p.\n", inspectable, manager );
+        if (inspectable) IInspectable_Release( inspectable );
+        IPackageManager9_Release( manager9 );
+    }
 
     hr = IPackageManager_FindPackagesByNamePublisher( manager, NULL, NULL, &packages );
     ok( hr == E_INVALIDARG, "got hr %#lx.\n", hr );
@@ -591,6 +617,100 @@ static void test_PackageStatics(void)
     ok( ref == 1, "got ref %ld.\n", ref );
 }
 
+static void test_StagePackageOptions(void)
+{
+    static const WCHAR *class_name = RuntimeClass_Windows_Management_Deployment_StagePackageOptions;
+    IStagePackageOptions *options;
+    IActivationFactory *factory;
+    IInspectable *inspectable;
+    IPackageVolume *volume;
+    IUriRuntimeClass *uri;
+    StubPackageOption stub;
+    TrustLevel trust;
+    HSTRING str, name;
+    boolean value;
+    HRESULT hr;
+    IID *iids;
+    ULONG count;
+    LONG ref;
+
+    hr = WindowsCreateString( class_name, wcslen( class_name ), &str );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = RoGetActivationFactory( str, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( str );
+    ok( hr == S_OK || broken( hr == REGDB_E_CLASSNOTREG ), "got hr %#lx.\n", hr );
+    if (hr == REGDB_E_CLASSNOTREG)
+    {
+        win_skip( "%s runtimeclass not registered, skipping tests.\n", wine_dbgstr_w( class_name ) );
+        return;
+    }
+
+    check_interface( factory, &IID_IUnknown, TRUE, FALSE );
+    check_interface( factory, &IID_IInspectable, TRUE, FALSE );
+    check_interface( factory, &IID_IAgileObject, TRUE, FALSE );
+
+    hr = IActivationFactory_ActivateInstance( factory, &inspectable );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IInspectable_QueryInterface( inspectable, &IID_IStagePackageOptions, (void **)&options );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    check_interface( options, &IID_IUnknown, TRUE, FALSE );
+    check_interface( options, &IID_IInspectable, TRUE, FALSE );
+    check_interface( options, &IID_IAgileObject, TRUE, FALSE );
+
+    count = 0;
+    iids = NULL;
+    hr = IStagePackageOptions_GetIids( options, &count, &iids );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( count == 1, "got count %lu.\n", count );
+    ok( IsEqualGUID( iids, &IID_IStagePackageOptions ), "got iid %s.\n", debugstr_guid(iids) );
+    CoTaskMemFree( iids );
+
+    name = NULL;
+    hr = IStagePackageOptions_GetRuntimeClassName( options, &name );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !wcscmp( WindowsGetStringRawBuffer( name, NULL ), class_name ), "got name %s.\n", debugstr_hstring(name) );
+    WindowsDeleteString( name );
+    hr = IStagePackageOptions_GetTrustLevel( options, &trust );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( trust == BaseTrust, "got trust %u.\n", trust );
+
+    volume = (IPackageVolume *)0xdeadbeef;
+    hr = IStagePackageOptions_get_TargetVolume( options, &volume );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !volume, "got volume %p.\n", volume );
+    uri = (IUriRuntimeClass *)0xdeadbeef;
+    hr = IStagePackageOptions_get_ExternalLocationUri( options, &uri );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !uri, "got uri %p.\n", uri );
+
+    stub = StubPackageOption_UsePreference;
+    hr = IStagePackageOptions_get_StubPackageOption( options, &stub );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( stub == StubPackageOption_Default, "got stub %u.\n", stub );
+    hr = IStagePackageOptions_put_StubPackageOption( options, StubPackageOption_InstallStub );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IStagePackageOptions_get_StubPackageOption( options, &stub );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( stub == StubPackageOption_InstallStub, "got stub %u.\n", stub );
+
+    value = TRUE;
+    hr = IStagePackageOptions_get_InstallAllResources( options, &value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !value, "got value %u.\n", value );
+    hr = IStagePackageOptions_put_InstallAllResources( options, TRUE );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IStagePackageOptions_get_InstallAllResources( options, &value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( value, "got value %u.\n", value );
+
+    ref = IStagePackageOptions_Release( options );
+    ok( ref == 1, "got ref %ld.\n", ref );
+    ref = IInspectable_Release( inspectable );
+    ok( !ref, "got ref %ld.\n", ref );
+    ref = IActivationFactory_Release( factory );
+    ok( ref == 1, "got ref %ld.\n", ref );
+}
+
 static void test_DesignMode(void)
 {
     static const WCHAR *class_name = RuntimeClass_Windows_ApplicationModel_DesignMode;
@@ -622,6 +742,74 @@ static void test_DesignMode(void)
     ok( ref == 1, "got ref %ld.\n", ref );
 }
 
+static void test_LimitedAccessFeatures(void)
+{
+    static const WCHAR feature_id_value[] = L"wine.test.limited-access-feature";
+    ILimitedAccessFeatureRequestResult *result = NULL;
+    ILimitedAccessFeaturesStatics *statics = NULL;
+    IActivationFactory *factory = NULL;
+    LimitedAccessFeatureStatus status;
+    __FIReference_1_DateTime *date = (void *)0xdeadbeef;
+    HSTRING class_name, feature_id, token, attestation, value;
+    HRESULT hr;
+
+    hr = WindowsCreateString( RuntimeClass_Windows_ApplicationModel_LimitedAccessFeatures,
+                              ARRAY_SIZE(RuntimeClass_Windows_ApplicationModel_LimitedAccessFeatures) - 1,
+                              &class_name );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = RoGetActivationFactory( class_name, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( class_name );
+    ok( hr == S_OK || broken( hr == REGDB_E_CLASSNOTREG ), "got hr %#lx.\n", hr );
+    if (FAILED( hr ))
+    {
+        win_skip( "LimitedAccessFeatures runtimeclass not registered, skipping tests.\n" );
+        return;
+    }
+
+    check_interface( factory, &IID_IUnknown, TRUE, FALSE );
+    check_interface( factory, &IID_IInspectable, TRUE, FALSE );
+    check_interface( factory, &IID_IAgileObject, TRUE, FALSE );
+    check_interface( factory, &IID_ILimitedAccessFeaturesStatics, TRUE, FALSE );
+    hr = IActivationFactory_QueryInterface( factory, &IID_ILimitedAccessFeaturesStatics, (void **)&statics );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+
+    hr = WindowsCreateString( feature_id_value, ARRAY_SIZE(feature_id_value) - 1, &feature_id );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = WindowsCreateString( L"invalid-token", 13, &token );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = WindowsCreateString( L"Wine test attestation", 21, &attestation );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+
+    hr = ILimitedAccessFeaturesStatics_TryUnlockFeature( statics, feature_id, token, attestation, NULL );
+    ok( hr == E_POINTER, "got hr %#lx.\n", hr );
+    hr = ILimitedAccessFeaturesStatics_TryUnlockFeature( statics, feature_id, token, attestation, &result );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( result != NULL, "got result %p.\n", result );
+    check_interface( result, &IID_IUnknown, TRUE, FALSE );
+    check_interface( result, &IID_IInspectable, TRUE, FALSE );
+    check_interface( result, &IID_IAgileObject, TRUE, FALSE );
+
+    hr = ILimitedAccessFeatureRequestResult_get_FeatureId( result, &value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !wcscmp( WindowsGetStringRawBuffer( value, NULL ), feature_id_value ), "got feature id %s.\n",
+        wine_dbgstr_hstring( value ) );
+    WindowsDeleteString( value );
+    hr = ILimitedAccessFeatureRequestResult_get_Status( result, &status );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( status == LimitedAccessFeatureStatus_Unavailable || status == LimitedAccessFeatureStatus_Unknown,
+        "got status %u.\n", status );
+    hr = ILimitedAccessFeatureRequestResult_get_EstimatedRemovalDate( result, &date );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !date, "got date %p.\n", date );
+
+    ILimitedAccessFeatureRequestResult_Release( result );
+    WindowsDeleteString( attestation );
+    WindowsDeleteString( token );
+    WindowsDeleteString( feature_id );
+    ILimitedAccessFeaturesStatics_Release( statics );
+    IActivationFactory_Release( factory );
+}
+
 START_TEST(model)
 {
     HRESULT hr;
@@ -631,7 +819,9 @@ START_TEST(model)
 
     test_PackageManager();
     test_PackageStatics();
+    test_StagePackageOptions();
     test_DesignMode();
+    test_LimitedAccessFeatures();
 
     RoUninitialize();
 }

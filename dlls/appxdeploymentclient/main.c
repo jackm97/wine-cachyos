@@ -38,8 +38,12 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     *factory = NULL;
 
-    if (!wcscmp( buffer, RuntimeClass_Windows_Management_Deployment_PackageManager ))
+    if (!wcscmp( buffer, RuntimeClass_Windows_Management_Deployment_AddPackageOptions ))
+        IActivationFactory_QueryInterface( add_package_options_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, RuntimeClass_Windows_Management_Deployment_PackageManager ))
         IActivationFactory_QueryInterface( package_manager_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, RuntimeClass_Windows_Management_Deployment_StagePackageOptions ))
+        IActivationFactory_QueryInterface( stage_package_options_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;
