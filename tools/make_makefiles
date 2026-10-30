@@ -293,7 +293,11 @@ sub assign_sources_to_makefiles(@)
         {
             next unless $dir eq "dlls/winewayland.drv";
         }
-        elsif ($name !~ /\.(S|c|desktop|in|inl|l|m|mc|po|rc|rh|sfd|svg|x|y)$/)
+        elsif ($name =~ /^msvcrt\/[^.]+$/) # C++ header without extension
+        {
+            next unless $dir eq "include";
+        }
+        elsif ($name !~ /\.(S|c|cpp|desktop|in|inl|l|m|mc|po|rc|rh|sfd|svg|x|y)$/)
         {
             next;
         }
