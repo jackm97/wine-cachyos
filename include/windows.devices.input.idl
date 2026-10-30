@@ -24,6 +24,7 @@ import "inspectable.idl";
 import "asyncinfo.idl";
 import "eventtoken.idl";
 import "windowscontracts.idl";
+import "windows.devices.haptics.idl";
 import "windows.foundation.idl";
 
 namespace Windows.Devices.Input {
@@ -33,7 +34,11 @@ namespace Windows.Devices.Input {
     interface IPointerDevice;
     interface IPointerDevice2;
     interface IPointerDeviceStatics;
+    interface IPenDevice;
+    interface IPenDevice2;
+    interface IPenDeviceStatics;
 
+    runtimeclass PenDevice;
     runtimeclass PointerDevice;
 
     declare {
@@ -111,5 +116,47 @@ namespace Windows.Devices.Input {
     {
         [default] interface Windows.Devices.Input.IPointerDevice;
         [contract(Windows.Foundation.UniversalApiContract, 1.0)] interface Windows.Devices.Input.IPointerDevice2;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.Devices.Input.PenDevice),
+        uuid(31856eba-a738-5a8c-b8f6-f97ef68d18ef)
+    ]
+    interface IPenDevice : IInspectable
+    {
+        [propget] HRESULT PenId([out, retval] GUID *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 14.0),
+        exclusiveto(Windows.Devices.Input.PenDevice),
+        uuid(0207d327-7fb8-5566-8c34-f8342037b7f9)
+    ]
+    interface IPenDevice2 : IInspectable
+    {
+        [propget] HRESULT SimpleHapticsController([out, retval] Windows.Devices.Haptics.SimpleHapticsController **value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.Devices.Input.PenDevice),
+        uuid(9dfbbe01-0966-5180-bcb4-b85060e39479)
+    ]
+    interface IPenDeviceStatics : IInspectable
+    {
+        HRESULT GetFromPointerId([in] UINT32 pointer_id, [out, retval] Windows.Devices.Input.PenDevice **result);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        marshaling_behavior(agile),
+        threading(both),
+        static(Windows.Devices.Input.IPenDeviceStatics, Windows.Foundation.UniversalApiContract, 8.0)
+    ]
+    runtimeclass PenDevice
+    {
+        [default] interface Windows.Devices.Input.IPenDevice;
+        [contract(Windows.Foundation.UniversalApiContract, 14.0)] interface Windows.Devices.Input.IPenDevice2;
     }
 }
