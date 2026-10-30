@@ -1,11 +1,12 @@
 MODULE  = windows.ui.dll
-IMPORTS = dcomp combase advapi32 user32 gdi32
+IMPORTS = d2d1 d3d11 dcomp combase advapi32 user32 gdi32
 
 SOURCES = \
 	accessibilitysettings.c \
 	classes.idl \
 	composition.c \
 	effect.c \
+	effect_graph.c \
 	inputpane.c \
 	interactions.c \
 	main.c \
