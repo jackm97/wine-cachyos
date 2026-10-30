@@ -610,11 +610,18 @@ BOOL wined3d_context_vk_create_bo(struct wined3d_context_vk *context_vk, VkDevic
 BOOL wined3d_context_vk_create_image(struct wined3d_context_vk *context_vk, VkImageType vk_image_type,
         VkImageUsageFlags usage, VkFormat vk_format, unsigned int width, unsigned int height, unsigned int depth,
         unsigned int sample_count, unsigned int mip_levels, unsigned int layer_count, unsigned int flags,
-        const void *next, struct wined3d_image_vk *image)
+        const void *next, HANDLE shared_handle, struct wined3d_image_vk *image)
 {
     struct wined3d_adapter_vk *adapter_vk = wined3d_adapter_vk(context_vk->c.device->adapter);
     struct wined3d_device_vk *device_vk = wined3d_device_vk(context_vk->c.device);
     const struct wined3d_vk_info *vk_info = context_vk->vk_info;
+    const VkBaseInStructure *entry;
+    const VkExternalMemoryImageCreateInfo *external = NULL;
+    VkMemoryDedicatedAllocateInfo dedicated;
+    VkExportMemoryAllocateInfo export_info;
+    VkImportMemoryWin32HandleInfoKHR import_info;
+    VkMemoryWin32HandlePropertiesKHR properties = {VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR};
+    VkMemoryAllocateInfo allocate_info;
     VkMemoryRequirements memory_requirements;
     VkImageCreateInfo create_info;
     unsigned int memory_type_idx;
@@ -651,6 +658,19 @@ BOOL wined3d_context_vk_create_image(struct wined3d_context_vk *context_vk, VkIm
     VK_CALL(vkGetImageMemoryRequirements(device_vk->vk_device, image->vk_image,
             &memory_requirements));
 
+    if (shared_handle)
+    {
+        if (!device_vk->vk_info.vk_ops.vkGetMemoryWin32HandlePropertiesKHR
+                || (vr = device_vk->vk_info.vk_ops.vkGetMemoryWin32HandlePropertiesKHR(device_vk->vk_device,
+                VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_KMT_BIT, shared_handle, &properties)) < 0)
+        {
+            VK_CALL(vkDestroyImage(device_vk->vk_device, image->vk_image, NULL));
+            image->vk_image = VK_NULL_HANDLE;
+            return FALSE;
+        }
+        memory_requirements.memoryTypeBits &= properties.memoryTypeBits;
+    }
+
     memory_type_idx = wined3d_adapter_vk_get_memory_type_index(adapter_vk,
             memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (memory_type_idx == ~0u)
@@ -661,8 +681,38 @@ BOOL wined3d_context_vk_create_image(struct wined3d_context_vk *context_vk, VkIm
         return FALSE;
     }
 
-    image->memory = wined3d_context_vk_allocate_memory(context_vk, memory_type_idx,
-            memory_requirements.size, &image->vk_memory);
+    for (entry = next; entry; entry = entry->pNext)
+        if (entry->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO)
+            external = (const VkExternalMemoryImageCreateInfo *)entry;
+
+    if (external && external->handleTypes)
+    {
+        dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+        dedicated.pNext = NULL;
+        dedicated.image = image->vk_image;
+        dedicated.buffer = VK_NULL_HANDLE;
+        export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+        export_info.pNext = &dedicated;
+        export_info.handleTypes = external->handleTypes;
+        allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        import_info.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR;
+        import_info.pNext = &dedicated;
+        import_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_KMT_BIT;
+        import_info.handle = shared_handle;
+        import_info.name = NULL;
+        allocate_info.pNext = shared_handle ? (const void *)&import_info : &export_info;
+        allocate_info.allocationSize = memory_requirements.size;
+        allocate_info.memoryTypeIndex = memory_type_idx;
+        image->memory = NULL;
+        image->vk_memory = VK_NULL_HANDLE;
+        if ((vr = VK_CALL(vkAllocateMemory(device_vk->vk_device, &allocate_info, NULL, &image->vk_memory))) < 0)
+            WARN("Failed to allocate shared image memory, vr %s.\n", wined3d_debug_vkresult(vr));
+    }
+    else
+    {
+        image->memory = wined3d_context_vk_allocate_memory(context_vk, memory_type_idx,
+                memory_requirements.size, &image->vk_memory);
+    }
     if (!image->vk_memory)
     {
         ERR("Failed to allocate image memory.\n");

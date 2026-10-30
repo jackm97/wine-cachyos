@@ -3205,13 +3205,16 @@ static void import_memory( GLuint memory, GLuint64 size, GLenum type, void *hand
     const struct opengl_funcs *funcs = &display_funcs;
     D3DKMT_HANDLE local, mutex, sync;
     GLenum err;
+    off_t allocation_size;
     int fd;
 
     switch (type)
     {
+    case GL_HANDLE_TYPE_D3D11_IMAGE_EXT:
     case GL_HANDLE_TYPE_OPAQUE_WIN32_EXT:
         local = d3dkmt_open_resource( 0, handle, &mutex, &sync );
         break;
+    case GL_HANDLE_TYPE_D3D11_IMAGE_KMT_EXT:
     case GL_HANDLE_TYPE_OPAQUE_WIN32_KMT_EXT:
         local = d3dkmt_open_resource( PtrToUlong( handle ), NULL, &mutex, &sync );
         break;
@@ -3222,6 +3225,17 @@ static void import_memory( GLuint memory, GLuint64 size, GLenum type, void *hand
     fd = d3dkmt_object_get_fd( local );
     d3dkmt_destroy_resource( local );
     if (fd < 0) return set_gl_error( GL_INVALID_VALUE );
+
+    if (type == GL_HANDLE_TYPE_D3D11_IMAGE_EXT || type == GL_HANDLE_TYPE_D3D11_IMAGE_KMT_EXT)
+    {
+        allocation_size = lseek( fd, 0, SEEK_END );
+        if (allocation_size <= 0 || lseek( fd, 0, SEEK_SET ) < 0)
+        {
+            close( fd );
+            return set_gl_error( GL_INVALID_VALUE );
+        }
+        size = allocation_size;
+    }
 
     set_gl_error( funcs->p_glGetError() ); /* save the error in the wrapper so we can check for success */
     funcs->p_glImportMemoryFdEXT( memory, size, GL_HANDLE_TYPE_OPAQUE_FD_EXT, fd );

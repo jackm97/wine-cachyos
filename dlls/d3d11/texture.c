@@ -414,7 +414,7 @@ static const struct wined3d_parent_ops d3d_texture1d_wined3d_parent_ops =
 };
 
 HRESULT d3d_device_create_dxgi_resource(IUnknown *device, struct wined3d_resource *wined3d_resource,
-        IUnknown *outer, BOOL needs_surface, IUnknown **dxgi_resource)
+        IUnknown *outer, BOOL needs_surface, const DXGI_SHARED_RESOURCE *shared_resource, IUnknown **dxgi_resource)
 {
     IWineDXGIDevice *wine_device;
     HRESULT hr;
@@ -425,7 +425,7 @@ HRESULT d3d_device_create_dxgi_resource(IUnknown *device, struct wined3d_resourc
         return E_FAIL;
     }
 
-    hr = IWineDXGIDevice_create_resource(wine_device, wined3d_resource, 0, NULL, outer,
+    hr = IWineDXGIDevice_create_resource(wine_device, wined3d_resource, 0, shared_resource, outer,
             needs_surface, (void **)dxgi_resource);
     IWineDXGIDevice_Release(wine_device);
     if (FAILED(hr))
@@ -491,7 +491,7 @@ HRESULT d3d_texture1d_create(struct d3d_device *device, const D3D11_TEXTURE1D_DE
     needs_surface = desc->MipLevels == 1 && desc->ArraySize == 1;
     hr = d3d_device_create_dxgi_resource((IUnknown *)&device->ID3D10Device1_iface,
             wined3d_texture_get_resource(texture->wined3d_texture), (IUnknown *)&texture->ID3D10Texture1D_iface,
-            needs_surface, &texture->dxgi_resource);
+            needs_surface, NULL, &texture->dxgi_resource);
     if (FAILED(hr))
     {
         ERR("Failed to create DXGI resource, returning %#.lx\n", hr);
@@ -962,7 +962,8 @@ static BOOL validate_texture2d_desc(const D3D11_TEXTURE2D_DESC *desc, D3D_FEATUR
 }
 
 HRESULT d3d_texture2d_create(struct d3d_device *device, const D3D11_TEXTURE2D_DESC *desc,
-        struct wined3d_texture *wined3d_texture, const D3D11_SUBRESOURCE_DATA *data, struct d3d_texture2d **out)
+        struct wined3d_texture *wined3d_texture, const D3D11_SUBRESOURCE_DATA *data,
+        const DXGI_SHARED_RESOURCE *shared_resource, struct d3d_texture2d **out)
 {
     struct d3d_texture2d *texture;
     BOOL needs_surface;
@@ -1014,6 +1015,8 @@ HRESULT d3d_texture2d_create(struct d3d_device *device, const D3D11_TEXTURE2D_DE
 
         levels = desc->MipLevels ? desc->MipLevels : wined3d_log2i(max(desc->Width, desc->Height)) + 1;
 
+        if (desc->MiscFlags & (D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX))
+            flags |= WINED3D_TEXTURE_CREATE_SHARED;
         if (desc->MiscFlags & D3D11_RESOURCE_MISC_GDI_COMPATIBLE)
             flags |= WINED3D_TEXTURE_CREATE_GET_DC;
         if (desc->MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS)
@@ -1036,7 +1039,7 @@ HRESULT d3d_texture2d_create(struct d3d_device *device, const D3D11_TEXTURE2D_DE
     needs_surface = desc->MipLevels == 1 && desc->ArraySize == 1;
     hr = d3d_device_create_dxgi_resource((IUnknown *)&device->ID3D10Device1_iface,
             wined3d_texture_get_resource(texture->wined3d_texture), (IUnknown *)&texture->ID3D10Texture2D_iface,
-            needs_surface, &texture->dxgi_resource);
+            needs_surface, shared_resource, &texture->dxgi_resource);
     if (FAILED(hr))
     {
         ERR("Failed to create DXGI resource, returning %#.lx\n", hr);
@@ -1495,7 +1498,7 @@ static HRESULT d3d_texture3d_init(struct d3d_texture3d *texture, struct d3d_devi
 
     hr = d3d_device_create_dxgi_resource((IUnknown *)&device->ID3D10Device1_iface,
             wined3d_texture_get_resource(texture->wined3d_texture), (IUnknown *)&texture->ID3D10Texture3D_iface,
-            FALSE, &texture->dxgi_resource);
+            FALSE, NULL, &texture->dxgi_resource);
     if (FAILED(hr))
     {
         ERR("Failed to create DXGI resource, returning %#.lx\n", hr);

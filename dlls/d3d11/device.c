@@ -20,6 +20,7 @@
 #define NONAMELESSUNION
 #define WINE_NO_NAMELESS_EXTENSION
 #include "d3d11_private.h"
+#include "wine/dxgi_shared.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d11);
 
@@ -4079,7 +4080,7 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateTexture2D(ID3D11Device5 *ifa
 
     TRACE("iface %p, desc %p, data %p, texture %p.\n", iface, desc, data, texture);
 
-    if (FAILED(hr = d3d_texture2d_create(device, desc, NULL, data, &object)))
+    if (FAILED(hr = d3d_texture2d_create(device, desc, NULL, data, NULL, &object)))
         return hr;
 
     *texture = &object->ID3D11Texture2D_iface;
@@ -4596,9 +4597,81 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateDeferredContext(ID3D11Device
 static HRESULT STDMETHODCALLTYPE d3d11_device_OpenSharedResource(ID3D11Device5 *iface, HANDLE resource, REFIID iid,
         void **out)
 {
-    FIXME("iface %p, resource %p, iid %s, out %p stub!\n", iface, resource, debugstr_guid(iid), out);
+    struct d3d_device *device = impl_from_ID3D11Device5(iface);
+    struct dxgi_shared_texture_metadata metadata = {0};
+    D3DKMT_OPENADAPTERFROMLUID open_adapter = {0};
+    D3DKMT_CREATEDEVICE create_device = {{0}};
+    D3DKMT_QUERYRESOURCEINFO query = {0};
+    D3DKMT_OPENRESOURCE open = {0};
+    D3DDDI_OPENALLOCATIONINFO allocation = {0};
+    D3DKMT_DESTROYALLOCATION destroy = {0};
+    D3DKMT_DESTROYDEVICE destroy_device = {0};
+    D3DKMT_CLOSEADAPTER close_adapter = {0};
+    struct d3d_texture2d *texture = NULL;
+    DXGI_ADAPTER_DESC adapter_desc;
+    IDXGIDevice *dxgi_device;
+    IDXGIAdapter *adapter;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, resource %p, iid %s, out %p.\n", iface, resource, debugstr_guid(iid), out);
+
+    if (!out) return E_INVALIDARG;
+    *out = NULL;
+    if (!resource) return E_INVALIDARG;
+    if (FAILED(hr = IUnknown_QueryInterface(device->outer_unk, &IID_IDXGIDevice, (void **)&dxgi_device)))
+        return hr;
+    hr = IDXGIDevice_GetAdapter(dxgi_device, &adapter);
+    IDXGIDevice_Release(dxgi_device);
+    if (FAILED(hr)) return hr;
+    hr = IDXGIAdapter_GetDesc(adapter, &adapter_desc);
+    IDXGIAdapter_Release(adapter);
+    if (FAILED(hr)) return hr;
+    hr = E_INVALIDARG;
+    open_adapter.AdapterLuid = adapter_desc.AdapterLuid;
+    if (D3DKMTOpenAdapterFromLuid(&open_adapter)) goto done;
+    close_adapter.hAdapter = open_adapter.hAdapter;
+    create_device.u.hAdapter = open_adapter.hAdapter;
+    if (D3DKMTCreateDevice(&create_device)) goto done;
+    destroy_device.hDevice = create_device.hDevice;
+    query.hDevice = create_device.hDevice;
+    query.hGlobalShare = (D3DKMT_HANDLE)(ULONG_PTR)resource;
+    if (D3DKMTQueryResourceInfo(&query) || query.PrivateRuntimeDataSize != sizeof(metadata)) goto done;
+    open.hDevice = create_device.hDevice;
+    open.hGlobalShare = query.hGlobalShare;
+    open.NumAllocations = 1;
+    open.pOpenAllocationInfo = &allocation;
+    open.pPrivateRuntimeData = &metadata;
+    open.PrivateRuntimeDataSize = sizeof(metadata);
+    if (D3DKMTOpenResource(&open)) goto done;
+    destroy.hDevice = create_device.hDevice;
+    destroy.hResource = open.hResource;
+    if (metadata.size != sizeof(metadata) || metadata.version != 1
+            || metadata.dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D
+            || metadata.width != metadata.texture.Width || metadata.height != metadata.texture.Height
+            || metadata.format != metadata.texture.Format) goto done;
+    if (metadata.nt_shared)
+    {
+        hr = E_NOTIMPL;
+        goto done;
+    }
+    if (!(metadata.texture.MiscFlags & (D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX))) goto done;
+    if (!!metadata.keyed_mutex != !!(metadata.texture.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX)) goto done;
+    if (FAILED(hr = d3d_texture2d_create(device, &metadata.texture, NULL, NULL, &(DXGI_SHARED_RESOURCE){resource}, &texture))) goto done;
+    if (FAILED(hr = ID3D11Texture2D_QueryInterface(&texture->ID3D11Texture2D_iface, iid, out))) goto done;
+    wined3d_mutex_lock();
+    hr = wined3d_texture_open_shared_handle(texture->wined3d_texture, resource);
+    wined3d_mutex_unlock();
+    if (FAILED(hr))
+    {
+        IUnknown_Release((IUnknown *)*out);
+        *out = NULL;
+    }
+done:
+    if (texture) ID3D11Texture2D_Release(&texture->ID3D11Texture2D_iface);
+    if (destroy.hResource) D3DKMTDestroyAllocation(&destroy);
+    if (destroy_device.hDevice) D3DKMTDestroyDevice(&destroy_device);
+    if (close_adapter.hAdapter) D3DKMTCloseAdapter(&close_adapter);
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFormatSupport(ID3D11Device5 *iface, DXGI_FORMAT format,
@@ -6992,7 +7065,7 @@ static HRESULT STDMETHODCALLTYPE d3d10_device_CreateTexture2D(ID3D10Device1 *ifa
     d3d11_desc.CPUAccessFlags = d3d11_cpu_access_flags_from_d3d10_cpu_access_flags(desc->CPUAccessFlags);
     d3d11_desc.MiscFlags = d3d11_resource_misc_flags_from_d3d10_resource_misc_flags(desc->MiscFlags);
 
-    if (FAILED(hr = d3d_texture2d_create(device, &d3d11_desc, NULL, (const D3D11_SUBRESOURCE_DATA *)data, &object)))
+    if (FAILED(hr = d3d_texture2d_create(device, &d3d11_desc, NULL, (const D3D11_SUBRESOURCE_DATA *)data, NULL, &object)))
         return hr;
 
     *texture = &object->ID3D10Texture2D_iface;
@@ -8033,7 +8106,7 @@ static HRESULT STDMETHODCALLTYPE dxgi_device_parent_register_swapchain_texture(I
     if (texture_flags)
         FIXME("Unhandled flags %#x.\n", texture_flags);
 
-    if (FAILED(hr = d3d_texture2d_create(device, &desc, wined3d_texture, NULL, &object)))
+    if (FAILED(hr = d3d_texture2d_create(device, &desc, wined3d_texture, NULL, NULL, &object)))
         return hr;
 
     hr = IUnknown_QueryInterface(object->dxgi_resource, &IID_IDXGISurface, (void **)ret_surface);

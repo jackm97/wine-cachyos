@@ -4247,7 +4247,7 @@ enum inproc_sync_type
 @REQ(d3dkmt_object_create)
     unsigned int        type;           /* d3dkmt object type */
     int                 fd;             /* host specific fd */
-    unsigned int        value;          /* initial value for keyed mutex */
+    unsigned __int64    value;          /* initial value for keyed mutex */
     VARARG(runtime,bytes);              /* client runtime data */
 @REPLY
     d3dkmt_handle_t     global;         /* global d3dkmt handle */
@@ -4313,7 +4313,7 @@ enum inproc_sync_type
 /* Acquire a global d3dkmt keyed mutex */
 @REQ(d3dkmt_mutex_acquire)
     d3dkmt_handle_t     mutex;          /* mutex global handle */
-    unsigned int        key_value;      /* the key to acquire/wait for */
+    unsigned __int64    key_value;      /* the key to acquire/wait for */
     obj_handle_t        wait_handle;    /* previously returned wait handle */
     unsigned int        wait_status;    /* status returned from previous wait */
 @REPLY
@@ -4328,7 +4328,7 @@ enum inproc_sync_type
 @REQ(d3dkmt_mutex_release)
     d3dkmt_handle_t     mutex;          /* mutex global handle */
     int                 abandon;        /* mutex is being abandonned */
-    unsigned int        key_value;      /* the key to release */
+    unsigned __int64    key_value;      /* the key to release */
     unsigned __int64    fence_value;    /* semaphore fence value */
     data_size_t         runtime_size;   /* size of client runtime data */
     VARARG(runtime,bytes);              /* client runtime data */

@@ -3464,7 +3464,7 @@ static void dump_d3dkmt_object_create_request( const struct d3dkmt_object_create
 {
     fprintf( stderr, " type=%08x", req->type );
     fprintf( stderr, ", fd=%d", req->fd );
-    fprintf( stderr, ", value=%08x", req->value );
+    dump_uint64( ", value=", &req->value );
     dump_varargs_bytes( ", runtime=", cur_size );
 }
 
@@ -3539,7 +3539,7 @@ static void dump_d3dkmt_object_open_name_reply( const struct d3dkmt_object_open_
 static void dump_d3dkmt_mutex_acquire_request( const struct d3dkmt_mutex_acquire_request *req )
 {
     fprintf( stderr, " mutex=%08x", req->mutex );
-    fprintf( stderr, ", key_value=%08x", req->key_value );
+    dump_uint64( ", key_value=", &req->key_value );
     fprintf( stderr, ", wait_handle=%04x", req->wait_handle );
     fprintf( stderr, ", wait_status=%08x", req->wait_status );
 }
@@ -3556,7 +3556,7 @@ static void dump_d3dkmt_mutex_release_request( const struct d3dkmt_mutex_release
 {
     fprintf( stderr, " mutex=%08x", req->mutex );
     fprintf( stderr, ", abandon=%d", req->abandon );
-    fprintf( stderr, ", key_value=%08x", req->key_value );
+    dump_uint64( ", key_value=", &req->key_value );
     dump_uint64( ", fence_value=", &req->fence_value );
     fprintf( stderr, ", runtime_size=%u", req->runtime_size );
     dump_varargs_bytes( ", runtime=", cur_size );

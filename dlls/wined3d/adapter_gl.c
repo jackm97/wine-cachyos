@@ -187,6 +187,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
                                    EXT_FRAMEBUFFER_MULTISAMPLE_BLIT_SCALED},
     {"GL_EXT_framebuffer_object",           EXT_FRAMEBUFFER_OBJECT        },
     {"GL_EXT_memory_object",                EXT_MEMORY_OBJECT             },
+    {"GL_EXT_memory_object_win32",          EXT_MEMORY_OBJECT_WIN32       },
     {"GL_EXT_gpu_program_parameters",       EXT_GPU_PROGRAM_PARAMETERS    },
     {"GL_EXT_gpu_shader4",                  EXT_GPU_SHADER4               },
     {"GL_EXT_packed_depth_stencil",         EXT_PACKED_DEPTH_STENCIL      },
@@ -2497,8 +2498,14 @@ static void load_gl_funcs(struct wined3d_gl_info *gl_info)
     USE_GL_FUNC(glVertexAttribI4usvEXT)
     USE_GL_FUNC(glVertexAttribIPointerEXT)
     /* GL_EXT_memory_object */
+    USE_GL_FUNC(glCreateMemoryObjectsEXT)
+    USE_GL_FUNC(glDeleteMemoryObjectsEXT)
     USE_GL_FUNC(glGetUnsignedBytei_vEXT)
     USE_GL_FUNC(glGetUnsignedBytevEXT)
+    USE_GL_FUNC(glMemoryObjectParameterivEXT)
+    USE_GL_FUNC(glTexStorageMem2DEXT)
+    /* GL_EXT_memory_object_win32 */
+    USE_GL_FUNC(glImportMemoryWin32HandleEXT)
     /* GL_EXT_point_parameters */
     USE_GL_FUNC(glPointParameterfEXT)
     USE_GL_FUNC(glPointParameterfvEXT)
@@ -4112,6 +4119,14 @@ static void adapter_gl_destroy_device(struct wined3d_device *device)
     struct wined3d_device_gl *device_gl = wined3d_device_gl(device);
 
     wined3d_device_cleanup(&device_gl->d);
+    wined3d_shared_allocator_vk_destroy(device_gl->shared_allocator);
+    if (device_gl->shared_kmt_device)
+    {
+        D3DKMT_DESTROYDEVICE destroy = {0};
+
+        destroy.hDevice = device_gl->shared_kmt_device;
+        D3DKMTDestroyDevice(&destroy);
+    }
     wined3d_lock_cleanup(&device_gl->allocator_cs);
 
     free(device_gl->retired_blocks);
@@ -4533,6 +4548,22 @@ static HRESULT adapter_gl_create_texture(struct wined3d_device *device,
     return hr;
 }
 
+static void wined3d_texture_gl_destroy_shared_object(void *object)
+{
+    struct wined3d_texture_gl *texture_gl = object;
+
+    wined3d_shared_image_vk_destroy(texture_gl->shared_image);
+    if (texture_gl->shared_kmt_resource)
+    {
+        D3DKMT_DESTROYALLOCATION destroy = {0};
+
+        destroy.hDevice = wined3d_device_gl(texture_gl->t.resource.device)->shared_kmt_device;
+        destroy.hResource = texture_gl->shared_kmt_resource;
+        D3DKMTDestroyAllocation(&destroy);
+    }
+    free(texture_gl);
+}
+
 static void adapter_gl_destroy_texture(struct wined3d_texture *texture)
 {
     struct wined3d_texture_gl *texture_gl = wined3d_texture_gl(texture);
@@ -4552,7 +4583,7 @@ static void adapter_gl_destroy_texture(struct wined3d_texture *texture)
     texture->resource.parent_ops->wined3d_object_destroyed(texture->resource.parent);
 
     wined3d_texture_cleanup(&texture_gl->t);
-    wined3d_cs_destroy_object(device->cs, free, texture_gl);
+    wined3d_cs_destroy_object(device->cs, wined3d_texture_gl_destroy_shared_object, texture_gl);
 
     if (swapchain_count)
         wined3d_device_decref(device);

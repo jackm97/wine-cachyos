@@ -295,7 +295,7 @@ static NTSTATUS d3dkmt_object_alloc( UINT size, enum d3dkmt_type type, void **ob
 }
 
 /* create a global D3DKMT object, either with a global handle or later shareable */
-static NTSTATUS d3dkmt_object_create( struct d3dkmt_object *object, int fd, UINT value, BOOL shared,
+static NTSTATUS d3dkmt_object_create( struct d3dkmt_object *object, int fd, UINT64 value, BOOL shared,
                                       const void *runtime, UINT runtime_size )
 {
     NTSTATUS status;

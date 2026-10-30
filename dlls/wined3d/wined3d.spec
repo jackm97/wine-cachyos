@@ -326,6 +326,8 @@
 @ cdecl wined3d_texture_decref(ptr)
 @ cdecl wined3d_texture_from_resource(ptr)
 @ cdecl wined3d_texture_get_dc(ptr long ptr)
+@ cdecl wined3d_texture_get_shared_handle(ptr ptr)
+@ cdecl wined3d_texture_open_shared_handle(ptr ptr)
 @ cdecl wined3d_texture_get_level_count(ptr)
 @ cdecl wined3d_texture_get_lod(ptr)
 @ cdecl wined3d_texture_get_overlay_position(ptr long ptr ptr)
@@ -400,3 +402,7 @@
 @ cdecl vkd3d_shader_scan(ptr ptr)
 @ cdecl vkd3d_shader_serialize_dxbc(long ptr ptr ptr)
 @ cdecl vkd3d_shader_serialize_root_signature(ptr ptr ptr)
+
+@ cdecl wined3d_texture_acquire_keyed_mutex(ptr long long int64 long)
+@ cdecl wined3d_texture_release_keyed_mutex(ptr long long int64)
+@ cdecl wined3d_texture_destroy_keyed_mutex(ptr long)

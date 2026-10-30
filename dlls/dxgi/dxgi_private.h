@@ -36,6 +36,7 @@
 #ifdef DXGI_INIT_GUID
 #include "initguid.h"
 #endif
+#include "ddk/d3dkmthk.h"
 #include "wine/wined3d.h"
 #include "wine/winedxgi.h"
 
@@ -199,6 +200,8 @@ struct dxgi_resource
 {
     IDXGISurface2 IDXGISurface2_iface;
     IDXGIResource1 IDXGIResource1_iface;
+    IDXGIKeyedMutex IDXGIKeyedMutex_iface;
+    D3DKMT_HANDLE keyed_mutex, shared_keyed_mutex;
     IUnknown IUnknown_iface;
     IUnknown *outer_unknown;
     LONG refcount;
@@ -212,6 +215,6 @@ struct dxgi_resource
 
 HRESULT dxgi_resource_init(struct dxgi_resource *resource, IDXGIDevice *device,
         IUnknown *outer, BOOL needs_surface, struct wined3d_resource *wined3d_resource,
-        IDXGIResource1 *parent_resource, unsigned int subresource_index);
+        IDXGIResource1 *parent_resource, unsigned int subresource_index, const DXGI_SHARED_RESOURCE *shared_resource);
 
 #endif /* __WINE_DXGI_PRIVATE_H */

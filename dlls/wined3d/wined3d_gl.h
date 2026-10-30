@@ -179,6 +179,7 @@ enum wined3d_gl_extension
     EXT_GPU_PROGRAM_PARAMETERS,
     EXT_GPU_SHADER4,
     EXT_MEMORY_OBJECT,
+    EXT_MEMORY_OBJECT_WIN32,
     EXT_PACKED_DEPTH_STENCIL,
     EXT_PACKED_FLOAT,
     EXT_POINT_PARAMETERS,
@@ -861,6 +862,8 @@ struct wined3d_dummy_textures
 struct wined3d_device_gl
 {
     struct wined3d_device d;
+    struct wined3d_shared_allocator_vk *shared_allocator;
+    D3DKMT_HANDLE shared_kmt_device;
 
     /* Textures for when no other textures are bound. */
     struct wined3d_dummy_textures dummy_textures;
@@ -958,6 +961,9 @@ struct wined3d_texture_gl
     struct wined3d_texture t;
 
     struct gl_texture texture_rgb, texture_srgb;
+    HANDLE shared_handle;
+    struct wined3d_shared_image_vk *shared_image;
+    D3DKMT_HANDLE shared_kmt_resource;
 
     GLenum target;
 
