@@ -30,9 +30,26 @@
 #include "activation.h"
 
 #define WIDL_using_Windows_Foundation
+#define WIDL_using_Windows_Foundation_Collections
 #include "windows.foundation.h"
+#define WIDL_using_Windows_Foundation_Numerics
+#include "windows.foundation.numerics.h"
+#define WIDL_using_Windows_Graphics_Effects
+#include "windows.graphics.effects.h"
 #define WIDL_using_Windows_UI
 #include "windows.ui.h"
+#define WIDL_using_Windows_UI_Core
+#define WIDL_using_Windows_UI_Input
+#define WIDL_using_Windows_UI_Composition
+#include "windows.ui.composition.h"
+#define WIDL_using_Windows_UI_Composition_Core
+#include "windows.ui.composition.core.h"
+#define WIDL_using_Windows_UI_Composition_Desktop
+#include "windows.ui.composition.desktop.h"
+#include "windows.ui.input.h"
+#define WIDL_using_Windows_UI_Composition_Interactions
+#include "windows.ui.composition.interactions.h"
+#include "windows.ui.composition.interop.h"
 #define WIDL_using_Windows_UI_ViewManagement
 #include "windows.ui.viewmanagement.h"
 
@@ -40,6 +57,13 @@ extern IActivationFactory *accessibilitysettings_factory;
 extern IActivationFactory *uisettings_factory;
 extern IActivationFactory *uiviewsettings_factory;
 extern IActivationFactory *inputpane_factory;
+extern IActivationFactory *compositor_factory;
+extern IActivationFactory *compositor_controller_factory;
+extern IActivationFactory *composition_conditional_value_factory;
+extern IActivationFactory *interaction_tracker_factory;
+extern IActivationFactory *visual_interaction_source_factory;
+
+HRESULT composition_property_set_create( ICompositor *compositor, ICompositionPropertySet **result );
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

@@ -50,6 +50,23 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
     if (!wcscmp( buffer, RuntimeClass_Windows_UI_ViewManagement_InputPane ))
         IActivationFactory_QueryInterface( inputpane_factory, &IID_IActivationFactory, (void **)factory );
 
+    if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Compositor ))
+        IActivationFactory_QueryInterface( compositor_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Core_CompositorController ))
+        IActivationFactory_QueryInterface( compositor_controller_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Interactions_CompositionConditionalValue ))
+        IActivationFactory_QueryInterface( composition_conditional_value_factory, &IID_IActivationFactory,
+                                           (void **)factory );
+
+    if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Interactions_InteractionTracker ))
+        IActivationFactory_QueryInterface( interaction_tracker_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, RuntimeClass_Windows_UI_Composition_Interactions_VisualInteractionSource ))
+        IActivationFactory_QueryInterface( visual_interaction_source_factory, &IID_IActivationFactory,
+                                           (void **)factory );
+
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;
 }
