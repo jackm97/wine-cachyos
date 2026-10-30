@@ -1576,13 +1576,52 @@ BOOL WINAPI GetVersionExW( OSVERSIONINFOW *info )
     return TRUE;
 }
 
+static LONG get_current_sparse_package_value( const WCHAR *variable, UINT32 *length, WCHAR *value );
+
 /***********************************************************************
  *         GetCurrentApplicationUserModelId   (kernelbase.@)
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentApplicationUserModelId( UINT32 *length, WCHAR *id )
 {
-    FIXME( "(%p %p): stub\n", length, id );
-    return APPMODEL_ERROR_NO_APPLICATION;
+    LONG ret = get_current_sparse_package_value( L"WINE_SPARSE_PACKAGE_AUMID", length, id );
+
+    return ret == APPMODEL_ERROR_NO_PACKAGE ? APPMODEL_ERROR_NO_APPLICATION : ret;
+}
+
+static BOOL current_image_matches_sparse_package(void)
+{
+    WCHAR image[32768], executable[32768];
+    DWORD image_length, executable_length;
+    const WCHAR *relative;
+
+    image_length = GetModuleFileNameW( NULL, image, ARRAY_SIZE(image) );
+    if (!image_length || image_length >= ARRAY_SIZE(image)) return FALSE;
+    executable_length = GetEnvironmentVariableW( L"WINE_SPARSE_PACKAGE_EXECUTABLE",
+            executable, ARRAY_SIZE(executable) );
+    if (!executable_length || executable_length >= ARRAY_SIZE(executable) ||
+            executable_length > image_length)
+        return FALSE;
+
+    relative = image + image_length - executable_length;
+    if (relative != image && relative[-1] != L'\\' && relative[-1] != L'/') return FALSE;
+    return !wcsicmp( relative, executable );
+}
+
+static LONG get_current_sparse_package_value( const WCHAR *variable, UINT32 *length, WCHAR *value )
+{
+    DWORD required, available;
+
+    if (!length) return ERROR_INVALID_PARAMETER;
+    if (!current_image_matches_sparse_package()) return APPMODEL_ERROR_NO_PACKAGE;
+    if (!(required = GetEnvironmentVariableW( variable, NULL, 0 ))) return APPMODEL_ERROR_NO_PACKAGE;
+
+    available = *length;
+    *length = required;
+    if (!value || available < required) return ERROR_INSUFFICIENT_BUFFER;
+    if (!GetEnvironmentVariableW( variable, value, available )) return GetLastError();
+
+    TRACE( "%s -> %s.\n", debugstr_w(variable), debugstr_w(value) );
+    return ERROR_SUCCESS;
 }
 
 /***********************************************************************
@@ -1590,8 +1629,7 @@ LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentApplicationUserModelId( UINT32 *le
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackageFamilyName( UINT32 *length, WCHAR *name )
 {
-    FIXME( "(%p %p): stub\n", length, name );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    return get_current_sparse_package_value( L"WINE_SPARSE_PACKAGE_FAMILY_NAME", length, name );
 }
 
 
@@ -1600,8 +1638,7 @@ LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackageFamilyName( UINT32 *length,
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackageFullName( UINT32 *length, WCHAR *name )
 {
-    FIXME( "(%p %p): stub\n", length, name );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    return get_current_sparse_package_value( L"WINE_SPARSE_PACKAGE_FULL_NAME", length, name );
 }
 
 
@@ -1628,8 +1665,7 @@ LONG WINAPI GetCurrentPackageInfo( const UINT32 flags, UINT32 *buffer_size, BYTE
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackagePath( UINT32 *length, WCHAR *path )
 {
-    FIXME( "(%p %p): stub\n", length, path );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    return get_current_sparse_package_value( L"WINE_SPARSE_PACKAGE_PATH", length, path );
 }
 
 

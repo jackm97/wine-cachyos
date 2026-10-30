@@ -267,11 +267,44 @@ BOOL WINAPI SetFileCompletionNotificationModes( HANDLE file, UCHAR flags )
 /**************************************************************************
  *           SetFileShortNameW   (KERNEL32.@)
  */
-BOOL WINAPI SetFileShortNameW( HANDLE file, const WCHAR *name )
+BOOL WINAPI SetFileShortNameW( HANDLE file, const WCHAR *short_name )
 {
-    FIXME("%p %s: stub\n", file, debugstr_w(name));
-    SetLastError(ERROR_NOT_SUPPORTED);
-    return FALSE;
+    FILE_NAME_INFORMATION *info;
+    IO_STATUS_BLOCK io;
+    NTSTATUS status;
+    SIZE_T length, size;
+
+    if (!short_name)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    length = wcslen( short_name );
+    if (length > (MAXDWORD - offsetof(FILE_NAME_INFORMATION, FileName)) / sizeof(WCHAR))
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    size = offsetof(FILE_NAME_INFORMATION, FileName) + length * sizeof(WCHAR);
+    if (!(info = HeapAlloc( GetProcessHeap(), 0, size )))
+    {
+        SetLastError( ERROR_NOT_ENOUGH_MEMORY );
+        return FALSE;
+    }
+
+    info->FileNameLength = length * sizeof(WCHAR);
+    memcpy( info->FileName, short_name, info->FileNameLength );
+    status = NtSetInformationFile( file, &io, info, size, FileShortNameInformation );
+    HeapFree( GetProcessHeap(), 0, info );
+    if (status == STATUS_NOT_IMPLEMENTED || status == STATUS_INVALID_INFO_CLASS ||
+            status == STATUS_NOT_SUPPORTED)
+    {
+        TRACE( "short file names are not supported by the host filesystem\n" );
+        return TRUE;
+    }
+    return set_ntstatus( status );
 }
 
 

@@ -2990,14 +2990,11 @@ BOOL WINAPI TpSetPoolMinThreads( TP_POOL *pool, DWORD minimum )
     return !status;
 }
 
-/***********************************************************************
- *           TpSetTimer    (NTDLL.@)
- */
-VOID WINAPI TpSetTimer( TP_TIMER *timer, LARGE_INTEGER *timeout, LONG period, LONG window_length )
+static BOOL tp_set_timer( TP_TIMER *timer, LARGE_INTEGER *timeout, LONG period, LONG window_length )
 {
     struct threadpool_object *this = impl_from_TP_TIMER( timer );
     struct threadpool_object *other_timer;
-    BOOL submit_timer = FALSE;
+    BOOL submit_timer = FALSE, was_timer_set;
     ULONGLONG timestamp;
 
     TRACE( "%p %p %lu %lu\n", timer, timeout, period, window_length );
@@ -3005,6 +3002,7 @@ VOID WINAPI TpSetTimer( TP_TIMER *timer, LARGE_INTEGER *timeout, LONG period, LO
     RtlEnterCriticalSection( &timerqueue.cs );
 
     assert( this->u.timer.timer_initialized );
+    was_timer_set = this->u.timer.timer_set;
     this->u.timer.timer_set = timeout != NULL;
 
     /* Convert relative timeout to absolute timestamp and handle a timeout
@@ -3066,6 +3064,28 @@ VOID WINAPI TpSetTimer( TP_TIMER *timer, LARGE_INTEGER *timeout, LONG period, LO
 
     if (submit_timer)
        tp_object_submit( this, FALSE );
+
+    return was_timer_set;
+}
+
+/***********************************************************************
+ *           TpSetTimer    (NTDLL.@)
+ */
+VOID WINAPI TpSetTimer( TP_TIMER *timer, LARGE_INTEGER *timeout, LONG period, LONG window_length )
+{
+    TRACE( "%p %p %lu %lu\n", timer, timeout, period, window_length );
+
+    tp_set_timer( timer, timeout, period, window_length );
+}
+
+/***********************************************************************
+ *           TpSetTimerEx    (NTDLL.@)
+ */
+BOOL WINAPI TpSetTimerEx( TP_TIMER *timer, LARGE_INTEGER *timeout, LONG period, LONG window_length )
+{
+    TRACE( "%p %p %lu %lu\n", timer, timeout, period, window_length );
+
+    return tp_set_timer( timer, timeout, period, window_length );
 }
 
 /***********************************************************************
