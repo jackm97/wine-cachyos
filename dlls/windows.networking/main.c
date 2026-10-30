@@ -16,12 +16,75 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define COBJMACROS
+#include "initguid.h"
+
 #include <windef.h>
 #include <winnt.h>
 #include <winstring.h>
+#include "activation.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(winsock);
+
+static HRESULT WINAPI factory_QueryInterface(IActivationFactory *iface, REFIID iid, void **out)
+{
+    if (IsEqualGUID(iid, &IID_IUnknown) || IsEqualGUID(iid, &IID_IInspectable) ||
+        IsEqualGUID(iid, &IID_IAgileObject) || IsEqualGUID(iid, &IID_IActivationFactory))
+    {
+        *out = iface;
+        IInspectable_AddRef(*out);
+        return S_OK;
+    }
+
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI factory_AddRef(IActivationFactory *iface)
+{
+    return 2;
+}
+
+static ULONG WINAPI factory_Release(IActivationFactory *iface)
+{
+    return 1;
+}
+
+static HRESULT WINAPI factory_GetIids(IActivationFactory *iface, ULONG *iid_count, IID **iids)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI factory_GetRuntimeClassName(IActivationFactory *iface, HSTRING *class_name)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI factory_GetTrustLevel(IActivationFactory *iface, TrustLevel *trust_level)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI factory_ActivateInstance(IActivationFactory *iface, IInspectable **instance)
+{
+    FIXME("iface %p, instance %p stub!\n", iface, instance);
+    *instance = NULL;
+    return E_NOTIMPL;
+}
+
+static const IActivationFactoryVtbl factory_vtbl =
+{
+    factory_QueryInterface,
+    factory_AddRef,
+    factory_Release,
+    factory_GetIids,
+    factory_GetRuntimeClassName,
+    factory_GetTrustLevel,
+    factory_ActivateInstance,
+};
+
+static IActivationFactory message_websocket_factory = {&factory_vtbl};
 
 HRESULT WINAPI SetSocketMediaStreamingMode(BOOL value)
 {
@@ -29,11 +92,18 @@ HRESULT WINAPI SetSocketMediaStreamingMode(BOOL value)
     return S_OK;
 }
 
-HRESULT WINAPI DllGetActivationFactory(HSTRING classid, void **factory)
+HRESULT WINAPI DllGetActivationFactory(HSTRING classid, IActivationFactory **factory)
 {
     FIXME("class %s, factory %p.\n", debugstr_hstring(classid), factory);
 
     *factory = NULL;
+
+    if (!wcscmp(WindowsGetStringRawBuffer(classid, NULL), L"Windows.Networking.Sockets.MessageWebSocket"))
+    {
+        *factory = &message_websocket_factory;
+        IActivationFactory_AddRef(*factory);
+        return S_OK;
+    }
 
     return CLASS_E_CLASSNOTAVAILABLE;
 }
