@@ -1793,10 +1793,12 @@ HRESULT WINAPI PTGetPrintCapabilities(HPTPROVIDER provider, IStream *stream, ISt
 
     TRACE("%p,%p,%p,%p\n", provider, stream, caps, error);
 
-    if (!is_valid_provider(provider) || !stream || !caps)
+    if (!is_valid_provider(provider) || !caps)
         return E_INVALIDARG;
 
-    hr = parse_ticket(stream, kPTJobScope, &ticket);
+    /* without a print ticket the capabilities describe the printer defaults */
+    if (stream) hr = parse_ticket(stream, kPTJobScope, &ticket);
+    else hr = initialize_ticket(prov, &ticket);
     if (hr != S_OK) return hr;
 
     return write_print_capabilities(prov->name, caps, ticket.page.orientation);

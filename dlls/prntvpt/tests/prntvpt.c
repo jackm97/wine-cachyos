@@ -126,6 +126,33 @@ static void test_PTOpenProviderEx(void)
     }
 }
 
+static void test_PTGetPrintCapabilities(void)
+{
+    HPTPROVIDER hprov;
+    IStream *caps;
+    STATSTG stat;
+    HRESULT hr;
+
+    hr = PTOpenProvider(default_name, 1, &hprov);
+    ok(hr == S_OK, "got %#lx\n", hr);
+
+    hr = PTGetPrintCapabilities(hprov, NULL, NULL, NULL);
+    ok(hr == E_INVALIDARG, "got %#lx\n", hr);
+
+    hr = CreateStreamOnHGlobal(NULL, TRUE, &caps);
+    ok(hr == S_OK, "got %#lx\n", hr);
+
+    /* without a print ticket the printer defaults are used */
+    hr = PTGetPrintCapabilities(hprov, NULL, caps, NULL);
+    ok(hr == S_OK, "got %#lx\n", hr);
+    hr = IStream_Stat(caps, &stat, STATFLAG_NONAME);
+    ok(hr == S_OK, "got %#lx\n", hr);
+    ok(stat.cbSize.QuadPart > 0, "got empty capabilities\n");
+
+    IStream_Release(caps);
+    PTCloseProvider(hprov);
+}
+
 START_TEST(prntvpt)
 {
     DWORD size;
@@ -143,6 +170,7 @@ START_TEST(prntvpt)
 
     test_PTOpenProvider();
     test_PTOpenProviderEx();
+    test_PTGetPrintCapabilities();
 
     CoUninitialize();
 }
