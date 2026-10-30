@@ -69,6 +69,7 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         &analytics_info_factory,
         &advertising_manager_factory,
         &application_view_factory,
+        &haptics_waveforms_factory,
         &retail_info_factory,
         &shared_mode_settings_factory,
     };

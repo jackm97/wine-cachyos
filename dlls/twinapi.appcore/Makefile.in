@@ -8,6 +8,7 @@ SOURCES = \
 	application_view.c \
 	classes.idl \
 	client_device_information.c \
+	haptics.c \
 	main.c \
 	retail_info.c \
 	shared_mode_settings.c \

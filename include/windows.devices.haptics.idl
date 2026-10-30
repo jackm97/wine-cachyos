@@ -24,6 +24,8 @@ import "inspectable.idl";
 import "windows.foundation.idl";
 
 namespace Windows.Devices.Haptics {
+    interface IKnownSimpleHapticsControllerWaveformsStatics;
+    runtimeclass KnownSimpleHapticsControllerWaveforms;
     interface ISimpleHapticsControllerFeedback;
     interface ISimpleHapticsController;
     runtimeclass SimpleHapticsControllerFeedback;
@@ -35,6 +37,30 @@ namespace Windows.Devices.Haptics {
         interface Windows.Foundation.Collections.IVectorView<Windows.Devices.Haptics.SimpleHapticsController *>;
         interface Windows.Foundation.Collections.IVector<Windows.Devices.Haptics.SimpleHapticsController *>;
         interface Windows.Foundation.Collections.IVectorView<Windows.Devices.Haptics.SimpleHapticsControllerFeedback *>;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 4.0),
+        exclusiveto(Windows.Devices.Haptics.KnownSimpleHapticsControllerWaveforms),
+        uuid(3d577ef7-4cee-11e6-b535-001bdc06ab3b)
+    ]
+    interface IKnownSimpleHapticsControllerWaveformsStatics : IInspectable
+    {
+        [propget] HRESULT Click([out, retval] UINT16 *value);
+        [propget] HRESULT BuzzContinuous([out, retval] UINT16 *value);
+        [propget] HRESULT RumbleContinuous([out, retval] UINT16 *value);
+        [propget] HRESULT Press([out, retval] UINT16 *value);
+        [propget] HRESULT Release([out, retval] UINT16 *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 4.0),
+        static(Windows.Devices.Haptics.IKnownSimpleHapticsControllerWaveformsStatics,
+               Windows.Foundation.UniversalApiContract, 4.0),
+        threading(both)
+    ]
+    runtimeclass KnownSimpleHapticsControllerWaveforms
+    {
     }
 
     [
