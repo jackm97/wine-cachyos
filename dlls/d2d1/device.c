@@ -1696,14 +1696,42 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawGeometry(ID2D1DeviceContext
         return;
     }
 
-    if (stroke_style)
-        FIXME("Ignoring stroke style %p.\n", stroke_style);
-
     if (stroke_style_impl)
     {
         if (stroke_style_impl->desc.transformType == D2D1_STROKE_TRANSFORM_TYPE_FIXED)
             stroke_width /= context->drawing_state.transform.m11;
     }
+
+    if (stroke_style_impl && stroke_style_impl->dash_count)
+    {
+        D2D1_MATRIX_3X2_F transform = context->drawing_state.transform;
+        float scale, tolerance = D2D1_DEFAULT_FLATTENING_TOLERANCE;
+        ID2D1PathGeometry *dashed;
+        HRESULT hr;
+
+        if (context->drawing_state.unitMode != D2D1_UNIT_MODE_PIXELS)
+        {
+            transform._11 *= context->desc.dpiX / 96.0f;
+            transform._21 *= context->desc.dpiX / 96.0f;
+            transform._12 *= context->desc.dpiY / 96.0f;
+            transform._22 *= context->desc.dpiY / 96.0f;
+        }
+        scale = D2D1ComputeMaximumScaleFactor(&transform);
+        if (scale > 0.0f && isfinite(scale))
+            tolerance /= scale;
+
+        if (SUCCEEDED(hr = d2d_geometry_create_dashed(geometry, stroke_style_impl, stroke_width,
+                tolerance, &dashed)))
+        {
+            ID2D1DeviceContext6_FillGeometry(iface, (ID2D1Geometry *)dashed, brush, NULL);
+            ID2D1PathGeometry_Release(dashed);
+        }
+        else d2d_device_context_set_error(context, hr);
+        return;
+    }
+
+    if (stroke_style)
+        FIXME("Ignoring stroke style %p.\n", stroke_style);
 
     d2d_device_context_draw_geometry(context, geometry_impl, brush_impl, stroke_width);
 }
