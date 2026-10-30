@@ -1025,36 +1025,6 @@ static HRESULT response_set_property( IMap_HSTRING_HSTRING *properties, const WC
     return hr;
 }
 
-static HRESULT response_set_customer_id( IWebAccount *account, const struct identity_reply *reply )
-{
-    static const WCHAR personal_tenant[] = L"9188040d-6c67-4c5b-b112-36a304b66dad";
-    const WCHAR *id = WindowsGetStringRawBuffer( reply->account_id, NULL );
-    WCHAR buffer[16];
-    HSTRING value;
-    UINT32 i, count = 0;
-    HRESULT hr;
-
-    if (wcsicmp( WindowsGetStringRawBuffer(reply->tenant_id, NULL), personal_tenant ) ||
-        WindowsGetStringLen( reply->account_id ) != 36 || wcsncmp( id, L"00000000-0000-0000-", 19 ))
-        return S_OK;
-    for (i = 19; i < 36; ++i)
-    {
-        WCHAR c = id[i];
-        if (i == 23)
-        {
-            if (c != '-') return S_OK;
-            continue;
-        }
-        if (c >= 'A' && c <= 'F') c += 'a' - 'A';
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return S_OK;
-        buffer[count++] = c;
-    }
-    if (FAILED(hr = WindowsCreateString( buffer, count, &value ))) return hr;
-    hr = web_account_set_property( account, L"SafeCustomerId", value );
-    WindowsDeleteString( value );
-    return hr;
-}
-
 static HRESULT response_set_identity( IWebAccountProvider *provider, const struct identity_reply *reply,
                                       IWebAccount *account, IWebTokenResponse *response )
 {
@@ -1112,7 +1082,7 @@ static HRESULT response_set_identity( IWebAccountProvider *provider, const struc
         FAILED(hr = web_account_set_property( account, L"Authority", authority )) ||
         FAILED(hr = web_account_set_property( account, L"OID", reply->account_id )) ||
         FAILED(hr = web_account_set_property( account, L"TenantId", reply->tenant_id )) ||
-        FAILED(hr = response_set_customer_id( account, reply ))) goto done;
+        FAILED(hr = web_account_set_customer_id( account, reply->tenant_id ))) goto done;
 
 done:
     if (provider2) IWebAccountProvider2_Release( provider2 );

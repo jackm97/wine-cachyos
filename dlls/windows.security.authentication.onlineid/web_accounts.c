@@ -366,9 +366,10 @@ HRESULT web_accounts_result_create( IWebAccountProvider *provider, const struct 
                                     IFindAllAccountsResult **out )
 {
     struct accounts_result *impl;
+    IWebAccountProvider2 *provider2;
     const BYTE *data = reply->accounts;
     UINT32 count, remaining = reply->accounts_size, i;
-    HSTRING id = NULL, username = NULL;
+    HSTRING id = NULL, username = NULL, authority = NULL;
     HRESULT hr = S_OK;
 
     if (!out) return E_POINTER;
@@ -401,6 +402,13 @@ HRESULT web_accounts_result_create( IWebAccountProvider *provider, const struct 
         hr = E_OUTOFMEMORY;
         goto done;
     }
+    if (count && SUCCEEDED(IWebAccountProvider_QueryInterface( provider, &IID_IWebAccountProvider2,
+                                                              (void **)&provider2 )))
+    {
+        hr = IWebAccountProvider2_get_Authority( provider2, &authority );
+        IWebAccountProvider2_Release( provider2 );
+        if (FAILED(hr)) goto done;
+    }
     for (i = 0; i < count; ++i)
     {
         if (FAILED(hr = read_string( &data, &remaining, &id )) ||
@@ -408,6 +416,7 @@ HRESULT web_accounts_result_create( IWebAccountProvider *provider, const struct 
             FAILED(hr = web_account_create( provider, id, username, WebAccountState_Connected,
                                             &impl->accounts[impl->count] ))) goto done;
         ++impl->count;
+        if (FAILED(hr = web_account_set_customer_id( impl->accounts[i], authority ))) goto done;
         WindowsDeleteString( id );
         WindowsDeleteString( username );
         id = username = NULL;
@@ -415,6 +424,7 @@ HRESULT web_accounts_result_create( IWebAccountProvider *provider, const struct 
     if (remaining) hr = E_INVALIDARG;
 
 done:
+    WindowsDeleteString( authority );
     WindowsDeleteString( id );
     WindowsDeleteString( username );
     if (FAILED(hr)) IFindAllAccountsResult_Release( &impl->IFindAllAccountsResult_iface );
