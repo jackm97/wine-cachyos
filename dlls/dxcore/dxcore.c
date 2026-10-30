@@ -160,6 +160,80 @@ done:
     ReleaseSRWLockExclusive(&dxcore_attribute_cache_lock);
 }
 
+/* Memory reservations set through SetState(AdapterMemoryBudget). Adapter objects
+ * are recreated on every CreateAdapterList(), so the reservations are kept
+ * process-wide, keyed by adapter LUID, node index and segment group. */
+#define DXCORE_RESERVATION_TABLE_SIZE 16
+
+static struct dxcore_reservation_entry
+{
+    LUID luid;
+    UINT node_index;
+    DXGI_MEMORY_SEGMENT_GROUP group;
+    UINT64 reservation;
+} dxcore_reservation_table[DXCORE_RESERVATION_TABLE_SIZE];
+static unsigned int dxcore_reservation_count;
+static SRWLOCK dxcore_reservation_lock = SRWLOCK_INIT;
+
+static UINT64 dxcore_reservation_lookup(const LUID *luid, UINT node_index, DXGI_MEMORY_SEGMENT_GROUP group)
+{
+    UINT64 reservation = 0;
+    unsigned int i;
+
+    AcquireSRWLockShared(&dxcore_reservation_lock);
+    for (i = 0; i < dxcore_reservation_count; ++i)
+    {
+        const struct dxcore_reservation_entry *entry = &dxcore_reservation_table[i];
+
+        if (entry->node_index == node_index && entry->group == group && !memcmp(&entry->luid, luid, sizeof(*luid)))
+        {
+            reservation = entry->reservation;
+            break;
+        }
+    }
+    ReleaseSRWLockShared(&dxcore_reservation_lock);
+
+    return reservation;
+}
+
+/* Returns FALSE if the table is full and the key is new. */
+static BOOL dxcore_reservation_store(const LUID *luid, UINT node_index, DXGI_MEMORY_SEGMENT_GROUP group, UINT64 reservation)
+{
+    BOOL stored = TRUE;
+    unsigned int i;
+
+    AcquireSRWLockExclusive(&dxcore_reservation_lock);
+    for (i = 0; i < dxcore_reservation_count; ++i)
+    {
+        struct dxcore_reservation_entry *entry = &dxcore_reservation_table[i];
+
+        if (entry->node_index == node_index && entry->group == group && !memcmp(&entry->luid, luid, sizeof(*luid)))
+        {
+            entry->reservation = reservation;
+            goto done;
+        }
+    }
+
+    if (dxcore_reservation_count < ARRAY_SIZE(dxcore_reservation_table))
+    {
+        struct dxcore_reservation_entry *entry = &dxcore_reservation_table[dxcore_reservation_count++];
+
+        entry->luid = *luid;
+        entry->node_index = node_index;
+        entry->group = group;
+        entry->reservation = reservation;
+    }
+    else
+    {
+        WARN("Reservation table is full, not storing the reservation.\n");
+        stored = FALSE;
+    }
+
+done:
+    ReleaseSRWLockExclusive(&dxcore_reservation_lock);
+    return stored;
+}
+
 /* The d3d12, d3d11 and dxgi DLLs are loaded by name at first use, rather than
  * imported, so that whichever DLL the prefix overrides (vkd3d-proton, DXVK) is
  * the one used. They are never freed. */
@@ -603,7 +677,7 @@ static HRESULT STDMETHODCALLTYPE dxcore_adapter_QueryState(IDXCoreAdapter *iface
         budget->budget = info.Budget;
         budget->currentUsage = info.CurrentUsage;
         budget->availableForReservation = info.AvailableForReservation;
-        budget->currentReservation = info.CurrentReservation;
+        budget->currentReservation = dxcore_reservation_lookup(&adapter->identifier.adapter_luid, input->nodeIndex, group);
 
         TRACE("node %u, group %u, budget %I64u, usage %I64u, available for reservation %I64u, reservation %I64u.\n",
                 input->nodeIndex, input->segmentGroup, budget->budget, budget->currentUsage,
@@ -618,13 +692,69 @@ static HRESULT STDMETHODCALLTYPE dxcore_adapter_QueryState(IDXCoreAdapter *iface
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsSetStateSupported(IDXCoreAdapter *iface, DXCoreAdapterState property)
 {
-    FIXME("iface %p, property %u stub!\n", iface, property);
-    return FALSE;
+    TRACE("iface %p, property %u.\n", iface, property);
+    return property == AdapterMemoryBudget;
 }
 
 static HRESULT STDMETHODCALLTYPE dxcore_adapter_SetState(IDXCoreAdapter *iface, DXCoreAdapterState state, size_t state_details_size,
         const void *state_details, size_t buffer_size, const void *buffer)
 {
+    struct dxcore_adapter *adapter = impl_from_IDXCoreAdapter(iface);
+
+    if (state == AdapterMemoryBudget)
+    {
+        const DXCoreAdapterMemoryBudgetNodeSegmentGroup *input = state_details;
+        DXGI_QUERY_VIDEO_MEMORY_INFO info;
+        DXGI_MEMORY_SEGMENT_GROUP group;
+        IDXGIAdapter3 *dxgi_adapter;
+        UINT64 reservation;
+        HRESULT hr;
+
+        TRACE("iface %p, state %u, state_details_size %Iu, state_details %p, buffer_size %Iu, buffer %p.\n",
+                iface, state, state_details_size, state_details, buffer_size, buffer);
+
+        if (!state_details || !buffer)
+            return E_POINTER;
+
+        if (state_details_size < sizeof(*input) || buffer_size < sizeof(UINT64))
+            return E_INVALIDARG;
+
+        switch (input->segmentGroup)
+        {
+            case Local:
+                group = DXGI_MEMORY_SEGMENT_GROUP_LOCAL;
+                break;
+
+            case NonLocal:
+                group = DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL;
+                break;
+
+            default:
+                return E_INVALIDARG;
+        }
+
+        reservation = *(const UINT64 *)buffer;
+
+        if (FAILED(hr = dxcore_get_dxgi_adapter(&adapter->identifier.adapter_luid, &IID_IDXGIAdapter3,
+                (void **)&dxgi_adapter)))
+            return hr;
+
+        hr = IDXGIAdapter3_QueryVideoMemoryInfo(dxgi_adapter, input->nodeIndex, group, &info);
+        IDXGIAdapter3_Release(dxgi_adapter);
+        if (FAILED(hr))
+            return hr;
+
+        /* Like IDXGIAdapter3::SetVideoMemoryReservation(). */
+        if (reservation > info.AvailableForReservation)
+            hr = DXGI_ERROR_INVALID_CALL;
+        else if (!dxcore_reservation_store(&adapter->identifier.adapter_luid, input->nodeIndex, group, reservation))
+            hr = E_OUTOFMEMORY;
+
+        TRACE("node %u, group %u, requested %I64u, available for reservation %I64u, hr %#lx.\n",
+                input->nodeIndex, input->segmentGroup, reservation, info.AvailableForReservation, hr);
+        return hr;
+    }
+
     FIXME("iface %p, state %u, state_details_size %Iu, state_details %p, buffer_size %Iu, buffer %p stub!\n",
             iface, state, state_details_size, state_details, buffer_size, buffer);
     return E_NOTIMPL;
