@@ -570,12 +570,6 @@ BOOL WINAPI GetStandardColorSpaceProfileW( PCWSTR machine, DWORD id, PWSTR profi
         return FALSE;
     }
 
-    if (!profile)
-    {
-        SetLastError( ERROR_INSUFFICIENT_BUFFER );
-        return FALSE;
-    }
-
     GetColorDirectoryW( machine, rgbprofile, &len );
 
     switch (id)
@@ -583,12 +577,13 @@ BOOL WINAPI GetStandardColorSpaceProfileW( PCWSTR machine, DWORD id, PWSTR profi
         case LCS_sRGB:
         case LCS_WINDOWS_COLOR_SPACE: /* FIXME */
             lstrcatW( rgbprofile, L"\\srgb color space profile.icm" );
-            len = lstrlenW( rgbprofile ) * sizeof(WCHAR);
+            /* the size includes the terminating null */
+            len = (lstrlenW( rgbprofile ) + 1) * sizeof(WCHAR);
 
-            if (*size < len)
+            if (!profile || *size < len)
             {
                 *size = len;
-                SetLastError( ERROR_MORE_DATA );
+                SetLastError( profile ? ERROR_MORE_DATA : ERROR_INSUFFICIENT_BUFFER );
                 return FALSE;
             }
 
@@ -1442,9 +1437,16 @@ BOOL WINAPI CloseColorProfile( HPROFILE handle )
  */
 BOOL WINAPI WcsGetUsePerUserProfiles( const WCHAR* name, DWORD class, BOOL* use_per_user_profile )
 {
-    FIXME( "%s %s %p\n", debugstr_w(name), debugstr_fourcc(class), use_per_user_profile );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
-    return FALSE;
+    FIXME( "%s %s %p: per-user associations are not read\n", debugstr_w(name), debugstr_fourcc(class),
+           use_per_user_profile );
+
+    if (!use_per_user_profile)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+    *use_per_user_profile = FALSE;
+    return TRUE;
 }
 
 /******************************************************************************
@@ -1464,8 +1466,16 @@ BOOL WINAPI WcsGetDefaultColorProfile( WCS_PROFILE_MANAGEMENT_SCOPE scope, PCWST
                                        COLORPROFILETYPE type, COLORPROFILESUBTYPE subtype,
                                        DWORD profile_id, DWORD size, LPWSTR name )
 {
-    FIXME( "%d, %s, %d, %d, %lu, %lu, %p\n", scope, debugstr_w(device_name), type, subtype, profile_id, size, name );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    FIXME( "%d, %s, %d, %d, %lu, %lu, %p: profile associations are not looked up\n", scope,
+           debugstr_w(device_name), type, subtype, profile_id, size, name );
+
+    if (!name)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+    /* no profile is associated with the device */
+    SetLastError( ERROR_FILE_NOT_FOUND );
     return FALSE;
 }
 
@@ -1476,8 +1486,16 @@ BOOL WINAPI WcsGetDefaultColorProfileSize( WCS_PROFILE_MANAGEMENT_SCOPE scope, P
                                            COLORPROFILETYPE type, COLORPROFILESUBTYPE subtype,
                                            DWORD profile_id, PDWORD profile_size)
 {
-    FIXME( "%d, %s, %d, %d, %lu, %p\n", scope, debugstr_w(device_name), type, subtype, profile_id, profile_size );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    FIXME( "%d, %s, %d, %d, %lu, %p: profile associations are not looked up\n", scope,
+           debugstr_w(device_name), type, subtype, profile_id, profile_size );
+
+    if (!profile_size)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+    /* no profile is associated with the device */
+    SetLastError( ERROR_FILE_NOT_FOUND );
     return FALSE;
 }
 
