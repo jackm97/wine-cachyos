@@ -28,6 +28,12 @@ import "windows.foundation.idl";
 
 namespace Windows.Security.EnterpriseData {
     typedef enum ProtectionPolicyEvaluationResult ProtectionPolicyEvaluationResult;
+    typedef enum EnforcementLevel EnforcementLevel;
+
+    runtimeclass ProtectionPolicyManager;
+
+    interface IProtectionPolicyManager;
+    interface IProtectionPolicyManagerStatics2;
 
     declare {
         interface Windows.Foundation.AsyncOperationCompletedHandler<Windows.Security.EnterpriseData.ProtectionPolicyEvaluationResult>;
@@ -43,4 +49,55 @@ namespace Windows.Security.EnterpriseData {
         Blocked         = 1,
         ConsentRequired = 2,
     };
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0)
+    ]
+    enum EnforcementLevel
+    {
+        NoProtection = 0,
+        Silent       = 1,
+        Override     = 2,
+        Block        = 3,
+    };
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Security.EnterpriseData.ProtectionPolicyManager),
+        uuid(d5703e18-a08d-47e6-a240-9934d7165eb5)
+    ]
+    interface IProtectionPolicyManager : IInspectable
+    {
+        [propput] HRESULT Identity([in] HSTRING value);
+        [propget] HRESULT Identity([out, retval] HSTRING *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.Security.EnterpriseData.ProtectionPolicyManager),
+        uuid(b68f9a8c-39e0-4649-b2e4-070ab8a579b3)
+    ]
+    interface IProtectionPolicyManagerStatics2 : IInspectable
+    {
+        HRESULT HasContentBeenRevokedSince([in] HSTRING identity, [in] Windows.Foundation.DateTime since, [out, retval] boolean *value);
+        HRESULT CheckAccessForApp([in] HSTRING source_identity, [in] HSTRING app_package_family_name, [out, retval] Windows.Security.EnterpriseData.ProtectionPolicyEvaluationResult *result);
+        HRESULT RequestAccessForAppAsync([in] HSTRING source_identity, [in] HSTRING app_package_family_name, [out, retval] Windows.Foundation.IAsyncOperation<Windows.Security.EnterpriseData.ProtectionPolicyEvaluationResult> **operation);
+        HRESULT GetEnforcementLevel([in] HSTRING identity, [out, retval] Windows.Security.EnterpriseData.EnforcementLevel *value);
+        HRESULT IsUserDecryptionAllowed([in] HSTRING identity, [out, retval] boolean *value);
+        HRESULT IsProtectionUnderLockRequired([in] HSTRING identity, [out, retval] boolean *value);
+        [eventadd] HRESULT PolicyChanged([in] Windows.Foundation.EventHandler<IInspectable *> *handler, [out, retval] EventRegistrationToken *token);
+        [eventremove] HRESULT PolicyChanged([in] EventRegistrationToken token);
+        [propget] HRESULT IsProtectionEnabled([out, retval] boolean *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile),
+        static(Windows.Security.EnterpriseData.IProtectionPolicyManagerStatics2,
+                Windows.Foundation.UniversalApiContract, 2.0)
+    ]
+    runtimeclass ProtectionPolicyManager
+    {
+        [default] interface Windows.Security.EnterpriseData.IProtectionPolicyManager;
+    }
 }
