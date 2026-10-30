@@ -322,19 +322,6 @@ static const void *dcomp_hwnd_surface_vtable[] =
     dcomp_hwnd_surface_release,
 };
 
-static void enable_window_redirection(HWND window)
-{
-    LONG_PTR style, adjusted;
-
-    if (!window) return;
-    style = GetWindowLongPtrW(window, GWL_EXSTYLE);
-    adjusted = style & ~(WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED);
-    if (adjusted == style) return;
-    SetWindowLongPtrW(window, GWL_EXSTYLE, adjusted);
-    SetWindowPos(window, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER
-            | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-}
-
 static HRESULT STDMETHODCALLTYPE dcomp_device_query_interface(struct dcomp_device *device,
         REFIID iid, void **out)
 {
@@ -430,7 +417,6 @@ static HRESULT STDMETHODCALLTYPE dcomp_device_create_target(struct dcomp_device 
     EnterCriticalSection(&dcomp_cs);
     list_add_tail(&device->targets, &target->entry);
     LeaveCriticalSection(&dcomp_cs);
-    enable_window_redirection(window);
     *out = target;
     return S_OK;
 }
@@ -484,7 +470,6 @@ static HRESULT STDMETHODCALLTYPE dcomp_device_create_surface_from_hwnd(struct dc
     surface->lpVtbl = dcomp_hwnd_surface_vtable;
     surface->refcount = 1;
     surface->window = window;
-    enable_window_redirection(window);
     *out = surface;
     return S_OK;
 }
