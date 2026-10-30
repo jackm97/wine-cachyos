@@ -50,3 +50,8 @@ namespace Windows.Web.Http.Filters {
     runtimeclass HttpBaseProtocolFilter;
     runtimeclass HttpCacheControl;
 }
+
+namespace Windows.Web.Http.Headers {
+    runtimeclass HttpMediaTypeHeaderValue;
+    runtimeclass HttpNameValueHeaderValue;
+}

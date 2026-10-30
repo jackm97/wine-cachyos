@@ -7,9 +7,11 @@ SOURCES = \
 	http_async.c \
 	http_client.c \
 	http_cookie.c \
+	http_header_values.c \
 	http_message.c \
 	json_array.c \
 	json_object.c \
 	json_value.c \
 	main.c \
-	protocol_filter.c
+	protocol_filter.c \
+	vector.c

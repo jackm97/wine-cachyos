@@ -676,3 +676,81 @@ namespace Windows.Web.Http.Filters
         [default] interface Windows.Web.Http.Filters.IHttpCacheControl;
     }
 }
+
+namespace Windows.Web.Http.Headers
+{
+    interface IHttpMediaTypeHeaderValue;
+    interface IHttpNameValueHeaderValue;
+    runtimeclass HttpMediaTypeHeaderValue;
+    runtimeclass HttpNameValueHeaderValue;
+    declare {
+        interface Windows.Foundation.Collections.IIterator<Windows.Web.Http.Headers.HttpNameValueHeaderValue *>;
+        interface Windows.Foundation.Collections.IIterable<Windows.Web.Http.Headers.HttpNameValueHeaderValue *>;
+        interface Windows.Foundation.Collections.IVectorView<Windows.Web.Http.Headers.HttpNameValueHeaderValue *>;
+        interface Windows.Foundation.Collections.IVector<Windows.Web.Http.Headers.HttpNameValueHeaderValue *>;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), uuid(16b28533-e728-4fcb-bdb0-08a431a14844)]
+    interface IHttpMediaTypeHeaderValue : IInspectable
+    {
+        [propget] HRESULT CharSet([out, retval] HSTRING *value);
+        [propput] HRESULT CharSet([in] HSTRING value);
+        [propget] HRESULT MediaType([out, retval] HSTRING *value);
+        [propput] HRESULT MediaType([in] HSTRING value);
+        [propget] HRESULT Parameters([out, retval] Windows.Foundation.Collections.IVector<Windows.Web.Http.Headers.HttpNameValueHeaderValue *> **value);
+    }
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), uuid(bed747a8-cd17-42dd-9367-ab9c5b56dd7d)]
+    interface IHttpMediaTypeHeaderValueFactory : IInspectable
+    {
+        HRESULT Create([in] HSTRING mediaType, [out, retval] Windows.Web.Http.Headers.HttpMediaTypeHeaderValue **value);
+    }
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), uuid(e04d83df-1d41-4d8c-a2de-6fd2ed87399b)]
+    interface IHttpMediaTypeHeaderValueStatics : IInspectable
+    {
+        HRESULT Parse([in] HSTRING input, [out, retval] Windows.Web.Http.Headers.HttpMediaTypeHeaderValue **value);
+        HRESULT TryParse([in] HSTRING input, [out] Windows.Web.Http.Headers.HttpMediaTypeHeaderValue **value, [out, retval] boolean *parsed);
+    }
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), uuid(d8ba7463-5b9a-4d1b-93f9-aa5b44ecfddf)]
+    interface IHttpNameValueHeaderValue : IInspectable
+    {
+        [propget] HRESULT Name([out, retval] HSTRING *value);
+        [propget] HRESULT Value([out, retval] HSTRING *value);
+        [propput] HRESULT Value([in] HSTRING value);
+    }
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), uuid(770e2267-cbf8-4736-a925-93fbe10c7ca8)]
+    interface IHttpNameValueHeaderValueFactory : IInspectable
+    {
+        HRESULT CreateFromName([in] HSTRING name, [out, retval] Windows.Web.Http.Headers.HttpNameValueHeaderValue **value);
+        HRESULT CreateFromNameWithValue([in] HSTRING name, [in] HSTRING value, [out, retval] Windows.Web.Http.Headers.HttpNameValueHeaderValue **result);
+    }
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), uuid(ffd4030f-1130-4152-8659-256909a9d115)]
+    interface IHttpNameValueHeaderValueStatics : IInspectable
+    {
+        HRESULT Parse([in] HSTRING input, [out, retval] Windows.Web.Http.Headers.HttpNameValueHeaderValue **value);
+        HRESULT TryParse([in] HSTRING input, [out] Windows.Web.Http.Headers.HttpNameValueHeaderValue **value, [out, retval] boolean *parsed);
+    }
+    [
+        activatable(Windows.Web.Http.Headers.IHttpMediaTypeHeaderValueFactory, Windows.Foundation.UniversalApiContract, 1.0),
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile),
+        static(Windows.Web.Http.Headers.IHttpMediaTypeHeaderValueStatics, Windows.Foundation.UniversalApiContract, 1.0),
+        threading(both)
+    ]
+    runtimeclass HttpMediaTypeHeaderValue
+    {
+        [default] interface Windows.Web.Http.Headers.IHttpMediaTypeHeaderValue;
+        interface Windows.Foundation.IStringable;
+    }
+    [
+        activatable(Windows.Web.Http.Headers.IHttpNameValueHeaderValueFactory, Windows.Foundation.UniversalApiContract, 1.0),
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile),
+        static(Windows.Web.Http.Headers.IHttpNameValueHeaderValueStatics, Windows.Foundation.UniversalApiContract, 1.0),
+        threading(both)
+    ]
+    runtimeclass HttpNameValueHeaderValue
+    {
+        [default] interface Windows.Web.Http.Headers.IHttpNameValueHeaderValue;
+        interface Windows.Foundation.IStringable;
+    }
+}
