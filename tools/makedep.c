@@ -616,14 +616,14 @@ static int is_native_arch_disabled( struct makefile *make )
  */
 static int is_subdir_other_arch( const char *name, unsigned int arch )
 {
+    int cpu;
     const char *dir, *p = strrchr( name, '/' );
 
     if (!p || p == name) return 0;
     dir = get_basename( strmake( "%.*s", (int)(p - name), name ));
-    if (!strcmp( dir, "arm64" )) dir = "aarch64";
-    if (!strcmp( dir, "amd64" )) dir = "x86_64";
-    if (native_archs[arch] && !strcmp( dir, archs.str[native_archs[arch]] )) return 0;
-    return strcmp( dir, archs.str[arch] );
+    if ((cpu = get_cpu_from_name( dir )) == -1) return 0;
+    if (native_archs[arch] && cpu == get_cpu_from_name( archs.str[native_archs[arch]] )) return 0;
+    return cpu != get_cpu_from_name( archs.str[arch] );
 }
 
 
@@ -3185,6 +3185,16 @@ static void output_source_nls( struct makefile *make, struct incl_file *source, 
 
 
 /*******************************************************************
+ *         output_source_dat
+ */
+static void output_source_dat( struct makefile *make, struct incl_file *source, const char *obj )
+{
+    install_data_file_src( make, source->name, source->name, "$(datadir)/wine/nls" );
+    output_srcdir_symlink( make, strmake( "%s.dat", obj ));
+}
+
+
+/*******************************************************************
  *         output_source_desktop
  */
 static void output_source_desktop( struct makefile *make, struct incl_file *source, const char *obj )
@@ -3560,6 +3570,7 @@ static const struct
     { "sfd", output_source_sfd },
     { "svg", output_source_svg },
     { "nls", output_source_nls },
+    { "dat", output_source_dat },
     { "desktop", output_source_desktop },
     { "po", output_source_po },
     { "in", output_source_in },
