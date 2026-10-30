@@ -1,0 +1,899 @@
+/*
+ * Registry hive file support
+ *
+ * Copyright 2026 Mirko Brombin
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ */
+
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
+#include "registry_hive.h"
+
+#define HIVE_HEADER 4096
+#define BIG_DATA_SIZE 16344
+
+struct hive_reader
+{
+    const unsigned char *data;
+    size_t size;
+    unsigned char *cells, *visited;
+    unsigned int version;
+    int error;
+};
+
+static uint16_t read_u16( const unsigned char *p )
+{
+    return (uint16_t)((uint16_t)p[0] | (uint16_t)p[1] << 8);
+}
+
+static uint32_t read_u32( const unsigned char *p )
+{
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static uint64_t read_u64( const unsigned char *p )
+{
+    return read_u32( p ) | (uint64_t)read_u32( p + 4 ) << 32;
+}
+
+static void *hive_alloc( struct hive_reader *reader, size_t count, size_t size )
+{
+    void *ret;
+    if (size && count > SIZE_MAX / size) return NULL;
+    if (!(ret = calloc( count ? count : 1, size ))) reader->error = ENOMEM;
+    return ret;
+}
+
+static const unsigned char *hive_cell( struct hive_reader *reader, uint32_t offset, size_t needed )
+{
+    size_t size, pos = (size_t)offset + HIVE_HEADER;
+    uint32_t raw;
+    if ((offset & 7) || pos < HIVE_HEADER || pos > reader->size - 4 ||
+        !(reader->cells[offset >> 6] & (1u << ((offset >> 3) & 7)))) return NULL;
+    raw = read_u32( reader->data + pos );
+    size = (size_t)(0u - raw);
+    if (!(raw & 0x80000000) || size < 8 || size > reader->size - pos || needed > size - 4) return NULL;
+    return reader->data + pos + 4;
+}
+
+static uint16_t *read_name( struct hive_reader *reader, const unsigned char *data, size_t bytes,
+                            int compressed, size_t *length )
+{
+    uint16_t *name;
+    size_t i;
+    if (!compressed && (bytes & 1)) return NULL;
+    *length = compressed ? bytes : bytes / 2;
+    if (!(name = hive_alloc( reader, *length + 1, sizeof(*name) ))) return NULL;
+    for (i = 0; i < *length; i++) name[i] = compressed ? data[i] : read_u16( data + i * 2 );
+    return name;
+}
+
+void reg_hive_free( struct reg_hive_key *key )
+{
+    size_t i;
+    if (!key) return;
+    for (i = 0; i < key->child_count; i++) reg_hive_free( key->children[i] );
+    for (i = 0; i < key->value_count; i++)
+    {
+        free( key->values[i].name );
+        free( key->values[i].data );
+    }
+    free( key->children );
+    free( key->values );
+    free( key->name );
+    free( key->class_name );
+    free( key->security );
+    free( key );
+}
+
+static int read_value( struct hive_reader *reader, uint32_t offset, struct reg_hive_value *value )
+{
+    const unsigned char *cell = hive_cell( reader, offset, 20 ), *data, *list;
+    uint32_t length, location, count, i;
+    size_t bytes, done = 0, size;
+    if (!cell || memcmp( cell, "vk", 2 )) return 0;
+    bytes = read_u16( cell + 2 );
+    if (!hive_cell( reader, offset, 20 + bytes )) return 0;
+    if (!(value->name = read_name( reader, cell + 20, bytes, read_u16( cell + 16 ) & 1,
+                                  &value->namelen ))) return 0;
+    value->type = read_u32( cell + 12 );
+    length = read_u32( cell + 4 );
+    value->size = length & 0x7fffffff;
+    if (value->size > reader->size - HIVE_HEADER) return 0;
+    if (length & 0x80000000)
+    {
+        if (value->size > 4) return 0;
+        data = cell + 8;
+    }
+    else
+    {
+        location = read_u32( cell + 8 );
+        if (!value->size) return 1;
+        if (reader->version >= 4 && value->size > BIG_DATA_SIZE)
+        {
+            data = hive_cell( reader, location, 8 );
+            if (!data || memcmp( data, "db", 2 )) return 0;
+            count = read_u16( data + 2 );
+            if (!count || (uint64_t)count * BIG_DATA_SIZE < value->size ||
+                (uint64_t)(count - 1) * BIG_DATA_SIZE >= value->size) return 0;
+            list = hive_cell( reader, read_u32( data + 4 ), (size_t)count * 4 );
+            if (!list || !(value->data = hive_alloc( reader, value->size, 1 ))) return 0;
+            for (i = 0; i < count; i++)
+            {
+                size = value->size - done;
+                if (size > BIG_DATA_SIZE) size = BIG_DATA_SIZE;
+                data = hive_cell( reader, read_u32( list + i * 4 ), size );
+                if (!data) return 0;
+                memcpy( value->data + done, data, size );
+                done += size;
+            }
+            return 1;
+        }
+        data = hive_cell( reader, location, value->size );
+        if (!data) return 0;
+    }
+    if (!(value->data = hive_alloc( reader, value->size, 1 ))) return 0;
+    memcpy( value->data, data, value->size );
+    return 1;
+}
+
+static struct reg_hive_key *read_key( struct hive_reader *reader, uint32_t offset,
+                                      uint32_t parent, unsigned int depth );
+
+static int read_children( struct hive_reader *reader, uint32_t offset, uint32_t parent,
+                          struct reg_hive_key *key, size_t *used, unsigned int depth,
+                          unsigned int index_depth )
+{
+    const unsigned char *cell = hive_cell( reader, offset, 4 );
+    unsigned int count, i, stride;
+    int indirect;
+    if (!cell || index_depth > 32) return 0;
+    count = read_u16( cell + 2 );
+    indirect = !memcmp( cell, "ri", 2 );
+    if (indirect || !memcmp( cell, "li", 2 )) stride = 4;
+    else if (!memcmp( cell, "lf", 2 ) || !memcmp( cell, "lh", 2 )) stride = 8;
+    else return 0;
+    if (!count || !hive_cell( reader, offset, 4 + (size_t)count * stride )) return 0;
+    for (i = 0; i < count; i++)
+    {
+        uint32_t child = read_u32( cell + 4 + i * stride );
+        if (indirect)
+        {
+            if (!read_children( reader, child, parent, key, used, depth, index_depth + 1 )) return 0;
+        }
+        else
+        {
+            if (*used >= key->child_count ||
+                !(key->children[*used] = read_key( reader, child, parent, depth ))) return 0;
+            ++*used;
+        }
+    }
+    return 1;
+}
+
+static struct reg_hive_key *read_key( struct hive_reader *reader, uint32_t offset,
+                                      uint32_t parent, unsigned int depth )
+{
+    const unsigned char *cell = hive_cell( reader, offset, 76 ), *data, *list;
+    struct reg_hive_key *key;
+    size_t bytes, count, i, used = 0;
+    unsigned int mask = 1u << ((offset >> 3) & 7);
+    uint32_t location;
+    if (!cell || memcmp( cell, "nk", 2 ) || depth > 512 ||
+        (parent != UINT32_MAX && read_u32( cell + 16 ) != parent) ||
+        (reader->visited[offset >> 6] & mask)) return NULL;
+    reader->visited[offset >> 6] |= (unsigned char)mask;
+    if (!(key = hive_alloc( reader, 1, sizeof(*key) ))) return NULL;
+    key->flags = read_u16( cell + 2 );
+    key->modified = read_u64( cell + 4 );
+    bytes = read_u16( cell + 72 );
+    if (!hive_cell( reader, offset, 76 + bytes ) ||
+        !(key->name = read_name( reader, cell + 76, bytes, key->flags & 0x20, &key->namelen ))) goto failed;
+    bytes = read_u16( cell + 74 );
+    if (bytes)
+    {
+        data = hive_cell( reader, read_u32( cell + 48 ), bytes );
+        if (!data || !(key->class_name = read_name( reader, data, bytes, 0, &key->classlen ))) goto failed;
+    }
+    location = read_u32( cell + 44 );
+    if (location != UINT32_MAX)
+    {
+        data = hive_cell( reader, location, 20 );
+        if (!data || memcmp( data, "sk", 2 )) goto failed;
+        key->security_size = read_u32( data + 16 );
+        if (!hive_cell( reader, location, 20 + key->security_size ) ||
+            !(key->security = hive_alloc( reader, key->security_size, 1 ))) goto failed;
+        memcpy( key->security, data + 20, key->security_size );
+    }
+    count = read_u32( cell + 36 );
+    if (count)
+    {
+        if (count > reader->size / 8 || !(key->values = hive_alloc( reader, count, sizeof(*key->values) ))) goto failed;
+        key->value_count = count;
+        list = hive_cell( reader, read_u32( cell + 40 ), count * 4 );
+        if (!list) goto failed;
+        for (i = 0; i < count; i++) if (!read_value( reader, read_u32( list + i * 4 ), key->values + i )) goto failed;
+    }
+    count = read_u32( cell + 20 );
+    if (count)
+    {
+        if (count > reader->size / 8 || !(key->children = hive_alloc( reader, count, sizeof(*key->children) ))) goto failed;
+        key->child_count = count;
+        if (!read_children( reader, read_u32( cell + 28 ), offset, key, &used, depth + 1, 0 ) || used != count) goto failed;
+    }
+    return key;
+failed:
+    reg_hive_free( key );
+    return NULL;
+}
+
+int reg_hive_decode( const void *data, size_t size, struct reg_hive_key **root )
+{
+    struct hive_reader reader;
+    const unsigned char *bytes = data;
+    uint32_t checksum = 0, data_size, bin_size, raw;
+    size_t pos, end, cell, cell_size, i;
+    int ret = EINVAL;
+
+    if (!root) return EINVAL;
+    *root = NULL;
+    if (!data || size < HIVE_HEADER + 4096 || memcmp( bytes, "regf", 4 ) ||
+        read_u32( bytes + 20 ) != 1 || read_u32( bytes + 24 ) < 2 ||
+        read_u32( bytes + 24 ) > 6 || read_u32( bytes + 28 ) || read_u32( bytes + 32 ) != 1) return EINVAL;
+    if (read_u32( bytes + 4 ) != read_u32( bytes + 8 )) return EAGAIN;
+    for (i = 0; i < 508; i += 4) checksum ^= read_u32( bytes + i );
+    if (!checksum) checksum = 1;
+    else if (checksum == UINT32_MAX) checksum--;
+    if (checksum != read_u32( bytes + 508 )) return EINVAL;
+    data_size = read_u32( bytes + 40 );
+    if (!data_size || (data_size & 4095) || data_size > size - HIVE_HEADER) return EINVAL;
+    memset( &reader, 0, sizeof(reader) );
+    reader.data = data;
+    reader.size = (size_t)data_size + HIVE_HEADER;
+    reader.version = read_u32( bytes + 24 );
+    reader.error = EINVAL;
+    reader.cells = hive_alloc( &reader, ((size_t)data_size + 63) / 64, 1 );
+    reader.visited = hive_alloc( &reader, ((size_t)data_size + 63) / 64, 1 );
+    if (!reader.cells || !reader.visited) goto done;
+    for (pos = HIVE_HEADER; pos < reader.size; pos = end)
+    {
+        if (reader.size - pos < 32 || memcmp( bytes + pos, "hbin", 4 ) ||
+            read_u32( bytes + pos + 4 ) != pos - HIVE_HEADER) goto done;
+        bin_size = read_u32( bytes + pos + 8 );
+        if (bin_size < 4096 || (bin_size & 4095) || bin_size > reader.size - pos) goto done;
+        end = pos + bin_size;
+        for (cell = pos + 32; cell < end; cell += cell_size)
+        {
+            if (end - cell < 8) goto done;
+            raw = read_u32( bytes + cell );
+            cell_size = raw & 0x80000000 ? (size_t)(0u - raw) : raw;
+            if (cell_size < 8 || (cell_size & 7) || cell_size > end - cell) goto done;
+            if (raw & 0x80000000)
+            {
+                size_t relative = cell - HIVE_HEADER;
+                reader.cells[relative >> 6] |= (unsigned char)(1u << ((relative >> 3) & 7));
+            }
+        }
+    }
+    *root = read_key( &reader, read_u32( bytes + 36 ), UINT32_MAX, 0 );
+    if (*root) ret = 0;
+done:
+    if (ret) ret = reader.error;
+    free( reader.cells );
+    free( reader.visited );
+    return ret;
+}
+
+struct hive_security_record
+{
+    struct hive_security_record *next;
+    const unsigned char *data;
+    size_t size;
+    uint32_t offset, references;
+};
+
+struct hive_writer
+{
+    unsigned char *data;
+    size_t used, capacity;
+    int error;
+    struct hive_security_record *security;
+};
+
+static void write_u16( unsigned char *p, uint64_t value )
+{
+    p[0] = (unsigned char)(value);
+    p[1] = (unsigned char)(value >> 8);
+}
+
+static void write_u32( unsigned char *p, uint64_t value )
+{
+    p[0] = (unsigned char)(value);
+    p[1] = (unsigned char)(value >> 8);
+    p[2] = (unsigned char)(value >> 16);
+    p[3] = (unsigned char)(value >> 24);
+}
+
+static void write_u64( unsigned char *p, uint64_t value )
+{
+    write_u32( p, value );
+    write_u32( p + 4, value >> 32 );
+}
+
+static int writer_reserve( struct hive_writer *writer, size_t size )
+{
+    unsigned char *data;
+    size_t capacity = writer->capacity ? writer->capacity : 8192;
+    if (size <= writer->capacity) return 1;
+    while (capacity < size)
+    {
+        if (capacity > SIZE_MAX / 2) { writer->error = EINVAL; return 0; }
+        capacity *= 2;
+    }
+    if (!(data = realloc( writer->data, capacity ))) { writer->error = ENOMEM; return 0; }
+    writer->data = data;
+    writer->capacity = capacity;
+    return 1;
+}
+
+static uint32_t writer_cell( struct hive_writer *writer, size_t payload )
+{
+    size_t size;
+    uint32_t offset;
+    if (payload > INT32_MAX - 11) return UINT32_MAX;
+    size = (payload + 11) & ~(size_t)7;
+    if (writer->used - HIVE_HEADER > UINT32_MAX - size ||
+        size > SIZE_MAX - writer->used || !writer_reserve( writer, writer->used + size )) return UINT32_MAX;
+    offset = (uint32_t)(writer->used - HIVE_HEADER);
+    memset( writer->data + writer->used, 0, size );
+    write_u32( writer->data + writer->used, 0u - (uint32_t)size );
+    writer->used += size;
+    return offset;
+}
+
+static unsigned char *writer_data( struct hive_writer *writer, uint32_t offset )
+{
+    return writer->data + HIVE_HEADER + offset + 4;
+}
+
+static unsigned int compressed_name( const uint16_t *name, size_t length )
+{
+    size_t i;
+    for (i = 0; i < length; i++) if (name[i] > 127) return 0;
+    return 1;
+}
+
+static void write_name( unsigned char *data, const uint16_t *name, size_t length, unsigned int compressed )
+{
+    size_t i;
+    for (i = 0; i < length; i++)
+    {
+        if (compressed) data[i] = (unsigned char)name[i];
+        else write_u16( data + i * 2, name[i] );
+    }
+}
+
+static uint32_t write_security( struct hive_writer *writer, const struct reg_hive_key *key )
+{
+    struct hive_security_record *record;
+    uint32_t offset;
+    unsigned char *data;
+    if (!key->security || key->security_size < 20 || key->security_size > UINT32_MAX - 20) return UINT32_MAX;
+    for (record = writer->security; record; record = record->next)
+    {
+        if (record->size == key->security_size && !memcmp( record->data, key->security, record->size ))
+        {
+            record->references++;
+            return record->offset;
+        }
+    }
+    if (!(record = malloc( sizeof(*record) ))) { writer->error = ENOMEM; return UINT32_MAX; }
+    offset = writer_cell( writer, 20 + key->security_size );
+    if (offset == UINT32_MAX) { free( record ); return offset; }
+    data = writer_data( writer, offset );
+    memcpy( data, "sk", 2 );
+    write_u32( data + 16, key->security_size );
+    memcpy( data + 20, key->security, key->security_size );
+    record->next = writer->security;
+    record->data = key->security;
+    record->size = key->security_size;
+    record->offset = offset;
+    record->references = 1;
+    writer->security = record;
+    return offset;
+}
+
+static uint32_t write_value( struct hive_writer *writer, const struct reg_hive_value *value )
+{
+    uint32_t offset, location = UINT32_MAX, list, segment, count, i;
+    unsigned char *data;
+    size_t bytes, done, size;
+    unsigned int compressed;
+    if (value->namelen > 16383 || (value->namelen && !value->name) ||
+        value->size > INT32_MAX || (value->size && !value->data)) return UINT32_MAX;
+    compressed = compressed_name( value->name, value->namelen );
+    bytes = value->namelen * (compressed ? 1 : 2);
+    offset = writer_cell( writer, 20 + bytes );
+    if (offset == UINT32_MAX) return offset;
+    data = writer_data( writer, offset );
+    memcpy( data, "vk", 2 );
+    write_u16( data + 2, bytes );
+    write_u32( data + 12, value->type );
+    write_u16( data + 16, compressed );
+    write_name( data + 20, value->name, value->namelen, compressed );
+    if (value->size <= 4)
+    {
+        write_u32( data + 4, value->size | 0x80000000 );
+        if (value->size) memcpy( data + 8, value->data, value->size );
+        return offset;
+    }
+    if (value->size > BIG_DATA_SIZE)
+    {
+        count = (uint32_t)((value->size + BIG_DATA_SIZE - 1) / BIG_DATA_SIZE);
+        if (count > UINT16_MAX) return UINT32_MAX;
+        list = writer_cell( writer, (size_t)count * 4 );
+        if (list == UINT32_MAX) return UINT32_MAX;
+        done = 0;
+        for (i = 0; i < count; i++)
+        {
+            size = value->size - done;
+            if (size > BIG_DATA_SIZE) size = BIG_DATA_SIZE;
+            segment = writer_cell( writer, size );
+            if (segment == UINT32_MAX) return UINT32_MAX;
+            memcpy( writer_data( writer, segment ), value->data + done, size );
+            write_u32( writer_data( writer, list ) + i * 4, segment );
+            done += size;
+        }
+        location = writer_cell( writer, 8 );
+        if (location == UINT32_MAX) return UINT32_MAX;
+        data = writer_data( writer, location );
+        memcpy( data, "db", 2 );
+        write_u16( data + 2, count );
+        write_u32( data + 4, list );
+    }
+    else
+    {
+        location = writer_cell( writer, value->size );
+        if (location == UINT32_MAX) return UINT32_MAX;
+        memcpy( writer_data( writer, location ), value->data, value->size );
+    }
+    data = writer_data( writer, offset );
+    write_u32( data + 4, value->size );
+    write_u32( data + 8, location );
+    return offset;
+}
+
+static uint32_t write_key( struct hive_writer *writer, const struct reg_hive_key *key,
+                            uint32_t parent, unsigned int depth );
+
+static uint32_t write_children( struct hive_writer *writer, const struct reg_hive_key *key,
+                                 uint32_t parent, unsigned int depth )
+{
+    uint32_t root = UINT32_MAX, leaf, child, groups, count, i, j, used = 0;
+    size_t total = key->child_count;
+    groups = (uint32_t)((total + UINT16_MAX - 1) / UINT16_MAX);
+    if (groups > UINT16_MAX) return UINT32_MAX;
+    if (groups > 1)
+    {
+        root = writer_cell( writer, 4 + (size_t)groups * 4 );
+        if (root == UINT32_MAX) return root;
+        memcpy( writer_data( writer, root ), "ri", 2 );
+        write_u16( writer_data( writer, root ) + 2, groups );
+    }
+    for (i = 0; i < groups; i++)
+    {
+        count = (uint32_t)(total - used);
+        if (count > UINT16_MAX) count = UINT16_MAX;
+        leaf = writer_cell( writer, 4 + (size_t)count * 4 );
+        if (leaf == UINT32_MAX) return leaf;
+        memcpy( writer_data( writer, leaf ), "li", 2 );
+        write_u16( writer_data( writer, leaf ) + 2, count );
+        if (groups == 1) root = leaf;
+        else write_u32( writer_data( writer, root ) + 4 + i * 4, leaf );
+        for (j = 0; j < count; j++)
+        {
+            child = write_key( writer, key->children[used++], parent, depth );
+            if (child == UINT32_MAX) return child;
+            write_u32( writer_data( writer, leaf ) + 4 + j * 4, child );
+        }
+    }
+    return root;
+}
+
+static uint32_t write_key( struct hive_writer *writer, const struct reg_hive_key *key,
+                            uint32_t parent, unsigned int depth )
+{
+    uint32_t offset, security, class = UINT32_MAX, values = UINT32_MAX, children = UINT32_MAX, value;
+    unsigned char *data;
+    size_t bytes, i, max_name = 0, max_class = 0, max_value_name = 0, max_value_data = 0;
+    unsigned int compressed;
+    if (!key || depth > 512 || key->namelen > 255 || key->classlen > UINT16_MAX / 2 ||
+        (key->namelen && !key->name) || (key->classlen && !key->class_name) ||
+        key->value_count > UINT32_MAX / 4 || key->child_count > UINT32_MAX / 4 ||
+        (key->value_count && !key->values) || (key->child_count && !key->children)) return UINT32_MAX;
+    compressed = compressed_name( key->name, key->namelen );
+    bytes = key->namelen * (compressed ? 1 : 2);
+    offset = writer_cell( writer, 76 + bytes );
+    if (offset == UINT32_MAX) return offset;
+    data = writer_data( writer, offset );
+    memcpy( data, "nk", 2 );
+    write_u16( data + 2, (key->flags & 0xffd0u) | (compressed ? 0x20u : 0) | (parent == UINT32_MAX ? 12u : 0) );
+    write_u64( data + 4, key->modified );
+    write_u32( data + 16, parent );
+    write_u16( data + 72, bytes );
+    write_u16( data + 74, key->classlen * 2 );
+    write_name( data + 76, key->name, key->namelen, compressed );
+    security = write_security( writer, key );
+    if (security == UINT32_MAX) return security;
+    if (key->classlen)
+    {
+        class = writer_cell( writer, key->classlen * 2 );
+        if (class == UINT32_MAX) return class;
+        write_name( writer_data( writer, class ), key->class_name, key->classlen, 0 );
+    }
+    if (key->value_count)
+    {
+        values = writer_cell( writer, key->value_count * 4 );
+        if (values == UINT32_MAX) return values;
+        for (i = 0; i < key->value_count; i++)
+        {
+            value = write_value( writer, key->values + i );
+            if (value == UINT32_MAX) return value;
+            write_u32( writer_data( writer, values ) + i * 4, value );
+            if (key->values[i].namelen * 2 > max_value_name) max_value_name = key->values[i].namelen * 2;
+            if (key->values[i].size > max_value_data) max_value_data = key->values[i].size;
+        }
+    }
+    if (key->child_count)
+    {
+        children = write_children( writer, key, offset, depth + 1 );
+        if (children == UINT32_MAX) return children;
+        for (i = 0; i < key->child_count; i++)
+        {
+            if (key->children[i]->namelen * 2 > max_name) max_name = key->children[i]->namelen * 2;
+            if (key->children[i]->classlen * 2 > max_class) max_class = key->children[i]->classlen * 2;
+        }
+    }
+    data = writer_data( writer, offset );
+    write_u32( data + 20, key->child_count );
+    write_u32( data + 28, children );
+    write_u32( data + 32, UINT32_MAX );
+    write_u32( data + 36, key->value_count );
+    write_u32( data + 40, values );
+    write_u32( data + 44, security );
+    write_u32( data + 48, class );
+    write_u32( data + 52, max_name );
+    write_u32( data + 56, max_class );
+    write_u32( data + 60, max_value_name );
+    write_u32( data + 64, max_value_data );
+    return offset;
+}
+
+int reg_hive_encode( const struct reg_hive_key *root, void **data, size_t *size )
+{
+    struct hive_writer writer = {0};
+    struct hive_security_record *record, *next, *previous;
+    uint32_t offset, checksum = 0;
+    size_t final, i;
+    int ret = EINVAL;
+
+    if (!data || !size) return EINVAL;
+    *data = NULL;
+    *size = 0;
+    writer.error = EINVAL;
+    writer.used = HIVE_HEADER + 32;
+    if (!writer_reserve( &writer, writer.used )) goto done;
+    memset( writer.data, 0, writer.used );
+    offset = write_key( &writer, root, UINT32_MAX, 0 );
+    if (offset == UINT32_MAX || writer.used > SIZE_MAX - 4095) goto done;
+    final = (writer.used + 4095) & ~(size_t)4095;
+    if (final - HIVE_HEADER > UINT32_MAX || !writer_reserve( &writer, final )) goto done;
+    if (final > writer.used)
+    {
+        memset( writer.data + writer.used, 0, final - writer.used );
+        write_u32( writer.data + writer.used, final - writer.used );
+    }
+    previous = writer.security;
+    while (previous && previous->next) previous = previous->next;
+    for (record = writer.security; record; record = record->next)
+    {
+        unsigned char *cell = writer_data( &writer, record->offset );
+        write_u32( cell + 4, previous->offset );
+        write_u32( cell + 8, record->next ? record->next->offset : writer.security->offset );
+        write_u32( cell + 12, record->references );
+        previous = record;
+    }
+    memcpy( writer.data, "regf", 4 );
+    write_u32( writer.data + 4, 1 );
+    write_u32( writer.data + 8, 1 );
+    write_u64( writer.data + 12, root->modified );
+    write_u32( writer.data + 20, 1 );
+    write_u32( writer.data + 24, 5 );
+    write_u32( writer.data + 32, 1 );
+    write_u32( writer.data + 36, offset );
+    write_u32( writer.data + 40, final - HIVE_HEADER );
+    write_u32( writer.data + 44, 1 );
+    memcpy( writer.data + HIVE_HEADER, "hbin", 4 );
+    write_u32( writer.data + HIVE_HEADER + 8, final - HIVE_HEADER );
+    write_u64( writer.data + HIVE_HEADER + 20, root->modified );
+    for (i = 0; i < 508; i += 4) checksum ^= read_u32( writer.data + i );
+    if (!checksum) checksum = 1;
+    else if (checksum == UINT32_MAX) checksum--;
+    write_u32( writer.data + 508, checksum );
+    *data = writer.data;
+    *size = final;
+    writer.data = NULL;
+    ret = 0;
+done:
+    if (ret) ret = writer.error;
+    free( writer.data );
+    for (record = writer.security; record; record = next)
+    {
+        next = record->next;
+        free( record );
+    }
+    return ret;
+}
+
+static uint32_t hive_checksum( const unsigned char *data )
+{
+    uint32_t value = 0;
+    unsigned int i;
+
+    for (i = 0; i < 508; i += 4) value ^= read_u32( data + i );
+    if (!value) return 1;
+    return value == UINT32_MAX ? value - 1 : value;
+}
+
+static int hive_header_valid( const unsigned char *data, size_t size, unsigned int type )
+{
+    uint32_t bins;
+
+    if (size < 512 || memcmp( data, "regf", 4 ) || read_u32( data + 20 ) != 1 ||
+        read_u32( data + 24 ) < 3 || read_u32( data + 24 ) > 6 ||
+        read_u32( data + 28 ) != type || read_u32( data + 32 ) != 1 ||
+        read_u32( data + 508 ) != hive_checksum( data )) return 0;
+    bins = read_u32( data + 40 );
+    return bins && !(bins & 4095) && read_u32( data + 36 ) < bins;
+}
+
+int reg_hive_set_sequence( void *data, size_t size, uint32_t primary, uint32_t secondary )
+{
+    unsigned char *bytes = data;
+
+    if (size < 512 || memcmp( bytes, "regf", 4 )) return EINVAL;
+    write_u32( bytes + 4, primary );
+    write_u32( bytes + 8, secondary );
+    write_u32( bytes + 508, hive_checksum( bytes ));
+    return 0;
+}
+
+static uint32_t hive_rotate( uint32_t value, unsigned int shift )
+{
+    return value << shift | value >> (32 - shift);
+}
+
+static void hive_hash_round( uint32_t *left, uint32_t *right )
+{
+    *right ^= *left;
+    *left = hive_rotate( *left, 20 ) + *right;
+    *right = hive_rotate( *right, 9 ) ^ *left;
+    *left = hive_rotate( *left, 27 ) + *right;
+    *right = hive_rotate( *right, 19 );
+}
+
+static uint64_t hive_log_hash( const unsigned char *data, size_t size )
+{
+    uint32_t left = 0x7a4e55c5, right = 0x82ef4d88, tail;
+    unsigned int shift = 0;
+
+    while (size >= 4)
+    {
+        left += read_u32( data );
+        hive_hash_round( &left, &right );
+        data += 4;
+        size -= 4;
+    }
+    tail = 0x80u << (size * 8);
+    while (size--)
+    {
+        tail |= (uint32_t)*data++ << shift;
+        shift += 8;
+    }
+    left += tail;
+    hive_hash_round( &left, &right );
+    hive_hash_round( &left, &right );
+    return left | (uint64_t)right << 32;
+}
+
+int reg_hive_log_encode( const void *data, size_t size, uint32_t sequence, void **log, size_t *log_size )
+{
+    const unsigned char *bytes = data;
+    unsigned char *output, *entry;
+    uint32_t bins;
+    size_t entry_size;
+
+    *log = NULL;
+    *log_size = 0;
+    if (!hive_header_valid( bytes, size, 0 )) return EINVAL;
+    bins = read_u32( bytes + 40 );
+    if (size < HIVE_HEADER || bins > size - HIVE_HEADER || bins > UINT32_MAX - 8191) return EINVAL;
+    entry_size = (((size_t)bins + 48 + 512 + 4095) & ~(size_t)4095) - 512;
+    if (!(output = calloc( 1, 512 + entry_size ))) return ENOMEM;
+    memcpy( output, bytes, 512 );
+    write_u32( output + 28, 6 );
+    reg_hive_set_sequence( output, 512, sequence, sequence );
+    entry = output + 512;
+    memcpy( entry, "HvLE", 4 );
+    write_u32( entry + 4, entry_size );
+    write_u32( entry + 8, read_u32( bytes + 144 ) & 1 );
+    write_u32( entry + 12, sequence );
+    write_u32( entry + 16, bins );
+    write_u32( entry + 20, 1 );
+    write_u32( entry + 40, 0 );
+    write_u32( entry + 44, bins );
+    memcpy( entry + 48, bytes + HIVE_HEADER, bins );
+    write_u64( entry + 24, hive_log_hash( entry + 40, entry_size - 40 ));
+    write_u64( entry + 32, hive_log_hash( entry, 32 ));
+    *log = output;
+    *log_size = 512 + entry_size;
+    return 0;
+}
+
+struct hive_log_cursor
+{
+    const unsigned char *data;
+    size_t size, offset;
+};
+
+static const unsigned char *hive_log_entry( struct hive_log_cursor *cursor )
+{
+    const unsigned char *entry, *reference;
+    uint32_t length, pages, bins, offset, size, i;
+    size_t used;
+
+    if (cursor->offset > cursor->size || cursor->size - cursor->offset < 40) return NULL;
+    entry = cursor->data + cursor->offset;
+    length = read_u32( entry + 4 );
+    pages = read_u32( entry + 20 );
+    bins = read_u32( entry + 16 );
+    if (memcmp( entry, "HvLE", 4 ) || length < 512 || (length & 511) ||
+        length > cursor->size - cursor->offset || !bins || (bins & 4095) ||
+        pages > (length - 40) / 8 ||
+        read_u64( entry + 24 ) != hive_log_hash( entry + 40, length - 40 ) ||
+        read_u64( entry + 32 ) != hive_log_hash( entry, 32 )) return NULL;
+    used = 40 + (size_t)pages * 8;
+    for (i = 0; i < pages; i++)
+    {
+        reference = entry + 40 + i * 8;
+        offset = read_u32( reference );
+        size = read_u32( reference + 4 );
+        if (!size || (offset & 511) || (size & 511) || offset > bins ||
+            size > bins - offset || size > length - used) return NULL;
+        used += size;
+    }
+    return entry;
+}
+
+static const unsigned char *hive_log_next( struct hive_log_cursor *cursor, const unsigned char *entry )
+{
+    uint32_t sequence = read_u32( entry + 12 ) + 1;
+
+    cursor->offset += read_u32( entry + 4 );
+    entry = hive_log_entry( cursor );
+    return entry && read_u32( entry + 12 ) == sequence ? entry : NULL;
+}
+
+int reg_hive_recover( const void *data, size_t size, const struct reg_hive_log logs[2],
+                      void **output, size_t *output_size, uint32_t *sequence )
+{
+    struct hive_log_cursor cursors[2];
+    const unsigned char *bytes = data, *entry[2], *current, *page;
+    unsigned char *recovered = NULL, *grown;
+    struct reg_hive_key *tree = NULL;
+    size_t recovered_size = size, new_size, page_offset;
+    uint32_t expected = 0, bins, pages, i;
+    int valid = hive_header_valid( bytes, size, 0 ), order, selected, applied = 0, ret = EINVAL;
+
+    *output = NULL;
+    *output_size = 0;
+    if (valid && read_u32( bytes + 4 ) == read_u32( bytes + 8 ))
+    {
+        *sequence = read_u32( bytes + 4 );
+        return 0;
+    }
+    memset( cursors, 0, sizeof(cursors) );
+    for (i = 0; i < 2; i++)
+    {
+        if (!hive_header_valid( logs[i].data, logs[i].size, 6 )) continue;
+        if (read_u32( (const unsigned char *)logs[i].data + 4 ) !=
+            read_u32( (const unsigned char *)logs[i].data + 8 )) continue;
+        cursors[i].data = logs[i].data;
+        cursors[i].size = logs[i].size;
+        cursors[i].offset = 512;
+    }
+    for (i = 0; i < 2; i++)
+    {
+        entry[i] = hive_log_entry( cursors + i );
+        if (entry[i] && read_u32( entry[i] + 12 ) != read_u32( cursors[i].data + 4 )) entry[i] = NULL;
+    }
+    if (!entry[0] && !entry[1]) return EINVAL;
+    if (valid) expected = read_u32( bytes + 8 );
+    else if (!entry[1]) expected = read_u32( entry[0] + 12 );
+    else if (!entry[0]) expected = read_u32( entry[1] + 12 );
+    else
+    {
+        order = (int32_t)(read_u32( entry[0] + 12 ) - read_u32( entry[1] + 12 ));
+        selected = order < 0;
+        expected = read_u32( entry[selected] + 12 );
+        entry[!selected] = NULL;
+    }
+    if (!(recovered = calloc( 1, size < HIVE_HEADER ? HIVE_HEADER : size ))) return ENOMEM;
+    if (size) memcpy( recovered, bytes, size );
+    if (recovered_size < HIVE_HEADER) recovered_size = HIVE_HEADER;
+    for (;;)
+    {
+        selected = -1;
+        for (i = 0; i < 2; i++)
+        {
+            while (entry[i] && (int32_t)(read_u32( entry[i] + 12 ) - expected) < 0)
+            {
+                entry[i] = hive_log_next( cursors + i, entry[i] );
+            }
+            if (entry[i] && read_u32( entry[i] + 12 ) == expected) selected = i;
+        }
+        if (selected < 0) break;
+        if (entry[0] && entry[1] && read_u32( entry[0] + 12 ) == expected &&
+            read_u32( entry[1] + 12 ) == expected &&
+            (read_u64( entry[0] + 24 ) != read_u64( entry[1] + 24 ) ||
+             read_u64( entry[0] + 32 ) != read_u64( entry[1] + 32 ))) goto done;
+        current = entry[selected];
+        bins = read_u32( current + 16 );
+        new_size = (size_t)bins + HIVE_HEADER;
+        if (new_size < bins) goto done;
+        if (new_size > recovered_size)
+        {
+            if (!(grown = calloc( 1, new_size ))) { ret = ENOMEM; goto done; }
+            memcpy( grown, recovered, recovered_size );
+            free( recovered );
+            recovered = grown;
+        }
+        recovered_size = new_size;
+        memcpy( recovered, cursors[selected].data, 512 );
+        write_u32( recovered + 28, 0 );
+        write_u32( recovered + 40, bins );
+        write_u32( recovered + 144, (read_u32( recovered + 144 ) & ~1u) | (read_u32( current + 8 ) & 1) );
+        pages = read_u32( current + 20 );
+        page_offset = 40 + (size_t)pages * 8;
+        for (i = 0; i < pages; i++)
+        {
+            uint32_t offset, length;
+            page = current + 40 + i * 8;
+            offset = read_u32( page );
+            length = read_u32( page + 4 );
+            memcpy( recovered + HIVE_HEADER + offset, current + page_offset, length );
+            page_offset += length;
+        }
+        expected++;
+        applied = 1;
+        entry[selected] = hive_log_next( cursors + selected, current );
+    }
+    if (!applied) goto done;
+    reg_hive_set_sequence( recovered, recovered_size, expected, expected );
+    ret = reg_hive_decode( recovered, recovered_size, &tree );
+    reg_hive_free( tree );
+    if (ret) goto done;
+    *sequence = expected;
+    *output = recovered;
+    *output_size = recovered_size;
+    return 0;
+done:
+    free( recovered );
+    return ret;
+}
