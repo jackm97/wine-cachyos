@@ -97,7 +97,7 @@ extern HRESULT web_token_request_create( IWebAccountProvider *provider, HSTRING 
 extern HRESULT web_token_response_create( HSTRING token, IWebAccount *account, IWebProviderError *error,
                                           IWebTokenResponse **out );
 extern HRESULT web_provider_error_create( HRESULT error, HSTRING message, IWebProviderError **out );
-extern HRESULT web_token_result_create( IWebAccountProvider *provider, const struct identity_reply *reply,
+extern HRESULT web_token_result_create( IWebTokenRequest *request, IWebAccountProvider *provider, const struct identity_reply *reply,
                                         WebTokenRequestStatus status, IWebTokenRequestResult **out );
 extern HRESULT web_async_token_create( IWebTokenRequest *request, IWebAccount *account, boolean silent,
                                        IAsyncOperation_WebTokenRequestResult **out );

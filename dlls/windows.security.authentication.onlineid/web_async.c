@@ -419,7 +419,7 @@ static HRESULT token_worker( struct web_async_operation *impl, IInspectable **re
     }
     if (impl->u.token.silent && prompt == WebTokenRequestPromptType_ForceAuthentication)
     {
-        hr = web_token_result_create( provider, NULL, WebTokenRequestStatus_UserInteractionRequired, &token_result );
+        hr = web_token_result_create( impl->u.token.request, provider, NULL, WebTokenRequestStatus_UserInteractionRequired, &token_result );
         goto done;
     }
     if (impl->u.token.account && impl->u.token.silent)
@@ -442,13 +442,13 @@ static HRESULT token_worker( struct web_async_operation *impl, IInspectable **re
     else
         hr = identity_bridge_authorize_client( client_id, scopes, authority, login_hint, policy, prompt == WebTokenRequestPromptType_ForceAuthentication, impl->cancel, &reply );
     if (SUCCEEDED(hr))
-        hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_Success, &token_result );
+        hr = web_token_result_create( impl->u.token.request, provider, &reply, WebTokenRequestStatus_Success, &token_result );
     else if (hr == HRESULT_FROM_WIN32( ERROR_CANCELLED ))
-        hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_UserCancel, &token_result );
+        hr = web_token_result_create( impl->u.token.request, provider, &reply, WebTokenRequestStatus_UserCancel, &token_result );
     else if (impl->u.token.silent)
-        hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_UserInteractionRequired, &token_result );
+        hr = web_token_result_create( impl->u.token.request, provider, &reply, WebTokenRequestStatus_UserInteractionRequired, &token_result );
     else
-        hr = web_token_result_create( provider, &reply, WebTokenRequestStatus_ProviderError, &token_result );
+        hr = web_token_result_create( impl->u.token.request, provider, &reply, WebTokenRequestStatus_ProviderError, &token_result );
 
 done:
     if (account2) IWebAccount2_Release( account2 );
