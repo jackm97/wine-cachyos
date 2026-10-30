@@ -571,6 +571,22 @@ static void add_xkb_layout(const char *xkb_layout, struct xkb_keymap *xkb_keymap
     list_add_tail(&xkb_layouts, &layout->entry);
 }
 
+/* The input language change request goes to the window with the keyboard
+ * focus, like winex11 does, which can belong to another process than the
+ * Wayland surface, for instance an embedded browser. */
+static HWND get_input_language_target(HWND hwnd)
+{
+    GUITHREADINFO info;
+
+    info.cbSize = sizeof(info);
+    if (hwnd && NtUserGetGUIThreadInfo(NtUserGetWindowThread(hwnd, NULL), &info))
+    {
+        if (info.hwndFocus) return info.hwndFocus;
+        if (info.hwndActive) return info.hwndActive;
+    }
+    return hwnd;
+}
+
 static void set_current_xkb_group(xkb_layout_index_t xkb_group)
 {
     struct wayland_keyboard *keyboard = &process_wayland.keyboard;
@@ -596,7 +612,7 @@ static void set_current_xkb_group(xkb_layout_index_t xkb_group)
     keyboard_hkl = hkl;
 
     TRACE("Changing keyboard layout to %p\n", hkl);
-    NtUserPostMessage(keyboard->focused_hwnd, WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
+    NtUserPostMessage(get_input_language_target(keyboard->focused_hwnd), WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
                       (LPARAM)keyboard_hkl);
 }
 
@@ -759,7 +775,7 @@ static void keyboard_handle_enter(void *private, struct wl_keyboard *wl_keyboard
     keyboard->focused_hwnd = hwnd;
     pthread_mutex_unlock(&keyboard->mutex);
 
-    NtUserPostMessage(keyboard->focused_hwnd, WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
+    NtUserPostMessage(get_input_language_target(keyboard->focused_hwnd), WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
                       (LPARAM)keyboard_hkl);
 
     if (!(data = wayland_win_data_get(hwnd))) return;
