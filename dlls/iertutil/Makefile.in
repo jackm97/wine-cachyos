@@ -1,5 +1,5 @@
 MODULE = iertutil.dll
-IMPORTS = combase
+IMPORTS = combase oleaut32 urlmon
 
 SOURCES = \
 	classes.idl \

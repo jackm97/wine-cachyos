@@ -501,6 +501,14 @@ static BOOL is_redirect_response(DWORD status_code)
     return FALSE;
 }
 
+static BOOL is_non_http_absolute_url(const WCHAR *url)
+{
+    const WCHAR *separator;
+
+    if (!url || !(separator = wcschr(url, ':')) || separator == url) return FALSE;
+    return wcsnicmp(url, L"http:", 5) && wcsnicmp(url, L"https:", 6);
+}
+
 static HRESULT HttpProtocol_start_downloading(Protocol *prot)
 {
     HttpProtocol *This = impl_from_Protocol(prot);
@@ -520,16 +528,20 @@ static HRESULT HttpProtocol_start_downloading(Protocol *prot)
     if(res) {
         WCHAR *response_headers;
 
-        if((This->base.bind_info.dwOptions & BINDINFO_OPTIONS_DISABLEAUTOREDIRECTS) && is_redirect_response(status_code)) {
+        if(is_redirect_response(status_code)) {
             WCHAR *location;
 
-            TRACE("Got redirect with disabled auto redirects\n");
-
             location = query_http_info(This, HTTP_QUERY_LOCATION);
-            This->base.flags |= FLAG_RESULT_REPORTED | FLAG_LAST_DATA_REPORTED;
-            IInternetProtocolSink_ReportResult(This->base.protocol_sink, INET_E_REDIRECT_FAILED, 0, location);
+            if((This->base.bind_info.dwOptions & BINDINFO_OPTIONS_DISABLEAUTOREDIRECTS) ||
+               is_non_http_absolute_url(location)) {
+                TRACE("Reporting redirect to %s\n", debugstr_w(location));
+                This->base.flags |= FLAG_RESULT_REPORTED | FLAG_LAST_DATA_REPORTED;
+                IInternetProtocolSink_ReportResult(This->base.protocol_sink,
+                        INET_E_REDIRECT_FAILED, 0, location);
+                free(location);
+                return INET_E_REDIRECT_FAILED;
+            }
             free(location);
-            return INET_E_REDIRECT_FAILED;
         }
 
         response_headers = query_http_info(This, HTTP_QUERY_RAW_HEADERS_CRLF);

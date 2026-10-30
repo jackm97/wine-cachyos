@@ -26,6 +26,7 @@
 #include "windef.h"
 #include "winbase.h"
 #include "winstring.h"
+#include "urlmon.h"
 #include "wine/debug.h"
 #include "activation.h"
 

@@ -33,6 +33,7 @@ typedef struct {
 
     HANDLE file;
     ULONG size;
+    BOOL eof;
     LONG priority;
 
     LONG ref;
@@ -209,10 +210,16 @@ static HRESULT WINAPI FileProtocol_Read(IInternetProtocolEx *iface, void *pv,
         *pcbRead = 0;
 
     if(This->file == INVALID_HANDLE_VALUE)
-        return INET_E_DATA_NOT_AVAILABLE;
+        return This->eof ? S_FALSE : INET_E_DATA_NOT_AVAILABLE;
 
     if (!ReadFile(This->file, pv, cb, &read, NULL))
         return INET_E_DOWNLOAD_FAILURE;
+
+    if (!read) {
+        CloseHandle(This->file);
+        This->file = INVALID_HANDLE_VALUE;
+        This->eof = TRUE;
+    }
 
     if(pcbRead)
         *pcbRead = read;
@@ -293,7 +300,7 @@ static HRESULT WINAPI FileProtocol_StartEx(IInternetProtocolEx *iface, IUri *pUr
     if(!(grfBINDF & BINDF_FROMURLMON))
         IInternetProtocolSink_ReportProgress(pOIProtSink, BINDSTATUS_DIRECTBIND, NULL);
 
-    if(This->file != INVALID_HANDLE_VALUE) {
+    if(This->file != INVALID_HANDLE_VALUE || This->eof) {
         IInternetProtocolSink_ReportData(pOIProtSink,
                 BSCF_FIRSTDATANOTIFICATION|BSCF_LASTDATANOTIFICATION,
                 This->size, This->size);
@@ -429,6 +436,7 @@ HRESULT FileProtocol_Construct(IUnknown *outer, LPVOID *ppobj)
     ret->IInternetProtocolEx_iface.lpVtbl = &FileProtocolExVtbl;
     ret->IInternetPriority_iface.lpVtbl = &FilePriorityVtbl;
     ret->file = INVALID_HANDLE_VALUE;
+    ret->eof = FALSE;
     ret->priority = 0;
     ret->ref = 1;
     ret->outer = outer ? outer : &ret->IUnknown_inner;
