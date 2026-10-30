@@ -120,9 +120,11 @@ struct d2d_ps_cb
 {
     BOOL outline;
     BOOL is_arc;
-    BOOL pad[2];
+    BOOL arithmetic;
+    BOOL clamp_output;
     struct d2d_brush_cb colour_brush;
     struct d2d_brush_cb opacity_brush;
+    D2D1_VECTOR_4F coefficients;
 };
 
 struct d2d_vec4
@@ -211,6 +213,9 @@ struct d2d_device_context
             [D2D_SAMPLER_INTERPOLATION_MODE_COUNT]
             [D2D_SAMPLER_EXTEND_MODE_COUNT]
             [D2D_SAMPLER_EXTEND_MODE_COUNT];
+
+    const D2D1_VECTOR_4F *arithmetic_coefficients;
+    BOOL arithmetic_clamp;
 
     struct d2d_error_state error;
     D2D1_DRAWING_STATE_DESCRIPTION1 drawing_state;
