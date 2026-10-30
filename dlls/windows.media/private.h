@@ -29,6 +29,8 @@
 
 #include "activation.h"
 
+#define WINDOWS_FOUNDATION_UNIVERSALAPICONTRACT_VERSION 0xf0000
+
 #define WIDL_using_Windows_Foundation
 #define WIDL_using_Windows_Foundation_Collections
 #include "windows.foundation.h"
