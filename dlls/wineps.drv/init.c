@@ -45,7 +45,7 @@ static const PSDRV_DEVMODE DefaultDevmode =
 /* dmDriverVersion */	0x001,
 /* dmSize */		sizeof(DEVMODEW),
 /* dmDriverExtra */	sizeof(PSDRV_DEVMODE)-sizeof(DEVMODEW),
-/* dmFields */		DM_ORIENTATION | DM_PAPERSIZE | DM_PAPERLENGTH | DM_PAPERWIDTH |
+/* dmFields */		DM_ORIENTATION | DM_PAPERSIZE |
 			DM_SCALE | DM_COPIES | DM_DEFAULTSOURCE | DM_PRINTQUALITY |
 			DM_COLOR | DM_DUPLEX | DM_YRESOLUTION | DM_TTOPTION |
 			DM_COLLATE | DM_FORMNAME,
