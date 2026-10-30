@@ -184,6 +184,20 @@ static void output_info_array_arrange_physical_coords(struct wl_array *output_in
      * to right, but ensure the primary output is first. */
     qsort(output_info_array->data, num_outputs, sizeof(struct output_info),
           output_info_cmp_primary_x_y);
+
+    /* The primary monitor is always at the origin of the virtual screen, which
+     * applications rely on, so move all the outputs along with it. */
+    if (num_outputs)
+    {
+        struct output_info *primary = output_info_array->data;
+        int origin_x = primary->x, origin_y = primary->y;
+
+        wl_array_for_each(info, output_info_array)
+        {
+            info->x -= origin_x;
+            info->y -= origin_y;
+        }
+    }
 }
 
 static void wayland_add_device_gpu(const struct gdi_device_manager *device_manager,
