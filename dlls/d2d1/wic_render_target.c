@@ -96,7 +96,7 @@ static HRESULT d2d_wic_render_target_present(IUnknown *outer_unknown)
     IWICBitmapLock_Release(bitmap_lock);
 
 end:
-    return S_OK;
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_wic_render_target_QueryInterface(IUnknown *iface, REFIID iid, void **out)

@@ -2693,16 +2693,17 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_EndDraw(ID2D1DeviceContext6 
         return context->error.code;
     }
 
+    if (context->ops && context->ops->device_context_present)
+    {
+        if (FAILED(hr = context->ops->device_context_present(context->outer_unknown))
+                && SUCCEEDED(context->error.code))
+            d2d_device_context_set_error(context, hr);
+    }
+
     if (tag1)
         *tag1 = context->error.tag1;
     if (tag2)
         *tag2 = context->error.tag2;
-
-    if (context->ops && context->ops->device_context_present)
-    {
-        if (FAILED(hr = context->ops->device_context_present(context->outer_unknown)))
-            context->error.code = hr;
-    }
 
     return context->error.code;
 }
