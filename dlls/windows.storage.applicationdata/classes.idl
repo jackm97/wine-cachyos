@@ -22,7 +22,12 @@
 #pragma winrt ns_prefix
 
 import "windows.storage.idl";
+import "windows.management.idl";
 
 namespace Windows.Storage {
     runtimeclass ApplicationData;
+}
+
+namespace Windows.Management.Core {
+    runtimeclass ApplicationDataManager;
 }
