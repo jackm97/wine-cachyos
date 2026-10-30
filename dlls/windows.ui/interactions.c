@@ -2036,6 +2036,7 @@ static HRESULT interaction_tracker_create( ICompositor *compositor, IInteraction
     list_init( &impl->update_entry );
     list_init( &impl->changed_entry );
     impl->max_scale = 1.0f;
+    impl->min_scale = 1.0f;
     impl->scale = 1.0f;
     impl->clamp_position = TRUE;
     impl->ref = 1;
