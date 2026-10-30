@@ -147,6 +147,7 @@ static const struct IUnknownVtbl d2d_wic_render_target_vtbl =
 static const struct d2d_device_context_ops d2d_wic_render_target_ops =
 {
     d2d_wic_render_target_present,
+    d2d_wic_render_target_present,
 };
 
 static HRESULT d2d_wic_resolve_pixel_format(D2D1_PIXEL_FORMAT *pixel_format,
