@@ -1218,6 +1218,12 @@ NTSTATUS SYSCALL_API NtUserBuildPropList( HWND hwnd, ULONG count, struct ntuser_
     SYSCALL_FUNC( NtUserBuildPropList );
 }
 
+BOOL SYSCALL_API NtUserCalculatePopupWindowPosition( const POINT *anchor, const SIZE *size,
+                                                     UINT flags, RECT *exclude, RECT *position )
+{
+    SYSCALL_FUNC( NtUserCalculatePopupWindowPosition );
+}
+
 ULONG_PTR SYSCALL_API NtUserCallHwnd( HWND hwnd, DWORD code )
 {
     SYSCALL_FUNC( NtUserCallHwnd );
