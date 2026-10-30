@@ -165,6 +165,8 @@ HRESULT apartment_increment_mta_usage(CO_MTA_USAGE_COOKIE *cookie);
 void apartment_decrement_mta_usage(CO_MTA_USAGE_COOKIE cookie);
 HRESULT ensure_mta(void);
 struct apartment * apartment_get_mta(void);
+HRESULT apartment_getclassobject(struct apartment *apt, const WCHAR *dllpath, BOOL apartment_threaded,
+        REFCLSID rclsid, REFIID riid, void **object);
 HRESULT apartment_get_inproc_class_object(struct apartment *apt, const struct class_reg_data *regdata,
         REFCLSID rclsid, REFIID riid, DWORD class_context, void **ppv);
 HRESULT apartment_get_local_server_stream(struct apartment *apt, IStream **ret);
