@@ -34,6 +34,7 @@
 #include "wine/debug.h"
 
 #define WIDL_using_Windows_Foundation
+#define WIDL_using_Windows_Foundation_Collections
 #include "windows.foundation.h"
 #define WIDL_using_Windows_System
 #include "windows.system.h"
@@ -41,6 +42,9 @@
 #include "async_private.h"
 
 HRESULT async_action_create( IUnknown *invoker, async_operation_callback callback, IAsyncAction **out );
+HRESULT async_operation_property_set_create( IUnknown *invoker, IUnknown *param,
+                                              async_operation_callback callback,
+                                              IAsyncOperation_IPropertySet **out );
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

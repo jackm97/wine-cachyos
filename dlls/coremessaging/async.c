@@ -519,6 +519,153 @@ HRESULT async_operation_boolean_create( IUnknown *invoker, IUnknown *param, asyn
     return S_OK;
 }
 
+struct async_property_set
+{
+    IAsyncOperation_IPropertySet IAsyncOperation_IPropertySet_iface;
+    IAsyncInfoImpl *IAsyncInfoImpl_inner;
+    LONG ref;
+};
+
+static inline struct async_property_set *impl_from_IAsyncOperation_IPropertySet( IAsyncOperation_IPropertySet *iface )
+{
+    return CONTAINING_RECORD( iface, struct async_property_set, IAsyncOperation_IPropertySet_iface );
+}
+
+static HRESULT WINAPI async_property_set_QueryInterface( IAsyncOperation_IPropertySet *iface, REFIID iid, void **out )
+{
+    struct async_property_set *impl = impl_from_IAsyncOperation_IPropertySet( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID_IAsyncOperation_IPropertySet ))
+    {
+        IInspectable_AddRef( (*out = &impl->IAsyncOperation_IPropertySet_iface) );
+        return S_OK;
+    }
+
+    return IAsyncInfoImpl_QueryInterface( impl->IAsyncInfoImpl_inner, iid, out );
+}
+
+static ULONG WINAPI async_property_set_AddRef( IAsyncOperation_IPropertySet *iface )
+{
+    struct async_property_set *impl = impl_from_IAsyncOperation_IPropertySet( iface );
+    return InterlockedIncrement( &impl->ref );
+}
+
+static ULONG WINAPI async_property_set_Release( IAsyncOperation_IPropertySet *iface )
+{
+    struct async_property_set *impl = impl_from_IAsyncOperation_IPropertySet( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+
+    if (!ref)
+    {
+        InterlockedIncrement( &impl->ref );
+        IAsyncInfoImpl_Release( impl->IAsyncInfoImpl_inner );
+        free( impl );
+    }
+    return ref;
+}
+
+static HRESULT WINAPI async_property_set_GetIids( IAsyncOperation_IPropertySet *iface, ULONG *count, IID **iids )
+{
+    IID *values;
+
+    if (!count || !iids) return E_POINTER;
+    *count = 0;
+    *iids = NULL;
+    if (!(values = CoTaskMemAlloc( sizeof(*values) ))) return E_OUTOFMEMORY;
+    values[0] = IID_IAsyncOperation_IPropertySet;
+    *count = 1;
+    *iids = values;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_property_set_GetRuntimeClassName( IAsyncOperation_IPropertySet *iface, HSTRING *name )
+{
+    static const WCHAR class_name[] = L"Windows.Foundation.IAsyncOperation`1<Windows.Foundation.Collections.IPropertySet>";
+
+    if (!name) return E_POINTER;
+    return WindowsCreateString( class_name, ARRAY_SIZE(class_name) - 1, name );
+}
+
+static HRESULT WINAPI async_property_set_GetTrustLevel( IAsyncOperation_IPropertySet *iface, TrustLevel *level )
+{
+    if (!level) return E_POINTER;
+    *level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_property_set_put_Completed( IAsyncOperation_IPropertySet *iface,
+        IAsyncOperationCompletedHandler_IPropertySet *handler )
+{
+    struct async_property_set *impl = impl_from_IAsyncOperation_IPropertySet( iface );
+    return IAsyncInfoImpl_put_Completed( impl->IAsyncInfoImpl_inner, (IAsyncOperationCompletedHandlerImpl *)handler );
+}
+
+static HRESULT WINAPI async_property_set_get_Completed( IAsyncOperation_IPropertySet *iface,
+        IAsyncOperationCompletedHandler_IPropertySet **handler )
+{
+    struct async_property_set *impl = impl_from_IAsyncOperation_IPropertySet( iface );
+    return IAsyncInfoImpl_get_Completed( impl->IAsyncInfoImpl_inner, (IAsyncOperationCompletedHandlerImpl **)handler );
+}
+
+static HRESULT WINAPI async_property_set_GetResults( IAsyncOperation_IPropertySet *iface, IPropertySet **results )
+{
+    struct async_property_set *impl = impl_from_IAsyncOperation_IPropertySet( iface );
+    PROPVARIANT result = {.vt = VT_UNKNOWN};
+    HRESULT hr;
+
+    if (!results) return E_POINTER;
+    *results = NULL;
+    if (SUCCEEDED(hr = IAsyncInfoImpl_get_Result( impl->IAsyncInfoImpl_inner, &result )))
+    {
+        if ((*results = (IPropertySet *)result.punkVal)) IPropertySet_AddRef( *results );
+        PropVariantClear( &result );
+    }
+    return hr;
+}
+
+static const IAsyncOperation_IPropertySetVtbl async_property_set_vtbl =
+{
+    async_property_set_QueryInterface,
+    async_property_set_AddRef,
+    async_property_set_Release,
+    async_property_set_GetIids,
+    async_property_set_GetRuntimeClassName,
+    async_property_set_GetTrustLevel,
+    async_property_set_put_Completed,
+    async_property_set_get_Completed,
+    async_property_set_GetResults,
+};
+
+HRESULT async_operation_property_set_create( IUnknown *invoker, IUnknown *param,
+                                              async_operation_callback callback,
+                                              IAsyncOperation_IPropertySet **out )
+{
+    struct async_property_set *impl;
+    HRESULT hr;
+
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+    impl->IAsyncOperation_IPropertySet_iface.lpVtbl = &async_property_set_vtbl;
+    impl->ref = 1;
+
+    if (FAILED(hr = async_info_create( invoker, param, callback,
+                                      (IInspectable *)&impl->IAsyncOperation_IPropertySet_iface,
+                                      &impl->IAsyncInfoImpl_inner )) ||
+        FAILED(hr = IAsyncInfoImpl_Start( impl->IAsyncInfoImpl_inner )))
+    {
+        if (impl->IAsyncInfoImpl_inner) IAsyncInfoImpl_Release( impl->IAsyncInfoImpl_inner );
+        free( impl );
+        return hr;
+    }
+
+    *out = &impl->IAsyncOperation_IPropertySet_iface;
+    return S_OK;
+}
+
 struct async_action
 {
     IAsyncAction IAsyncAction_iface;

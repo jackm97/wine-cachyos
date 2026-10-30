@@ -21,11 +21,13 @@
 
 #include "windef.h"
 #include "winbase.h"
+#include "lmcons.h"
 #include "winstring.h"
 
 #include "roapi.h"
 
 #define WIDL_using_Windows_Foundation
+#define WIDL_using_Windows_Foundation_Collections
 #include "windows.foundation.h"
 #define WIDL_using_Windows_System
 #include "windows.system.h"
@@ -124,6 +126,134 @@ static HRESULT create_typed_event_handler_dispatcher_queue( ITypedEventHandler_D
     impl->event = CreateEventW( NULL, TRUE, FALSE, NULL );
 
     *handler = &impl->ITypedEventHandler_DispatcherQueue_IInspectable_iface;
+    return S_OK;
+}
+
+struct string_vector_view
+{
+    __FIVectorView_1_HSTRING __FIVectorView_1_HSTRING_iface;
+    LONG ref;
+    HSTRING value;
+};
+
+static struct string_vector_view *impl_from_string_vector_view( __FIVectorView_1_HSTRING *iface )
+{
+    return CONTAINING_RECORD( iface, struct string_vector_view, __FIVectorView_1_HSTRING_iface );
+}
+
+static HRESULT WINAPI string_vector_view_QueryInterface( __FIVectorView_1_HSTRING *iface, REFIID iid, void **out )
+{
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID___FIVectorView_1_HSTRING ))
+        *out = iface;
+    if (!*out) return E_NOINTERFACE;
+    __FIVectorView_1_HSTRING_AddRef( iface );
+    return S_OK;
+}
+
+static ULONG WINAPI string_vector_view_AddRef( __FIVectorView_1_HSTRING *iface )
+{
+    return InterlockedIncrement( &impl_from_string_vector_view( iface )->ref );
+}
+
+static ULONG WINAPI string_vector_view_Release( __FIVectorView_1_HSTRING *iface )
+{
+    struct string_vector_view *impl = impl_from_string_vector_view( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+
+    if (!ref)
+    {
+        WindowsDeleteString( impl->value );
+        free( impl );
+    }
+    return ref;
+}
+
+static HRESULT WINAPI string_vector_view_GetIids( __FIVectorView_1_HSTRING *iface, ULONG *count, IID **iids )
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI string_vector_view_GetRuntimeClassName( __FIVectorView_1_HSTRING *iface, HSTRING *name )
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI string_vector_view_GetTrustLevel( __FIVectorView_1_HSTRING *iface, TrustLevel *level )
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI string_vector_view_GetAt( __FIVectorView_1_HSTRING *iface, UINT32 index, HSTRING *value )
+{
+    if (!value) return E_POINTER;
+    if (index) return E_BOUNDS;
+    return WindowsDuplicateString( impl_from_string_vector_view( iface )->value, value );
+}
+
+static HRESULT WINAPI string_vector_view_get_Size( __FIVectorView_1_HSTRING *iface, UINT32 *value )
+{
+    if (!value) return E_POINTER;
+    *value = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI string_vector_view_IndexOf( __FIVectorView_1_HSTRING *iface, HSTRING element,
+                                                   UINT32 *index, boolean *found )
+{
+    const WCHAR *left, *right;
+
+    if (!index || !found) return E_POINTER;
+    left = WindowsGetStringRawBuffer( impl_from_string_vector_view( iface )->value, NULL );
+    right = WindowsGetStringRawBuffer( element, NULL );
+    *index = 0;
+    *found = !wcscmp( left, right );
+    return S_OK;
+}
+
+static HRESULT WINAPI string_vector_view_GetMany( __FIVectorView_1_HSTRING *iface, UINT32 start,
+                                                   UINT32 size, HSTRING *items, UINT32 *value )
+{
+    HRESULT hr;
+
+    if (!value || (size && !items)) return E_POINTER;
+    *value = 0;
+    if (start || !size) return S_OK;
+    if (FAILED( hr = WindowsDuplicateString( impl_from_string_vector_view( iface )->value, items ) )) return hr;
+    *value = 1;
+    return S_OK;
+}
+
+static const __FIVectorView_1_HSTRINGVtbl string_vector_view_vtbl =
+{
+    string_vector_view_QueryInterface,
+    string_vector_view_AddRef,
+    string_vector_view_Release,
+    string_vector_view_GetIids,
+    string_vector_view_GetRuntimeClassName,
+    string_vector_view_GetTrustLevel,
+    string_vector_view_GetAt,
+    string_vector_view_get_Size,
+    string_vector_view_IndexOf,
+    string_vector_view_GetMany,
+};
+
+static HRESULT string_vector_view_create( const WCHAR *value, __FIVectorView_1_HSTRING **view )
+{
+    struct string_vector_view *impl;
+    HRESULT hr;
+
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+    impl->__FIVectorView_1_HSTRING_iface.lpVtbl = &string_vector_view_vtbl;
+    impl->ref = 1;
+    if (FAILED( hr = WindowsCreateString( value, wcslen( value ), &impl->value ) ))
+    {
+        free( impl );
+        return hr;
+    }
+    *view = &impl->__FIVectorView_1_HSTRING_iface;
     return S_OK;
 }
 
@@ -536,6 +666,120 @@ done:
     ok( ref == 1, "got ref %ld.\n", ref );
 }
 
+static void test_User(void)
+{
+    static const WCHAR account_property[] = L"System.UserAccountName";
+    IKnownUserPropertiesStatics *known_properties = NULL;
+    __FIVectorView_1_HSTRING *properties = NULL;
+    IAsyncOperation_IPropertySet *operation = NULL;
+    IMap_HSTRING_IInspectable *map = NULL;
+    IPropertyValue *property_value = NULL;
+    IPropertySet *property_set = NULL;
+    IInspectable *boxed = NULL;
+    IActivationFactory *factory = NULL;
+    IUserStatics2 *user_statics = NULL;
+    IUser *user = NULL;
+    IAsyncInfo *async_info = NULL;
+    UserAuthenticationStatus authentication_status;
+    UserType user_type;
+    AsyncStatus status;
+    HSTRING class_name = NULL, key = NULL, value = NULL;
+    WCHAR username[UNLEN + 1];
+    DWORD username_len = ARRAY_SIZE(username);
+    HRESULT hr;
+    UINT i;
+
+    hr = WindowsCreateString( RuntimeClass_Windows_System_KnownUserProperties,
+                              ARRAY_SIZE(RuntimeClass_Windows_System_KnownUserProperties) - 1, &class_name );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = RoGetActivationFactory( class_name, &IID_IKnownUserPropertiesStatics, (void **)&known_properties );
+    WindowsDeleteString( class_name );
+    class_name = NULL;
+    ok( hr == S_OK || broken( hr == REGDB_E_CLASSNOTREG ), "got hr %#lx.\n", hr );
+    if (hr == REGDB_E_CLASSNOTREG)
+    {
+        win_skip( "Windows.System.User runtimeclasses are not registered, skipping tests.\n" );
+        return;
+    }
+
+    hr = IKnownUserPropertiesStatics_get_AccountName( known_properties, &value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( !wcscmp( WindowsGetStringRawBuffer( value, NULL ), account_property ), "got value %s.\n",
+        wine_dbgstr_hstring( value ) );
+    WindowsDeleteString( value );
+    value = NULL;
+    IKnownUserPropertiesStatics_Release( known_properties );
+
+    hr = WindowsCreateString( RuntimeClass_Windows_System_User,
+                              ARRAY_SIZE(RuntimeClass_Windows_System_User) - 1, &class_name );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = RoGetActivationFactory( class_name, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( class_name );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IActivationFactory_QueryInterface( factory, &IID_IUserStatics2, (void **)&user_statics );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IUserStatics2_GetDefault( user_statics, NULL );
+    ok( hr == E_POINTER, "got hr %#lx.\n", hr );
+    hr = IUserStatics2_GetDefault( user_statics, &user );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( user != NULL, "got user %p.\n", user );
+
+    hr = IUser_get_AuthenticationStatus( user, &authentication_status );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( authentication_status == UserAuthenticationStatus_LocallyAuthenticated,
+        "got authentication status %u.\n", authentication_status );
+    hr = IUser_get_Type( user, &user_type );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( user_type == UserType_LocalUser, "got user type %u.\n", user_type );
+
+    hr = string_vector_view_create( account_property, &properties );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IUser_GetPropertiesAsync( user, NULL, &operation );
+    ok( hr == E_POINTER, "got hr %#lx.\n", hr );
+    hr = IUser_GetPropertiesAsync( user, properties, NULL );
+    ok( hr == E_POINTER, "got hr %#lx.\n", hr );
+    hr = IUser_GetPropertiesAsync( user, properties, &operation );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IAsyncOperation_IPropertySet_QueryInterface( operation, &IID_IAsyncInfo, (void **)&async_info );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    for (i = 0; i < 500; ++i)
+    {
+        hr = IAsyncInfo_get_Status( async_info, &status );
+        ok( hr == S_OK, "got hr %#lx.\n", hr );
+        if (status != Started) break;
+        Sleep( 10 );
+    }
+    ok( status == Completed, "got status %u.\n", status );
+    hr = IAsyncOperation_IPropertySet_GetResults( operation, &property_set );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IPropertySet_QueryInterface( property_set, &IID_IMap_HSTRING_IInspectable, (void **)&map );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = WindowsCreateString( account_property, ARRAY_SIZE(account_property) - 1, &key );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IMap_HSTRING_IInspectable_Lookup( map, key, &boxed );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IInspectable_QueryInterface( boxed, &IID_IPropertyValue, (void **)&property_value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    hr = IPropertyValue_GetString( property_value, &value );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+    ok( GetUserNameW( username, &username_len ), "GetUserNameW failed, error %lu.\n", GetLastError() );
+    ok( !wcscmp( WindowsGetStringRawBuffer( value, NULL ), username ), "got account name %s.\n",
+        wine_dbgstr_hstring( value ) );
+
+    WindowsDeleteString( value );
+    WindowsDeleteString( key );
+    IPropertyValue_Release( property_value );
+    IInspectable_Release( boxed );
+    IMap_HSTRING_IInspectable_Release( map );
+    IPropertySet_Release( property_set );
+    IAsyncInfo_Release( async_info );
+    IAsyncOperation_IPropertySet_Release( operation );
+    __FIVectorView_1_HSTRING_Release( properties );
+    IUser_Release( user );
+    IUserStatics2_Release( user_statics );
+    IActivationFactory_Release( factory );
+}
+
 START_TEST(coremessaging)
 {
     HRESULT hr;
@@ -545,6 +789,7 @@ START_TEST(coremessaging)
 
     test_CreateDispatcherQueueController();
     test_DispatcherQueueController_Statics();
+    test_User();
 
     RoUninitialize();
 }
