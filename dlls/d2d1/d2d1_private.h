@@ -129,6 +129,9 @@ struct d2d_ps_cb
     struct d2d_brush_cb colour_brush;
     struct d2d_brush_cb opacity_brush;
     D2D1_VECTOR_4F coefficients;
+    D2D1_MATRIX_5X4_F color_matrix;
+    unsigned int color_matrix_mode, shadow_mode, padding[2];
+    D2D1_VECTOR_4F shadow_kernel, shadow_color;
 };
 
 struct d2d_vec4
@@ -220,6 +223,10 @@ struct d2d_device_context
 
     const D2D1_VECTOR_4F *arithmetic_coefficients;
     BOOL arithmetic_clamp;
+    const D2D1_MATRIX_5X4_F *color_matrix;
+    D2D1_COLORMATRIX_ALPHA_MODE color_matrix_mode;
+    BOOL color_matrix_clamp;
+    const D2D1_VECTOR_4F *shadow_kernel, *shadow_color;
 
     struct d2d_error_state error;
     D2D1_DRAWING_STATE_DESCRIPTION1 drawing_state;
@@ -229,6 +236,7 @@ struct d2d_device_context
     D2D1_RENDER_TARGET_PROPERTIES desc;
     D2D1_SIZE_U pixel_size;
     struct d2d_clip_stack clip_stack;
+    struct d2d_layer_frame *layers;
 
     struct d2d_indexed_objects vertex_buffers;
 };
@@ -915,7 +923,18 @@ struct d2d_command_list
 
 HRESULT d2d_command_list_create(ID2D1Factory *factory, struct d2d_command_list **command_list);
 struct d2d_command_list *unsafe_impl_from_ID2D1CommandList(ID2D1CommandList *iface);
-HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *context);
+struct d2d_effect_frame
+{
+    ID2D1Effect *effect;
+    const struct d2d_effect_frame *parent;
+    ID2D1CommandList *commands;
+};
+
+HRESULT d2d_effect_image_bounds(struct d2d_device_context *context, ID2D1Image *image,
+        const struct d2d_effect_frame *parent, D2D1_UNIT_MODE mode, D2D1_RECT_F *bounds);
+HRESULT d2d_command_list_get_bounds(ID2D1CommandList *iface, struct d2d_device_context *context,
+        const struct d2d_effect_frame *parent, D2D1_UNIT_MODE output_mode, D2D1_RECT_F *bounds);
+HRESULT d2d_command_list_replay(ID2D1CommandList *iface, struct d2d_device_context *target);
 void d2d_command_list_begin_draw(struct d2d_command_list *command_list, const struct d2d_device_context *context);
 void d2d_command_list_set_antialias_mode(struct d2d_command_list *command_list, D2D1_ANTIALIAS_MODE mode);
 void d2d_command_list_set_primitive_blend(struct d2d_command_list *command_list,

@@ -25,6 +25,25 @@ WINE_DEFAULT_DEBUG_CHANNEL(d2d);
 
 #define INITIAL_CLIP_STACK_SIZE 4
 
+struct d2d_layer_frame
+{
+    struct d2d_layer_frame *next;
+    ID2D1Image *target;
+    ID2D1Bitmap1 *bitmap;
+    D2D1_LAYER_PARAMETERS1 params;
+    D2D1_MATRIX_3X2_F transform;
+    unsigned int clip_count;
+};
+
+static void d2d_layer_frame_destroy(struct d2d_layer_frame *frame)
+{
+    ID2D1Image_Release(frame->target);
+    ID2D1Bitmap1_Release(frame->bitmap);
+    if (frame->params.geometricMask) ID2D1Geometry_Release(frame->params.geometricMask);
+    if (frame->params.opacityBrush) ID2D1Brush_Release(frame->params.opacityBrush);
+    free(frame);
+}
+
 static const D2D1_MATRIX_3X2_F identity =
 {{{
     1.0f, 0.0f,
@@ -819,10 +838,11 @@ static void d2d_device_context_draw(struct d2d_device_context *render_target, en
         const D2D1_RECT_F *clip_rect;
 
         clip_rect = &render_target->clip_stack.stack[render_target->clip_stack.count - 1];
-        scissor_rect.left = ceilf(clip_rect->left - 0.5f);
-        scissor_rect.top = ceilf(clip_rect->top - 0.5f);
-        scissor_rect.right = ceilf(clip_rect->right - 0.5f);
-        scissor_rect.bottom = ceilf(clip_rect->bottom - 0.5f);
+        /* Match the rasterizer's 8-bit subpixel grid before selecting pixel centres. */
+        scissor_rect.left = ceilf(roundf(min(max(clip_rect->left, 0.0f), render_target->pixel_size.width) * 256.0f) / 256.0f - 0.5f);
+        scissor_rect.top = ceilf(roundf(min(max(clip_rect->top, 0.0f), render_target->pixel_size.height) * 256.0f) / 256.0f - 0.5f);
+        scissor_rect.right = ceilf(roundf(min(max(clip_rect->right, 0.0f), render_target->pixel_size.width) * 256.0f) / 256.0f - 0.5f);
+        scissor_rect.bottom = ceilf(roundf(min(max(clip_rect->bottom, 0.0f), render_target->pixel_size.height) * 256.0f) / 256.0f - 0.5f);
     }
     else
     {
@@ -931,6 +951,12 @@ static ULONG STDMETHODCALLTYPE d2d_device_context_inner_Release(IUnknown *iface)
     {
         unsigned int i, j, k;
 
+        while (context->layers)
+        {
+            struct d2d_layer_frame *frame = context->layers;
+            context->layers = frame->next;
+            d2d_layer_frame_destroy(frame);
+        }
         d2d_clip_stack_cleanup(&context->clip_stack);
         IDWriteRenderingParams_Release(context->default_text_rendering_params);
         if (context->text_rendering_params)
@@ -1450,7 +1476,15 @@ static HRESULT d2d_device_context_update_ps_cb(struct d2d_device_context *contex
     cb_data->outline = outline;
     cb_data->is_arc = is_arc;
     cb_data->arithmetic = !!context->arithmetic_coefficients;
-    cb_data->clamp_output = context->arithmetic_clamp;
+    cb_data->clamp_output = context->color_matrix ? context->color_matrix_clamp : context->arithmetic_clamp;
+    cb_data->color_matrix_mode = context->color_matrix ? context->color_matrix_mode : 0;
+    if (context->color_matrix) cb_data->color_matrix = *context->color_matrix;
+    cb_data->shadow_mode = !!context->shadow_kernel;
+    if (context->shadow_kernel)
+    {
+        cb_data->shadow_kernel = *context->shadow_kernel;
+        cb_data->shadow_color = *context->shadow_color;
+    }
     if (context->arithmetic_coefficients)
         cb_data->coefficients = *context->arithmetic_coefficients;
     if (!d2d_brush_fill_cb(brush, &cb_data->colour_brush))
@@ -2094,12 +2128,12 @@ static void d2d_device_context_draw_glyph_run_bitmap(struct d2d_device_context *
 
     transform = &context->drawing_state.transform;
 
-    scale_x = context->desc.dpiX / 96.0f;
+    scale_x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiX / 96.0f;
     m._11 = transform->_11 * scale_x;
     m._21 = transform->_21 * scale_x;
     m._31 = transform->_31 * scale_x;
 
-    scale_y = context->desc.dpiY / 96.0f;
+    scale_y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiY / 96.0f;
     m._12 = transform->_12 * scale_y;
     m._22 = transform->_22 * scale_y;
     m._32 = transform->_32 * scale_y;
@@ -2150,10 +2184,10 @@ static void d2d_device_context_draw_glyph_run_bitmap(struct d2d_device_context *
 
     bitmap_desc.pixelFormat.format = DXGI_FORMAT_A8_UNORM;
     bitmap_desc.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-    bitmap_desc.dpiX = context->desc.dpiX;
+    bitmap_desc.dpiX = scale_x * 96.0f;
     if (texture_type == DWRITE_TEXTURE_CLEARTYPE_3x1)
         bitmap_desc.dpiX *= 3.0f;
-    bitmap_desc.dpiY = context->desc.dpiY;
+    bitmap_desc.dpiY = scale_y * 96.0f;
     if (FAILED(hr = d2d_device_context_CreateBitmap(&context->ID2D1DeviceContext6_iface,
             bitmap_size, opacity_values, bitmap_size.width, &bitmap_desc, &opacity_bitmap)))
     {
@@ -2436,31 +2470,128 @@ static void STDMETHODCALLTYPE d2d_device_context_GetTags(ID2D1DeviceContext6 *if
     *tag2 = render_target->drawing_state.tag2;
 }
 
-static void STDMETHODCALLTYPE d2d_device_context_PushLayer(ID2D1DeviceContext6 *iface,
-        const D2D1_LAYER_PARAMETERS *layer_parameters, ID2D1Layer *layer)
+static void d2d_device_context_push_layer(struct d2d_device_context *context,
+        const D2D1_LAYER_PARAMETERS1 *params, ID2D1Layer *layer)
 {
-    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
+    ID2D1DeviceContext6 *iface = &context->ID2D1DeviceContext6_iface;
+    D2D1_BITMAP_PROPERTIES1 desc = {0};
+    D2D1_COLOR_F transparent = {0};
+    struct d2d_layer_frame *frame;
+    float x, y;
+    HRESULT hr;
 
-    FIXME("iface %p, layer_parameters %p, layer %p stub!\n", iface, layer_parameters, layer);
-
+    if (FAILED(context->error.code)) return;
     if (context->target.type == D2D_TARGET_COMMAND_LIST)
     {
-        D2D1_LAYER_PARAMETERS1 parameters;
-
-        memcpy(&parameters, layer_parameters, sizeof(*layer_parameters));
-        parameters.layerOptions = D2D1_LAYER_OPTIONS1_NONE;
-        d2d_command_list_push_layer(context->target.command_list, context, &parameters, layer);
+        d2d_command_list_push_layer(context->target.command_list, context, params, layer);
+        return;
     }
+    if (context->target.type != D2D_TARGET_BITMAP)
+    {d2d_device_context_set_error(context, D2DERR_WRONG_STATE); return;}
+    if (params->layerOptions != D2D1_LAYER_OPTIONS1_NONE)
+    {d2d_device_context_set_error(context, D2DERR_UNSUPPORTED_OPERATION); return;}
+    if (!(frame = calloc(1, sizeof(*frame))))
+    {d2d_device_context_set_error(context, E_OUTOFMEMORY); return;}
+    desc.pixelFormat = context->desc.pixelFormat;
+    desc.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+    desc.dpiX = desc.dpiY = 96.0f;
+    desc.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET;
+    if (FAILED(hr = ID2D1DeviceContext6_CreateBitmap(iface, context->pixel_size, NULL, 0, &desc, &frame->bitmap)))
+    {
+        free(frame);
+        d2d_device_context_set_error(context, hr);
+        return;
+    }
+    ID2D1DeviceContext6_GetTarget(iface, &frame->target);
+    frame->params = *params;
+    if (params->geometricMask) ID2D1Geometry_AddRef(params->geometricMask);
+    if (params->opacityBrush) ID2D1Brush_AddRef(params->opacityBrush);
+    frame->transform = context->drawing_state.transform;
+    x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiX / 96.0f;
+    y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiY / 96.0f;
+    frame->transform._11 *= x; frame->transform._21 *= x; frame->transform._31 *= x;
+    frame->transform._12 *= y; frame->transform._22 *= y; frame->transform._32 *= y;
+    frame->clip_count = context->clip_stack.count;
+    frame->next = context->layers;
+    context->layers = frame;
+    ID2D1DeviceContext6_SetTarget(iface, (ID2D1Image *)frame->bitmap);
+    context->clip_stack.count = 0;
+    ID2D1DeviceContext6_Clear(iface, &transparent);
+    context->clip_stack.count = frame->clip_count;
+    ID2D1DeviceContext6_PushAxisAlignedClip(iface, &params->contentBounds, D2D1_ANTIALIAS_MODE_ALIASED);
+}
+
+static void STDMETHODCALLTYPE d2d_device_context_PushLayer(ID2D1DeviceContext6 *iface,
+        const D2D1_LAYER_PARAMETERS *params, ID2D1Layer *layer)
+{
+    D2D1_LAYER_PARAMETERS1 parameters;
+
+    memcpy(&parameters, params, sizeof(*params));
+    parameters.layerOptions = D2D1_LAYER_OPTIONS1_NONE;
+    d2d_device_context_push_layer(impl_from_ID2D1DeviceContext(iface), &parameters, layer);
 }
 
 static void STDMETHODCALLTYPE d2d_device_context_PopLayer(ID2D1DeviceContext6 *iface)
 {
     struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
-
-    FIXME("iface %p stub!\n", iface);
+    D2D1_DRAWING_STATE_DESCRIPTION1 state = context->drawing_state;
+    D2D1_BITMAP_BRUSH_PROPERTIES1 bitmap_desc = {D2D1_EXTEND_MODE_CLAMP, D2D1_EXTEND_MODE_CLAMP,
+            D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR};
+    D2D1_BRUSH_PROPERTIES brush_desc = {1.0f};
+    struct d2d_layer_frame *frame = context->layers;
+    ID2D1BitmapBrush1 *brush = NULL;
+    ID2D1Geometry *geometry = NULL;
+    D2D1_MATRIX_3X2_F matrix, brush_transform;
+    D2D1_RECT_F rect;
+    HRESULT hr = S_OK;
 
     if (context->target.type == D2D_TARGET_COMMAND_LIST)
+    {
         d2d_command_list_pop_layer(context->target.command_list);
+        return;
+    }
+    if (!frame) {d2d_device_context_set_error(context, D2DERR_PUSH_POP_UNBALANCED); return;}
+    context->layers = frame->next;
+    ID2D1DeviceContext6_SetTarget(iface, frame->target);
+    if (context->clip_stack.count != frame->clip_count + 1)
+        d2d_device_context_set_error(context, D2DERR_PUSH_POP_UNBALANCED);
+    if (FAILED(context->error.code)) goto done;
+    context->drawing_state.unitMode = D2D1_UNIT_MODE_PIXELS;
+    context->drawing_state.transform = identity;
+    context->drawing_state.antialiasMode = frame->params.maskAntialiasMode;
+    brush_desc.opacity = frame->params.opacity;
+    brush_desc.transform = identity;
+    if (FAILED(hr = ID2D1DeviceContext6_CreateBitmapBrush(iface, (ID2D1Bitmap *)frame->bitmap,
+            &bitmap_desc, &brush_desc, &brush))) goto done;
+    if (frame->params.geometricMask)
+    {
+        matrix = frame->params.maskTransform;
+        d2d_matrix_multiply(&matrix, &frame->transform);
+        hr = ID2D1Factory_CreateTransformedGeometry(context->factory, frame->params.geometricMask,
+                &matrix, (ID2D1TransformedGeometry **)&geometry);
+    }
+    else
+    {
+        d2d_rect_set(&rect, 0.0f, 0.0f, context->pixel_size.width, context->pixel_size.height);
+        hr = ID2D1Factory_CreateRectangleGeometry(context->factory, &rect, (ID2D1RectangleGeometry **)&geometry);
+    }
+    if (FAILED(hr)) goto done;
+    if (frame->params.opacityBrush)
+    {
+        ID2D1Brush_GetTransform(frame->params.opacityBrush, &brush_transform);
+        matrix = brush_transform;
+        d2d_matrix_multiply(&matrix, &frame->transform);
+        ID2D1Brush_SetTransform(frame->params.opacityBrush, &matrix);
+    }
+    ID2D1DeviceContext6_FillGeometry(iface, geometry, (ID2D1Brush *)brush, frame->params.opacityBrush);
+    if (frame->params.opacityBrush) ID2D1Brush_SetTransform(frame->params.opacityBrush, &brush_transform);
+done:
+    if (FAILED(hr)) d2d_device_context_set_error(context, hr);
+    context->drawing_state = state;
+    context->clip_stack.count = frame->clip_count;
+    if (geometry) ID2D1Geometry_Release(geometry);
+    if (brush) ID2D1BitmapBrush1_Release(brush);
+    d2d_layer_frame_destroy(frame);
 }
 
 static void d2d_trace_result(struct d2d_device_context *context, const char *name,
@@ -2721,6 +2852,19 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_EndDraw(ID2D1DeviceContext6 
     {
         d2d_trace_result(context, "d2d.end_draw", context->error.code, __builtin_return_address(0));
         return context->error.code;
+    }
+
+    if (context->layers)
+    {
+        d2d_device_context_set_error(context, D2DERR_PUSH_POP_UNBALANCED);
+        while (context->layers)
+        {
+            struct d2d_layer_frame *frame = context->layers;
+            context->layers = frame->next;
+            ID2D1DeviceContext6_SetTarget(iface, frame->target);
+            context->clip_stack.count = frame->clip_count;
+            d2d_layer_frame_destroy(frame);
+        }
     }
 
     if (context->ops && context->ops->device_context_present)
@@ -3087,10 +3231,18 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_GetImageLocalBounds(ID2D1Dev
     struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
     D2D_SIZE_U pixel_size;
     ID2D1Bitmap *bitmap;
+    ID2D1CommandList *commands;
     D2D_SIZE_F size;
+    HRESULT hr;
 
     TRACE("iface %p, image %p, local_bounds %p.\n", iface, image, local_bounds);
 
+    if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1CommandList, (void **)&commands)))
+    {
+        hr = d2d_command_list_get_bounds(commands, context, NULL, context->drawing_state.unitMode, local_bounds);
+        ID2D1CommandList_Release(commands);
+        return hr;
+    }
     if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)&bitmap)))
     {
         local_bounds->left = 0.0f;
@@ -3119,9 +3271,7 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_GetImageLocalBounds(ID2D1Dev
     }
     else
     {
-        FIXME("Unable to get local bounds of image %p.\n", image);
-
-        return E_NOTIMPL;
+        return d2d_effect_image_bounds(context, image, NULL, context->drawing_state.unitMode, local_bounds);
     }
 }
 
@@ -3327,30 +3477,26 @@ static void STDMETHODCALLTYPE d2d_device_context_ID2D1DeviceContext_DrawGlyphRun
     d2d_device_context_draw_glyph_run(context, baseline_origin, glyph_run, glyph_run_desc, brush, measuring_mode);
 }
 
-struct d2d_effect_frame
+static D2D1_RECT_F d2d_arithmetic_bounds(const D2D1_VECTOR_4F *coefficients, const D2D1_RECT_F *inputs)
 {
-    ID2D1Effect *effect;
-    const struct d2d_effect_frame *parent;
-};
+    D2D1_RECT_F bounds = {0.0f, 0.0f, 0.0f, 0.0f};
 
-static D2D1_SIZE_F d2d_arithmetic_size(const D2D1_VECTOR_4F *coefficients, const D2D1_SIZE_F *sizes)
-{
-    D2D1_SIZE_F size = {0.0f, 0.0f};
-
-    if (!coefficients->x && !coefficients->y && !coefficients->z && !coefficients->w) return size;
+    if (!coefficients->x && !coefficients->y && !coefficients->z && !coefficients->w) return bounds;
     if (!coefficients->w && !coefficients->y && !coefficients->z)
     {
-        size.width = min(sizes[0].width, sizes[1].width);
-        size.height = min(sizes[0].height, sizes[1].height);
+        bounds = inputs[0];
+        d2d_rect_intersect(&bounds, &inputs[1]);
     }
     else if (!coefficients->x && !coefficients->w && (!coefficients->y || !coefficients->z))
-        size = sizes[coefficients->y ? 0 : 1];
+        bounds = inputs[coefficients->y ? 0 : 1];
     else
     {
-        size.width = max(sizes[0].width, sizes[1].width);
-        size.height = max(sizes[0].height, sizes[1].height);
+        bounds.left = min(inputs[0].left, inputs[1].left);
+        bounds.top = min(inputs[0].top, inputs[1].top);
+        bounds.right = max(inputs[0].right, inputs[1].right);
+        bounds.bottom = max(inputs[0].bottom, inputs[1].bottom);
     }
-    return size;
+    return bounds;
 }
 
 static HRESULT d2d_arithmetic_properties(ID2D1Effect *effect, D2D1_VECTOR_4F *coefficients, BOOL *clamp)
@@ -3369,23 +3515,41 @@ static HRESULT d2d_arithmetic_properties(ID2D1Effect *effect, D2D1_VECTOR_4F *co
     return S_OK;
 }
 
-static HRESULT d2d_effect_image_size(ID2D1Image *image, const struct d2d_effect_frame *parent, D2D1_SIZE_F *size)
+HRESULT d2d_effect_image_bounds(struct d2d_device_context *context, ID2D1Image *image,
+        const struct d2d_effect_frame *parent, D2D1_UNIT_MODE mode, D2D1_RECT_F *bounds)
 {
-    struct d2d_effect_frame frame;
+    struct d2d_effect_frame frame = {0};
     const struct d2d_effect_frame *ancestor;
     D2D1_VECTOR_4F coefficients;
-    D2D1_SIZE_F sizes[2];
+    D2D1_RECT_F inputs[2];
+    D2D1_SIZE_F size;
+    ID2D1CommandList *commands;
     ID2D1Bitmap *bitmap;
     ID2D1Effect *effect;
     ID2D1Image *input;
+    CLSID clsid;
     HRESULT hr;
     unsigned int i;
+    float sigma, radius_x, radius_y;
 
     if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)&bitmap)))
     {
-        *size = ID2D1Bitmap_GetSize(bitmap);
+        if (mode == D2D1_UNIT_MODE_PIXELS)
+        {
+            D2D1_SIZE_U pixels = ID2D1Bitmap_GetPixelSize(bitmap);
+            size.width = pixels.width;
+            size.height = pixels.height;
+        }
+        else size = ID2D1Bitmap_GetSize(bitmap);
+        d2d_rect_set(bounds, 0.0f, 0.0f, size.width, size.height);
         ID2D1Bitmap_Release(bitmap);
         return S_OK;
+    }
+    if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1CommandList, (void **)&commands)))
+    {
+        hr = d2d_command_list_get_bounds(commands, context, parent, mode, bounds);
+        ID2D1CommandList_Release(commands);
+        return hr;
     }
     if (FAILED(ID2D1Image_QueryInterface(image, &IID_ID2D1Effect, (void **)&effect)))
         return D2DERR_UNSUPPORTED_OPERATION;
@@ -3397,62 +3561,116 @@ static HRESULT d2d_effect_image_size(ID2D1Image *image, const struct d2d_effect_
         }
     frame.effect = effect;
     frame.parent = parent;
+    if (FAILED(hr = ID2D1Effect_GetValue(effect, D2D1_PROPERTY_CLSID, D2D1_PROPERTY_TYPE_CLSID,
+            (BYTE *)&clsid, sizeof(clsid)))) goto done;
+    if (IsEqualGUID(&clsid, &CLSID_D2D1ColorMatrix) || IsEqualGUID(&clsid, &CLSID_D2D1Shadow))
+    {
+        ID2D1Effect_GetInput(effect, 0, &input);
+        if (!input) {hr = D2DERR_WRONG_STATE; goto done;}
+        hr = d2d_effect_image_bounds(context, input, &frame, mode, bounds);
+        ID2D1Image_Release(input);
+        if (SUCCEEDED(hr) && IsEqualGUID(&clsid, &CLSID_D2D1Shadow))
+        {
+            if (FAILED(hr = ID2D1Effect_GetValue(effect, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
+                    D2D1_PROPERTY_TYPE_FLOAT, (BYTE *)&sigma, sizeof(sigma)))) goto done;
+            if (!isfinite(sigma) || sigma < 0.0f) {hr = E_INVALIDARG; goto done;}
+            radius_x = radius_y = 3.0f * sigma;
+            if (mode == D2D1_UNIT_MODE_PIXELS)
+            {
+                radius_x *= context->desc.dpiX / 96.0f;
+                radius_y *= context->desc.dpiY / 96.0f;
+            }
+            bounds->left -= radius_x;
+            bounds->top -= radius_y;
+            bounds->right += radius_x;
+            bounds->bottom += radius_y;
+        }
+        goto done;
+    }
     if (FAILED(hr = d2d_arithmetic_properties(effect, &coefficients, NULL))) goto done;
     for (i = 0; i < 2; ++i)
     {
         ID2D1Effect_GetInput(effect, i, &input);
         if (!input) {hr = D2DERR_WRONG_STATE; goto done;}
-        hr = d2d_effect_image_size(input, &frame, &sizes[i]);
+        hr = d2d_effect_image_bounds(context, input, &frame, mode, &inputs[i]);
         ID2D1Image_Release(input);
         if (FAILED(hr)) goto done;
     }
-    *size = d2d_arithmetic_size(&coefficients, sizes);
+    *bounds = d2d_arithmetic_bounds(&coefficients, inputs);
 done:
     ID2D1Effect_Release(effect);
     return hr;
 }
 
-static HRESULT d2d_device_context_draw_arithmetic(struct d2d_device_context *context, ID2D1Effect *effect,
+static HRESULT d2d_device_context_draw_effect(struct d2d_device_context *context, ID2D1Effect *effect,
         const D2D1_POINT_2F *offset, const D2D1_RECT_F *image_rect, D2D1_INTERPOLATION_MODE interpolation_mode,
         const struct d2d_effect_frame *parent);
 
 static HRESULT d2d_effect_input_bitmap(struct d2d_device_context *context, ID2D1Image *image,
-        const struct d2d_effect_frame *parent, ID2D1Bitmap **bitmap, D2D1_SIZE_F *size)
+        const struct d2d_effect_frame *parent, ID2D1Bitmap **bitmap, D2D1_RECT_F *bounds)
 {
     D2D1_PIXEL_FORMAT format = {DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED};
     D2D1_COLOR_F transparent = {0.0f, 0.0f, 0.0f, 0.0f};
     ID2D1BitmapRenderTarget *target = NULL;
     ID2D1DeviceContext6 *child = NULL;
     ID2D1Effect *effect = NULL;
+    ID2D1CommandList *commands = NULL;
+    D2D1_MATRIX_3X2_F transform = identity;
     D2D1_SIZE_F target_size;
+    D2D1_SIZE_U pixel_size;
+    UINT32 max_size = ID2D1DeviceContext6_GetMaximumBitmapSize(&context->ID2D1DeviceContext6_iface);
+    BOOL pixels = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS;
+    float scale_x = pixels ? 1.0f : context->desc.dpiX / 96.0f;
+    float scale_y = pixels ? 1.0f : context->desc.dpiY / 96.0f;
     HRESULT hr, end_hr;
 
     *bitmap = NULL;
-    if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)bitmap)))
-    {
-        *size = ID2D1Bitmap_GetSize(*bitmap);
-        return S_OK;
-    }
-    if (FAILED(hr = d2d_effect_image_size(image, parent, size))) return hr;
-    if (FAILED(ID2D1Image_QueryInterface(image, &IID_ID2D1Effect, (void **)&effect)))
+    if (FAILED(hr = d2d_effect_image_bounds(context, image, parent, context->drawing_state.unitMode, bounds))) return hr;
+    if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)bitmap))) return S_OK;
+    if (FAILED(ID2D1Image_QueryInterface(image, &IID_ID2D1Effect, (void **)&effect))
+            && FAILED(ID2D1Image_QueryInterface(image, &IID_ID2D1CommandList, (void **)&commands)))
         return D2DERR_UNSUPPORTED_OPERATION;
-    target_size = *size;
+    bounds->left = floorf(bounds->left * scale_x) / scale_x;
+    bounds->top = floorf(bounds->top * scale_y) / scale_y;
+    bounds->right = ceilf(bounds->right * scale_x) / scale_x;
+    bounds->bottom = ceilf(bounds->bottom * scale_y) / scale_y;
+    target_size.width = max(0.0f, bounds->right - bounds->left);
+    target_size.height = max(0.0f, bounds->bottom - bounds->top);
+    if (!isfinite(target_size.width) || !isfinite(target_size.height))
+    {hr = D2DERR_UNSUPPORTED_OPERATION; goto done;}
     if (!target_size.width || !target_size.height) target_size.width = target_size.height = 1.0f;
+    if (target_size.width * (pixels ? 1.0f : context->desc.dpiX / 96.0f) > max_size
+            || target_size.height * (pixels ? 1.0f : context->desc.dpiY / 96.0f) > max_size)
+    {hr = D2DERR_EXCEEDS_MAX_BITMAP_SIZE; goto done;}
+    pixel_size.width = ceilf(target_size.width * (pixels ? 1.0f : context->desc.dpiX / 96.0f));
+    pixel_size.height = ceilf(target_size.height * (pixels ? 1.0f : context->desc.dpiY / 96.0f));
     if (FAILED(hr = ID2D1DeviceContext6_CreateCompatibleRenderTarget(&context->ID2D1DeviceContext6_iface,
-            &target_size, NULL, &format, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, &target))) goto done;
+            NULL, &pixel_size, &format, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, &target))) goto done;
     if (FAILED(hr = ID2D1BitmapRenderTarget_QueryInterface(target, &IID_ID2D1DeviceContext6, (void **)&child))) goto done;
+    if (pixels)
+    {
+        ID2D1BitmapRenderTarget_SetDpi(target, context->desc.dpiX, context->desc.dpiY);
+        ID2D1DeviceContext6_SetUnitMode(child, D2D1_UNIT_MODE_PIXELS);
+    }
     ID2D1BitmapRenderTarget_BeginDraw(target);
     ID2D1BitmapRenderTarget_Clear(target, &transparent);
-    if (size->width && size->height)
-        hr = d2d_device_context_draw_arithmetic(impl_from_ID2D1DeviceContext(child), effect,
+    transform._31 = -bounds->left;
+    transform._32 = -bounds->top;
+    ID2D1DeviceContext6_SetTransform(child, &transform);
+    if (bounds->right > bounds->left && bounds->bottom > bounds->top)
+    {
+        if (commands) hr = d2d_command_list_replay(commands, impl_from_ID2D1DeviceContext(child));
+        else hr = d2d_device_context_draw_effect(impl_from_ID2D1DeviceContext(child), effect,
                 NULL, NULL, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, parent);
+    }
     end_hr = ID2D1BitmapRenderTarget_EndDraw(target, NULL, NULL);
     if (SUCCEEDED(hr)) hr = end_hr;
     if (SUCCEEDED(hr)) hr = ID2D1BitmapRenderTarget_GetBitmap(target, bitmap);
 done:
     if (child) ID2D1DeviceContext6_Release(child);
     if (target) ID2D1BitmapRenderTarget_Release(target);
-    ID2D1Effect_Release(effect);
+    if (effect) ID2D1Effect_Release(effect);
+    if (commands) ID2D1CommandList_Release(commands);
     return hr;
 }
 
@@ -3467,13 +3685,14 @@ static HRESULT d2d_device_context_draw_arithmetic(struct d2d_device_context *con
     struct d2d_brush *brushes[2] = {NULL, NULL};
     D2D1_VECTOR_4F coefficients;
     D2D1_RECT_F source, destination;
-    D2D1_SIZE_F sizes[2], output_size;
+    D2D1_RECT_F inputs[2];
     const struct d2d_effect_frame *ancestor;
     struct d2d_effect_frame frame = {effect, parent};
     ID2D1Image *input;
     BOOL clamp;
     HRESULT hr;
     unsigned int i;
+    float dpi_x, dpi_y;
 
     for (ancestor = parent; ancestor; ancestor = ancestor->parent)
         if (ancestor->effect == effect) return D2DERR_CYCLIC_GRAPH;
@@ -3487,19 +3706,25 @@ static HRESULT d2d_device_context_draw_arithmetic(struct d2d_device_context *con
             hr = D2DERR_WRONG_STATE;
             goto done;
         }
-        hr = d2d_effect_input_bitmap(context, input, &frame, &bitmaps[i], &sizes[i]);
+        hr = d2d_effect_input_bitmap(context, input, &frame, &bitmaps[i], &inputs[i]);
         ID2D1Image_Release(input);
         if (FAILED(hr)) goto done;
     }
-    output_size = d2d_arithmetic_size(&coefficients, sizes);
-    d2d_rect_set(&source, 0.0f, 0.0f, output_size.width, output_size.height);
+    source = d2d_arithmetic_bounds(&coefficients, inputs);
     if (image_rect) d2d_rect_intersect(&source, image_rect);
     if (source.left >= source.right || source.top >= source.bottom)
     {
         hr = S_OK;
         goto done;
     }
-    d2d_rect_set(&destination, 0.0f, 0.0f, source.right - source.left, source.bottom - source.top);
+    destination = source;
+    if (image_rect)
+    {
+        destination.left -= image_rect->left;
+        destination.right -= image_rect->left;
+        destination.top -= image_rect->top;
+        destination.bottom -= image_rect->top;
+    }
     if (offset)
     {
         destination.left += offset->x;
@@ -3508,12 +3733,20 @@ static HRESULT d2d_device_context_draw_arithmetic(struct d2d_device_context *con
         destination.bottom += offset->y;
     }
     brush_desc.transform = identity;
-    brush_desc.transform._31 = destination.left - source.left;
-    brush_desc.transform._32 = destination.top - source.top;
     bitmap_desc.interpolationMode = interpolation_mode;
     for (i = 0; i < 2; ++i)
+    {
+        brush_desc.transform._31 = destination.left - source.left + inputs[i].left;
+        brush_desc.transform._32 = destination.top - source.top + inputs[i].top;
+        if (context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS)
+        {
+            ID2D1Bitmap_GetDpi(bitmaps[i], &dpi_x, &dpi_y);
+            brush_desc.transform._11 = dpi_x / 96.0f;
+            brush_desc.transform._22 = dpi_y / 96.0f;
+        }
         if (FAILED(hr = d2d_bitmap_brush_create(context->factory, bitmaps[i], &bitmap_desc,
                 &brush_desc, &brushes[i]))) goto done;
+    }
     if (FAILED(hr = ID2D1Factory_CreateRectangleGeometry(context->factory, &destination, &geometry))) goto done;
 
     context->arithmetic_coefficients = &coefficients;
@@ -3532,6 +3765,220 @@ done:
         if (bitmaps[i]) ID2D1Bitmap_Release(bitmaps[i]);
     }
     return hr;
+}
+
+static HRESULT d2d_device_context_draw_color_matrix(struct d2d_device_context *context, ID2D1Effect *effect,
+        const D2D1_POINT_2F *offset, const D2D1_RECT_F *image_rect, D2D1_INTERPOLATION_MODE interpolation_mode,
+        const struct d2d_effect_frame *parent)
+{
+    struct d2d_effect_frame frame = {effect, parent};
+    const struct d2d_effect_frame *ancestor;
+    D2D1_COLORMATRIX_ALPHA_MODE alpha_mode;
+    D2D1_MATRIX_5X4_F matrix;
+    ID2D1Bitmap *bitmap = NULL;
+    ID2D1Image *input;
+    D2D1_RECT_F source, destination;
+    D2D1_RECT_F bounds;
+    BOOL clamp;
+    float dpi_x, dpi_y;
+    HRESULT hr;
+
+    for (ancestor = parent; ancestor; ancestor = ancestor->parent)
+        if (ancestor->effect == effect) return D2DERR_CYCLIC_GRAPH;
+    if (FAILED(hr = ID2D1Effect_GetValue(effect, D2D1_COLORMATRIX_PROP_COLOR_MATRIX,
+            D2D1_PROPERTY_TYPE_MATRIX_5X4, (BYTE *)&matrix, sizeof(matrix)))) return hr;
+    if (FAILED(hr = ID2D1Effect_GetValue(effect, D2D1_COLORMATRIX_PROP_ALPHA_MODE,
+            D2D1_PROPERTY_TYPE_ENUM, (BYTE *)&alpha_mode, sizeof(alpha_mode)))) return hr;
+    if (FAILED(hr = ID2D1Effect_GetValue(effect, D2D1_COLORMATRIX_PROP_CLAMP_OUTPUT,
+            D2D1_PROPERTY_TYPE_BOOL, (BYTE *)&clamp, sizeof(clamp)))) return hr;
+    if (alpha_mode != D2D1_COLORMATRIX_ALPHA_MODE_PREMULTIPLIED
+            && alpha_mode != D2D1_COLORMATRIX_ALPHA_MODE_STRAIGHT) return E_INVALIDARG;
+    ID2D1Effect_GetInput(effect, 0, &input);
+    if (!input) return D2DERR_WRONG_STATE;
+    hr = d2d_effect_input_bitmap(context, input, &frame, &bitmap, &bounds);
+    ID2D1Image_Release(input);
+    if (FAILED(hr)) return hr;
+    source = bounds;
+    if (image_rect) d2d_rect_intersect(&source, image_rect);
+    if (source.right > source.left && source.bottom > source.top)
+    {
+        destination = source;
+        if (image_rect)
+        {
+            destination.left -= image_rect->left;
+            destination.right -= image_rect->left;
+            destination.top -= image_rect->top;
+            destination.bottom -= image_rect->top;
+        }
+        source.left -= bounds.left;
+        source.right -= bounds.left;
+        source.top -= bounds.top;
+        source.bottom -= bounds.top;
+        if (context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS)
+        {
+            ID2D1Bitmap_GetDpi(bitmap, &dpi_x, &dpi_y);
+            source.left *= 96.0f / dpi_x;
+            source.right *= 96.0f / dpi_x;
+            source.top *= 96.0f / dpi_y;
+            source.bottom *= 96.0f / dpi_y;
+        }
+        context->color_matrix = &matrix;
+        context->color_matrix_mode = alpha_mode;
+        context->color_matrix_clamp = clamp;
+        d2d_device_context_draw_bitmap(context, bitmap, &destination, 1.0f,
+                interpolation_mode, &source, offset, NULL);
+        context->color_matrix = NULL;
+        hr = context->error.code;
+    }
+    ID2D1Bitmap_Release(bitmap);
+    return hr;
+}
+
+static HRESULT d2d_shadow_pass(struct d2d_device_context *context, ID2D1Bitmap *input,
+        const D2D1_RECT_F *input_bounds, const D2D1_RECT_F *bounds, float scale_x, float scale_y,
+        float sigma, BOOL vertical, const D2D1_VECTOR_4F *color, ID2D1Bitmap **output)
+{
+    D2D1_PIXEL_FORMAT format = {DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED};
+    D2D1_BITMAP_BRUSH_PROPERTIES1 bitmap_desc = {D2D1_EXTEND_MODE_CLAMP,
+            D2D1_EXTEND_MODE_CLAMP, D2D1_INTERPOLATION_MODE_LINEAR};
+    D2D1_BRUSH_PROPERTIES brush_desc = {1.0f};
+    D2D1_COLOR_F transparent = {0};
+    ID2D1BitmapRenderTarget *target = NULL;
+    ID2D1DeviceContext6 *iface = NULL;
+    struct d2d_device_context *child;
+    struct d2d_brush *brush = NULL;
+    D2D1_SIZE_F input_size = ID2D1Bitmap_GetSize(input);
+    D2D1_SIZE_U size;
+    D2D1_RECT_F rect;
+    D2D1_VECTOR_4F kernel;
+    HRESULT hr, end_hr;
+    UINT32 max_size = ID2D1DeviceContext6_GetMaximumBitmapSize(&context->ID2D1DeviceContext6_iface);
+    float width = roundf((bounds->right - bounds->left) * scale_x);
+    float height = roundf((bounds->bottom - bounds->top) * scale_y);
+
+    *output = NULL;
+    if (!isfinite(width) || !isfinite(height) || width > max_size || height > max_size)
+        return D2DERR_EXCEEDS_MAX_BITMAP_SIZE;
+    if (width <= 0.0f || height <= 0.0f || input_size.width <= 0.0f || input_size.height <= 0.0f)
+        return E_INVALIDARG;
+    size.width = width;
+    size.height = height;
+    if (FAILED(hr = ID2D1DeviceContext6_CreateCompatibleRenderTarget(&context->ID2D1DeviceContext6_iface,
+            NULL, &size, &format, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, &target))) goto done;
+    if (FAILED(hr = ID2D1BitmapRenderTarget_QueryInterface(target, &IID_ID2D1DeviceContext6,
+            (void **)&iface))) goto done;
+    child = impl_from_ID2D1DeviceContext(iface);
+    ID2D1DeviceContext6_SetDpi(iface, 96.0f, 96.0f);
+    ID2D1DeviceContext6_SetUnitMode(iface, D2D1_UNIT_MODE_PIXELS);
+    brush_desc.transform = identity;
+    brush_desc.transform._11 = (input_bounds->right - input_bounds->left) * scale_x / input_size.width;
+    brush_desc.transform._22 = (input_bounds->bottom - input_bounds->top) * scale_y / input_size.height;
+    brush_desc.transform._31 = (input_bounds->left - bounds->left) * scale_x;
+    brush_desc.transform._32 = (input_bounds->top - bounds->top) * scale_y;
+    if (FAILED(hr = d2d_bitmap_brush_create(context->factory, input, &bitmap_desc, &brush_desc, &brush)))
+        goto done;
+    kernel.x = vertical ? 0.0f : 1.0f / ((input_bounds->right - input_bounds->left) * scale_x);
+    kernel.y = vertical ? 1.0f / ((input_bounds->bottom - input_bounds->top) * scale_y) : 0.0f;
+    kernel.z = sigma;
+    kernel.w = ceilf(3.0f * sigma);
+    d2d_rect_set(&rect, 0.0f, 0.0f, width, height);
+    ID2D1DeviceContext6_BeginDraw(iface);
+    ID2D1DeviceContext6_Clear(iface, &transparent);
+    child->shadow_kernel = &kernel;
+    child->shadow_color = color;
+    ID2D1DeviceContext6_FillRectangle(iface, &rect, &brush->ID2D1Brush_iface);
+    child->shadow_kernel = NULL;
+    child->shadow_color = NULL;
+    end_hr = ID2D1DeviceContext6_EndDraw(iface, NULL, NULL);
+    if (FAILED(end_hr)) {hr = end_hr; goto done;}
+    hr = ID2D1BitmapRenderTarget_GetBitmap(target, output);
+done:
+    if (brush) ID2D1Brush_Release(&brush->ID2D1Brush_iface);
+    if (iface) ID2D1DeviceContext6_Release(iface);
+    if (target) ID2D1BitmapRenderTarget_Release(target);
+    return hr;
+}
+
+static HRESULT d2d_device_context_draw_shadow(struct d2d_device_context *context, ID2D1Effect *effect,
+        const D2D1_POINT_2F *offset, const D2D1_RECT_F *image_rect, D2D1_INTERPOLATION_MODE interpolation_mode,
+        const struct d2d_effect_frame *parent)
+{
+    struct d2d_effect_frame frame = {effect, parent};
+    const struct d2d_effect_frame *ancestor;
+    ID2D1Bitmap *bitmap = NULL, *horizontal = NULL, *shadow = NULL;
+    ID2D1Image *input;
+    D2D1_VECTOR_4F color, white = {1.0f, 1.0f, 1.0f, 1.0f};
+    D2D1_RECT_F input_bounds, bounds, source, destination;
+    BOOL pixels = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS;
+    float scale_x = pixels ? 1.0f : context->desc.dpiX / 96.0f;
+    float scale_y = pixels ? 1.0f : context->desc.dpiY / 96.0f;
+    float sigma, sigma_x, sigma_y;
+    HRESULT hr;
+
+    for (ancestor = parent; ancestor; ancestor = ancestor->parent)
+        if (ancestor->effect == effect) return D2DERR_CYCLIC_GRAPH;
+    if (FAILED(hr = ID2D1Effect_GetValue(effect, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
+            D2D1_PROPERTY_TYPE_FLOAT, (BYTE *)&sigma, sizeof(sigma)))) return hr;
+    if (!isfinite(sigma) || sigma < 0.0f) return E_INVALIDARG;
+    if (FAILED(hr = ID2D1Effect_GetValue(effect, D2D1_SHADOW_PROP_COLOR,
+            D2D1_PROPERTY_TYPE_VECTOR4, (BYTE *)&color, sizeof(color)))) return hr;
+    ID2D1Effect_GetInput(effect, 0, &input);
+    if (!input) return D2DERR_WRONG_STATE;
+    hr = d2d_effect_input_bitmap(context, input, &frame, &bitmap, &input_bounds);
+    ID2D1Image_Release(input);
+    if (FAILED(hr)) return hr;
+    if (input_bounds.right <= input_bounds.left || input_bounds.bottom <= input_bounds.top) goto done;
+    sigma_x = sigma * context->desc.dpiX / 96.0f;
+    sigma_y = sigma * context->desc.dpiY / 96.0f;
+    bounds.left = floorf(input_bounds.left * scale_x - 3.0f * sigma_x) / scale_x;
+    bounds.top = floorf(input_bounds.top * scale_y - 3.0f * sigma_y) / scale_y;
+    bounds.right = ceilf(input_bounds.right * scale_x + 3.0f * sigma_x) / scale_x;
+    bounds.bottom = ceilf(input_bounds.bottom * scale_y + 3.0f * sigma_y) / scale_y;
+    if (FAILED(hr = d2d_shadow_pass(context, bitmap, &input_bounds, &bounds, scale_x, scale_y,
+            sigma_x, FALSE, &white, &horizontal))) goto done;
+    if (FAILED(hr = d2d_shadow_pass(context, horizontal, &bounds, &bounds, scale_x, scale_y,
+            sigma_y, TRUE, &color, &shadow))) goto done;
+    source = bounds;
+    if (image_rect) d2d_rect_intersect(&source, image_rect);
+    if (source.right > source.left && source.bottom > source.top)
+    {
+        destination = source;
+        if (image_rect)
+        {
+            destination.left -= image_rect->left;
+            destination.right -= image_rect->left;
+            destination.top -= image_rect->top;
+            destination.bottom -= image_rect->top;
+        }
+        source.left = (source.left - bounds.left) * scale_x;
+        source.top = (source.top - bounds.top) * scale_y;
+        source.right = (source.right - bounds.left) * scale_x;
+        source.bottom = (source.bottom - bounds.top) * scale_y;
+        d2d_device_context_draw_bitmap(context, shadow, &destination, 1.0f,
+                interpolation_mode, &source, offset, NULL);
+        hr = context->error.code;
+    }
+done:
+    if (shadow) ID2D1Bitmap_Release(shadow);
+    if (horizontal) ID2D1Bitmap_Release(horizontal);
+    ID2D1Bitmap_Release(bitmap);
+    return hr;
+}
+
+static HRESULT d2d_device_context_draw_effect(struct d2d_device_context *context, ID2D1Effect *effect,
+        const D2D1_POINT_2F *offset, const D2D1_RECT_F *image_rect, D2D1_INTERPOLATION_MODE interpolation_mode,
+        const struct d2d_effect_frame *parent)
+{
+    CLSID clsid;
+    HRESULT hr;
+
+    if (FAILED(hr = ID2D1Effect_GetValue(effect, D2D1_PROPERTY_CLSID, D2D1_PROPERTY_TYPE_CLSID,
+            (BYTE *)&clsid, sizeof(clsid)))) return hr;
+    if (IsEqualGUID(&clsid, &CLSID_D2D1Shadow))
+        return d2d_device_context_draw_shadow(context, effect, offset, image_rect, interpolation_mode, parent);
+    if (IsEqualGUID(&clsid, &CLSID_D2D1ColorMatrix))
+        return d2d_device_context_draw_color_matrix(context, effect, offset, image_rect, interpolation_mode, parent);
+    return d2d_device_context_draw_arithmetic(context, effect, offset, image_rect, interpolation_mode, parent);
 }
 
 static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *iface, ID2D1Image *image,
@@ -3617,7 +4064,7 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
         ID2D1DeviceContext6_SetTransform(iface, &transform);
         if (image_rect)
             ID2D1DeviceContext6_PushAxisAlignedClip(iface, image_rect, D2D1_ANTIALIAS_MODE_ALIASED);
-        hr = d2d_command_list_replay(command_list, (ID2D1DeviceContext *)iface);
+        hr = d2d_command_list_replay(command_list, context);
         if (image_rect)
             ID2D1DeviceContext6_PopAxisAlignedClip(iface);
         ID2D1DeviceContext6_SetTransform(iface, &previous_transform);
@@ -3629,7 +4076,7 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
     if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Effect, (void **)&effect)))
     {
         HRESULT hr = composite_mode == D2D1_COMPOSITE_MODE_SOURCE_OVER
-                ? d2d_device_context_draw_arithmetic(context, effect, target_offset, image_rect, interpolation_mode, NULL)
+                ? d2d_device_context_draw_effect(context, effect, target_offset, image_rect, interpolation_mode, NULL)
                 : D2DERR_UNSUPPORTED_OPERATION;
         ID2D1Effect_Release(effect);
         if (FAILED(hr)) d2d_device_context_set_error(context, hr);
@@ -3681,12 +4128,7 @@ static void STDMETHODCALLTYPE d2d_device_context_ID2D1DeviceContext_DrawBitmap(I
 static void STDMETHODCALLTYPE d2d_device_context_ID2D1DeviceContext_PushLayer(ID2D1DeviceContext6 *iface,
         const D2D1_LAYER_PARAMETERS1 *layer_parameters, ID2D1Layer *layer)
 {
-    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
-
-    FIXME("iface %p, layer_parameters %p, layer %p stub!\n", iface, layer_parameters, layer);
-
-    if (context->target.type == D2D_TARGET_COMMAND_LIST)
-        d2d_command_list_push_layer(context->target.command_list, context, layer_parameters, layer);
+    d2d_device_context_push_layer(impl_from_ID2D1DeviceContext(iface), layer_parameters, layer);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_InvalidateEffectInputRectangle(ID2D1DeviceContext6 *iface,
@@ -5127,6 +5569,10 @@ static const char shape_ps_code[] =
     "    float4 data[3];\n"
     "} colour_brush, opacity_brush;\n"
     "float4 coefficients;\n"
+    "float4 color_matrix[5];\n"
+    "uint color_matrix_mode;\n"
+    "uint shadow_mode;\n"
+    "float4 shadow_kernel, shadow_color;\n"
     "\n"
     "SamplerState s0, s1;\n"
     "Texture2D t0, t1;\n"
@@ -5255,7 +5701,21 @@ static const char shape_ps_code[] =
     "\n"
     "    texcoord.x = dot(position.xy, transform[0].xy) + transform[0].z;\n"
     "    texcoord.y = dot(position.xy, transform[1].xy) + transform[1].z;\n"
-    "    if (arithmetic && (any(texcoord < 0.0) || any(texcoord >= 1.0)))\n"
+    "    if (shadow_mode)\n"
+    "    {\n"
+    "        float alpha = 0.0, total = 0.0;\n"
+    "        for (int k = -(int)shadow_kernel.w; k <= (int)shadow_kernel.w; ++k)\n"
+    "        {\n"
+    "            float weight = shadow_kernel.z > 0.0 ? exp(-0.5 * k * k / (shadow_kernel.z * shadow_kernel.z)) : 1.0;\n"
+    "            float2 uv = texcoord + k * shadow_kernel.xy;\n"
+    "            if (all(uv >= 0.0) && all(uv < 1.0))\n"
+    "                alpha += (ignore_alpha ? 1.0 : t.SampleLevel(s, uv, 0).a) * weight;\n"
+    "            total += weight;\n"
+    "        }\n"
+    "        alpha = alpha / total * shadow_color.a;\n"
+    "        return float4(shadow_color.rgb * alpha, alpha);\n"
+    "    }\n"
+    "    if ((arithmetic || color_matrix_mode) && (any(texcoord < 0.0) || any(texcoord >= 1.0)))\n"
     "        return float4(0.0, 0.0, 0.0, 0.0);\n"
     "    colour = t.Sample(s, texcoord);\n"
     "    if (ignore_alpha)\n"
@@ -5288,6 +5748,15 @@ static const char shape_ps_code[] =
     "                + coefficients.z * other + coefficients.w;\n"
     "        if (clamp_output)\n"
     "            colour = saturate(colour);\n"
+    "    }\n"
+    "    else if (color_matrix_mode)\n"
+    "    {\n"
+    "        if (color_matrix_mode == 1)\n"
+    "            colour.rgb = colour.a ? colour.rgb / colour.a : float3(0.0, 0.0, 0.0);\n"
+    "        colour = colour.r * color_matrix[0] + colour.g * color_matrix[1]\n"
+    "                + colour.b * color_matrix[2] + colour.a * color_matrix[3] + color_matrix[4];\n"
+    "        if (clamp_output) colour = saturate(colour);\n"
+    "        if (color_matrix_mode == 1) colour.rgb *= colour.a;\n"
     "    }\n"
     "    else if (opacity_brush.type < BRUSH_TYPE_COUNT)\n"
     "        colour *= sample_brush(opacity_brush, t1, s1, b1, i.p).a;\n"
