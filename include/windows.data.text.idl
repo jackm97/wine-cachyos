@@ -1,0 +1,158 @@
+/*
+ * Copyright 2026 Mirko Brombin
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
+#ifdef __WIDL__
+#pragma winrt ns_prefix
+#endif
+
+import "inspectable.idl";
+import "asyncinfo.idl";
+import "eventtoken.idl";
+import "windowscontracts.idl";
+import "windows.foundation.idl";
+
+namespace Windows.Data.Text {
+    typedef enum AlternateNormalizationFormat AlternateNormalizationFormat;
+    typedef struct TextSegment TextSegment;
+
+    interface IAlternateWordForm;
+    interface IWordSegment;
+    interface IWordsSegmenter;
+    interface IWordsSegmenterFactory;
+
+    runtimeclass AlternateWordForm;
+    runtimeclass WordSegment;
+    runtimeclass WordsSegmenter;
+
+    declare {
+        interface Windows.Foundation.Collections.IIterable<Windows.Data.Text.AlternateWordForm *>;
+        interface Windows.Foundation.Collections.IIterable<Windows.Data.Text.WordSegment *>;
+        interface Windows.Foundation.Collections.IIterator<Windows.Data.Text.AlternateWordForm *>;
+        interface Windows.Foundation.Collections.IIterator<Windows.Data.Text.WordSegment *>;
+        interface Windows.Foundation.Collections.IVectorView<Windows.Data.Text.AlternateWordForm *>;
+        interface Windows.Foundation.Collections.IVectorView<Windows.Data.Text.WordSegment *>;
+        interface Windows.Foundation.Collections.IVector<Windows.Data.Text.AlternateWordForm *>;
+        interface Windows.Foundation.Collections.IVector<Windows.Data.Text.WordSegment *>;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0)
+    ]
+    enum AlternateNormalizationFormat
+    {
+        NotNormalized = 0,
+        Number        = 1,
+        Currency      = 3,
+        Date          = 4,
+        Time          = 5,
+    };
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0)
+    ]
+    struct TextSegment
+    {
+        UINT32 StartPosition;
+        UINT32 Length;
+    };
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        uuid(a5dd6357-bf2a-4c4f-a31f-29e71c6f8b35)
+    ]
+    delegate HRESULT WordSegmentsTokenizingHandler([in] Windows.Foundation.Collections.IIterable<Windows.Data.Text.WordSegment *> *precedingWords,
+                                                   [in] Windows.Foundation.Collections.IIterable<Windows.Data.Text.WordSegment *> *words);
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Text.AlternateWordForm),
+        uuid(47396c1e-51b9-4207-9146-248e636a1d1d)
+    ]
+    interface IAlternateWordForm : IInspectable
+    {
+        [propget] HRESULT SourceTextSegment([out, retval] Windows.Data.Text.TextSegment *value);
+        [propget] HRESULT AlternateText([out, retval] HSTRING *value);
+        [propget] HRESULT NormalizationFormat([out, retval] Windows.Data.Text.AlternateNormalizationFormat *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Text.WordSegment),
+        uuid(d2d4ba6d-987c-4cc0-b6bd-d49a11b38f9a)
+    ]
+    interface IWordSegment : IInspectable
+    {
+        [propget] HRESULT Text([out, retval] HSTRING *value);
+        [propget] HRESULT SourceTextSegment([out, retval] Windows.Data.Text.TextSegment *value);
+        [propget] HRESULT AlternateForms([out, retval] Windows.Foundation.Collections.IVectorView<Windows.Data.Text.AlternateWordForm *> **value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Text.WordsSegmenter),
+        uuid(86b4d4d1-b2fe-4e34-a81d-66640300454f)
+    ]
+    interface IWordsSegmenter : IInspectable
+    {
+        [propget] HRESULT ResolvedLanguage([out, retval] HSTRING *value);
+        HRESULT GetTokenAt([in] HSTRING text, [in] UINT32 startIndex, [out, retval] Windows.Data.Text.WordSegment **result);
+        HRESULT GetTokens([in] HSTRING text, [out, retval] Windows.Foundation.Collections.IVectorView<Windows.Data.Text.WordSegment *> **result);
+        HRESULT Tokenize([in] HSTRING text, [in] UINT32 startIndex, [in] Windows.Data.Text.WordSegmentsTokenizingHandler *handler);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Text.WordsSegmenter),
+        uuid(e6977274-fc35-455c-8bfb-6d7f4653ca97)
+    ]
+    interface IWordsSegmenterFactory : IInspectable
+    {
+        HRESULT CreateWithLanguage([in] HSTRING language, [out, retval] Windows.Data.Text.WordsSegmenter **result);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile),
+        threading(both)
+    ]
+    runtimeclass AlternateWordForm
+    {
+        [default] interface Windows.Data.Text.IAlternateWordForm;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile),
+        threading(both)
+    ]
+    runtimeclass WordSegment
+    {
+        [default] interface Windows.Data.Text.IWordSegment;
+    }
+
+    [
+        activatable(Windows.Data.Text.IWordsSegmenterFactory, Windows.Foundation.UniversalApiContract, 1.0),
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile),
+        threading(both)
+    ]
+    runtimeclass WordsSegmenter
+    {
+        [default] interface Windows.Data.Text.IWordsSegmenter;
+    }
+}

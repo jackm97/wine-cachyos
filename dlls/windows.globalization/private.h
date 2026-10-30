@@ -32,12 +32,24 @@
 #define WIDL_using_Windows_Foundation_Numerics
 #include "windows.foundation.h"
 
+#define WIDL_using_Windows_Data_Text
 #define WIDL_using_Windows_Globalization
 #define WIDL_using_Windows_System_UserProfile
+#include "windows.data.text.h"
 #include "windows.globalization.h"
 #include "windows.system.userprofile.h"
 
 extern IActivationFactory *geographic_region_factory;
+extern IActivationFactory *words_segmenter_factory;
+
+struct vector_iids
+{
+    const GUID *vector;
+    const GUID *view;
+    const GUID *iterable;
+    const GUID *iterator;
+};
+extern HRESULT vector_create( const struct vector_iids *iids, void **out );
 
 #include "wine/debug.h"
 #include "wine/list.h"

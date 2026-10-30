@@ -29,6 +29,8 @@
 #define WIDL_using_Windows_Foundation
 #define WIDL_using_Windows_Foundation_Collections
 #include "windows.foundation.h"
+#define WIDL_using_Windows_Data_Text
+#include "windows.data.text.h"
 #define WIDL_using_Windows_Globalization
 #include "windows.globalization.h"
 #define WIDL_using_Windows_System_UserProfile
@@ -251,11 +253,13 @@ static void test_Language(void)
     enum LanguageLayoutDirection direction;
     WCHAR buffer[LOCALE_NAME_MAX_LENGTH];
     ILanguageFactory *language_factory;
+    ILanguageStatics *language_statics;
     IActivationFactory *factory;
     ILanguage2 *language2;
     ILanguage *language;
     HSTRING tag, str;
     const WCHAR *buf;
+    boolean result;
     unsigned int i;
     HRESULT hr;
 
@@ -279,6 +283,34 @@ static void test_Language(void)
 
     hr = IActivationFactory_QueryInterface(factory, &IID_ILanguageFactory, (void **)&language_factory);
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IActivationFactory_QueryInterface(factory, &IID_ILanguageStatics, (void **)&language_statics);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = WindowsCreateString(L"en-US", 5, &str);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    result = FALSE;
+    hr = ILanguageStatics_IsWellFormed(language_statics, str, &result);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(result, "Expected a well-formed language tag.\n");
+    WindowsDeleteString(str);
+
+    hr = WindowsCreateString(L"test-tag", 8, &str);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    result = TRUE;
+    hr = ILanguageStatics_IsWellFormed(language_statics, str, &result);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!result, "Expected an invalid language tag.\n");
+    WindowsDeleteString(str);
+
+    hr = ILanguageStatics_get_CurrentInputMethodLanguageTag(language_statics, &tag);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        buf = WindowsGetStringRawBuffer(tag, NULL);
+        ok(buf && *buf, "Expected a language tag.\n");
+        WindowsDeleteString(tag);
+    }
 
     hr = ILanguageFactory_QueryInterface(language_factory, &IID_IInspectable, (void **)&tmp_inspectable);
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
@@ -347,6 +379,7 @@ static void test_Language(void)
     }
 
     ILanguageFactory_Release(language_factory);
+    ILanguageStatics_Release(language_statics);
 
     IAgileObject_Release(agile_object);
     IInspectable_Release(inspectable);
@@ -493,6 +526,108 @@ done:
     ok( ref == 1, "got ref %ld.\n", ref );
 }
 
+static void test_WordsSegmenter(void)
+{
+    static const WCHAR *class_name = L"Windows.Data.Text.WordsSegmenter";
+    static const WCHAR text[] = L"Hello big world";
+    static const struct
+    {
+        const WCHAR *text;
+        UINT32 start;
+        UINT32 length;
+    }
+    expect[] =
+    {
+        {L"Hello", 0, 5},
+        {L"big", 6, 3},
+        {L"world", 10, 5},
+    };
+    IWordsSegmenterFactory *segmenter_factory;
+    IVectorView_WordSegment *tokens;
+    IActivationFactory *factory;
+    IWordsSegmenter *segmenter;
+    IWordSegment *segment;
+    TextSegment source;
+    HSTRING str, value;
+    UINT32 i, size;
+    HRESULT hr;
+
+    hr = WindowsCreateString(class_name, wcslen(class_name), &str);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = RoGetActivationFactory(str, &IID_IActivationFactory, (void **)&factory);
+    ok(hr == S_OK || broken(hr == REGDB_E_CLASSNOTREG), "Unexpected hr %#lx.\n", hr);
+    WindowsDeleteString(str);
+    if (hr == REGDB_E_CLASSNOTREG)
+    {
+        win_skip("%s runtimeclass not registered, skipping tests.\n", wine_dbgstr_w(class_name));
+        return;
+    }
+
+    check_interface(factory, &IID_IAgileObject);
+
+    hr = IActivationFactory_QueryInterface(factory, &IID_IWordsSegmenterFactory, (void **)&segmenter_factory);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = WindowsCreateString(L"en-US", 5, &str);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IWordsSegmenterFactory_CreateWithLanguage(segmenter_factory, str, &segmenter);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    WindowsDeleteString(str);
+
+    hr = IWordsSegmenter_get_ResolvedLanguage(segmenter, &value);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!wcscmp(WindowsGetStringRawBuffer(value, NULL), L"en-US"), "Unexpected language %s.\n",
+       wine_dbgstr_w(WindowsGetStringRawBuffer(value, NULL)));
+    WindowsDeleteString(value);
+
+    hr = WindowsCreateString(text, wcslen(text), &str);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IWordsSegmenter_GetTokens(segmenter, str, &tokens);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IVectorView_WordSegment_get_Size(tokens, &size);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(size == ARRAY_SIZE(expect), "Unexpected size %u.\n", size);
+
+    for (i = 0; i < size && i < ARRAY_SIZE(expect); i++)
+    {
+        winetest_push_context("%u", i);
+
+        hr = IVectorView_WordSegment_GetAt(tokens, i, &segment);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+        hr = IWordSegment_get_Text(segment, &value);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        ok(!wcscmp(WindowsGetStringRawBuffer(value, NULL), expect[i].text), "Unexpected text %s.\n",
+           wine_dbgstr_w(WindowsGetStringRawBuffer(value, NULL)));
+        WindowsDeleteString(value);
+
+        hr = IWordSegment_get_SourceTextSegment(segment, &source);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        ok(source.StartPosition == expect[i].start, "Unexpected start %u.\n", source.StartPosition);
+        ok(source.Length == expect[i].length, "Unexpected length %u.\n", source.Length);
+
+        IWordSegment_Release(segment);
+        winetest_pop_context();
+    }
+    IVectorView_WordSegment_Release(tokens);
+
+    hr = IWordsSegmenter_GetTokenAt(segmenter, str, 7, &segment);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IWordSegment_get_Text(segment, &value);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!wcscmp(WindowsGetStringRawBuffer(value, NULL), L"big"), "Unexpected text %s.\n",
+       wine_dbgstr_w(WindowsGetStringRawBuffer(value, NULL)));
+    WindowsDeleteString(value);
+    IWordSegment_Release(segment);
+
+    WindowsDeleteString(str);
+    IWordsSegmenter_Release(segmenter);
+    IWordsSegmenterFactory_Release(segmenter_factory);
+    IActivationFactory_Release(factory);
+}
+
 START_TEST(globalization)
 {
     HMODULE kernel32;
@@ -508,6 +643,7 @@ START_TEST(globalization)
     test_Language();
     test_GeographicRegion();
     test_ApplicationLanguages();
+    test_WordsSegmenter();
 
     RoUninitialize();
 }
