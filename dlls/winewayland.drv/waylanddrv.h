@@ -34,6 +34,8 @@
 #include "relative-pointer-unstable-v1-client-protocol.h"
 #include "text-input-unstable-v3-client-protocol.h"
 #include "viewporter-client-protocol.h"
+#include "xdg-activation-v1-client-protocol.h"
+#include "xdg-foreign-unstable-v2-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 #include "wlr-data-control-unstable-v1-client-protocol.h"
@@ -67,6 +69,7 @@ enum wayland_window_message
     WM_WAYLAND_INIT_DISPLAY_DEVICES = WM_WINE_FIRST_DRIVER_MSG,
     WM_WAYLAND_CONFIGURE,
     WM_WAYLAND_SET_FOREGROUND,
+    WM_WAYLAND_ACTIVATE_FOREIGN,
 };
 
 enum wayland_surface_config_state
@@ -168,6 +171,9 @@ struct wayland
     struct zxdg_output_manager_v1 *zxdg_output_manager_v1;
     struct wl_compositor *wl_compositor;
     struct xdg_wm_base *xdg_wm_base;
+    struct xdg_activation_v1 *xdg_activation_v1;
+    struct zxdg_exporter_v2 *zxdg_exporter_v2;
+    struct zxdg_importer_v2 *zxdg_importer_v2;
     struct wl_shm *wl_shm;
     struct wp_viewporter *wp_viewporter;
     struct wl_subcompositor *wl_subcompositor;
@@ -244,6 +250,7 @@ struct wayland_client_surface
     struct wl_surface *wl_surface;
     struct wl_subsurface *wl_subsurface;
     struct wp_viewport *wp_viewport;
+    struct wl_callback *foreign_activation_frame_callback;
 };
 
 struct wayland_shm_buffer
@@ -267,6 +274,12 @@ struct wayland_surface
     struct wp_viewport *wp_viewport;
     struct wayland_shm_buffer *small_icon_buffer;
     struct wayland_shm_buffer *big_icon_buffer;
+    struct zxdg_exported_v2 *zxdg_exported_v2;
+    struct zxdg_imported_v2 *zxdg_imported_v2;
+    RTL_ATOM exported_handle_atom;
+    RTL_ATOM imported_handle_atom;
+    HWND foreign_parent_hwnd;
+    BOOL foreign_activation_pending;
 
     enum wayland_surface_role role;
     union
@@ -312,6 +325,9 @@ void wayland_output_use_xdg_extension(struct wayland_output *output);
 struct wayland_surface *wayland_surface_create(HWND hwnd);
 void wayland_surface_destroy(struct wayland_surface *surface);
 void wayland_surface_make_toplevel(struct wayland_surface *surface);
+void wayland_surface_update_foreign_parent(struct wayland_surface *surface);
+void wayland_activate_foreign_child(HWND hwnd, uint32_t serial);
+void wayland_surface_activate_from_token(HWND hwnd);
 void wayland_surface_make_subsurface(struct wayland_surface *surface,
                                      struct wayland_surface *parent);
 void wayland_surface_clear_role(struct wayland_surface *surface);
@@ -328,8 +344,9 @@ void wayland_surface_coords_from_window(struct wayland_surface *surface,
 void wayland_surface_coords_to_window(struct wayland_surface *surface,
                                       double surface_x, double surface_y,
                                       int *window_x, int *window_y);
-struct wayland_client_surface *wayland_client_surface_create(HWND hwnd);
+struct wayland_client_surface *wayland_client_surface_create(HWND hwnd, int format, BOOL raw);
 void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel);
+void wayland_restack_client_surfaces(HWND toplevel);
 void wayland_surface_ensure_contents(struct wayland_surface *surface);
 void wayland_surface_set_title(struct wayland_surface *surface, LPCWSTR title);
 void wayland_surface_assign_icon(struct wayland_surface *surface);
@@ -372,6 +389,8 @@ struct wayland_win_data
     BOOL is_fullscreen;
     BOOL managed;
     BOOL layered_attribs_set;
+    /* the client surfaces and popups of this toplevel need restacking */
+    BOOL restack_pending;
 };
 
 struct wayland_win_data *wayland_win_data_get(HWND hwnd);

@@ -107,7 +107,7 @@ static BOOL wayland_opengl_surface_create(HWND hwnd, BOOL raw, int format, struc
     }
     *attrib++ = EGL_NONE;
 
-    if (!(client = wayland_client_surface_create(hwnd))) return FALSE;
+    if (!(client = wayland_client_surface_create(hwnd, format, raw))) return FALSE;
     gl = opengl_drawable_create(sizeof(*gl), &wayland_drawable_funcs, format, &client->client);
     client_surface_release(&client->client);
     if (!gl) return FALSE;

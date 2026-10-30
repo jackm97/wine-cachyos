@@ -201,13 +201,14 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     struct wayland_surface *surface;
     enum wayland_surface_role role;
     BOOL visible;
+    DWORD style = NtUserGetWindowLongW(data->hwnd, GWL_STYLE);
     DWORD exstyle = NtUserGetWindowLongW(data->hwnd, GWL_EXSTYLE);
     struct wl_region *input_region;
 
     TRACE("hwnd=%p\n", data->hwnd);
 
-    visible = ((NtUserGetWindowLongW(data->hwnd, GWL_STYLE) & WS_VISIBLE) == WS_VISIBLE) &&
-               (!(exstyle & WS_EX_LAYERED) || data->layered_attribs_set);
+    visible = ((style & WS_VISIBLE) == WS_VISIBLE) &&
+               (!(exstyle & WS_EX_LAYERED) || data->layered_attribs_set || data->client_surface);
 
     if (!visible) role = WAYLAND_SURFACE_ROLE_NONE;
     else if (toplevel_surface) role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
@@ -224,8 +225,11 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
     if (!(surface = data->wayland_surface) && !(surface = wayland_surface_create(data->hwnd))) return FALSE;
 
     /* Pass through mouse events for layered, transparent windows, to match
-     * Windows behavior. */
-    input_region = ((exstyle & WS_EX_TRANSPARENT) && (exstyle & WS_EX_LAYERED)) ?
+     * Windows behavior. Child windows only get a subsurface to host their
+     * client surface; their pointer input belongs to the toplevel, which
+     * routes it to the right child by position. */
+    input_region = (((exstyle & WS_EX_TRANSPARENT) && (exstyle & WS_EX_LAYERED)) ||
+                    (role == WAYLAND_SURFACE_ROLE_SUBSURFACE && (style & WS_CHILD))) ?
                    wl_compositor_create_region(process_wayland.wl_compositor) :
                    NULL;
     wl_surface_set_input_region(surface->wl_surface, input_region);
@@ -377,6 +381,19 @@ static inline HWND get_active_window(void)
     return NtUserGetGUIThreadInfo(GetCurrentThreadId(), &info) ? info.hwndActive : 0;
 }
 
+static BOOL is_mso_border_effect_window(HWND hwnd)
+{
+    static const WCHAR border_effect[] = u"MSO_BORDEREFFECT_WINDOW_CLASS";
+    WCHAR class_name[ARRAY_SIZE(border_effect)];
+    UNICODE_STRING name = {.Buffer = class_name, .MaximumLength = sizeof(class_name)};
+    DWORD style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
+    DWORD ex_style = NtUserGetWindowLongW(hwnd, GWL_EXSTYLE);
+
+    return NtUserGetClassName(hwnd, FALSE, &name) == ARRAY_SIZE(border_effect) - 1 &&
+           !wcsncmp(class_name, border_effect, ARRAY_SIZE(border_effect) - 1) &&
+           (style & WS_POPUP) && (ex_style & WS_EX_LAYERED);
+}
+
 /***********************************************************************
  *		is_window_managed
  *
@@ -389,6 +406,12 @@ static BOOL is_window_managed(HWND hwnd, UINT swp_flags, BOOL fullscreen)
     /* child windows are not managed */
     style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
     if ((style & (WS_CHILD|WS_POPUP)) == WS_CHILD) return FALSE;
+    /* owned tool popups (menus, flyouts) stay attached to their owner, even
+     * when active, since a Wayland toplevel cannot be positioned */
+    ex_style = NtUserGetWindowLongW(hwnd, GWL_EXSTYLE);
+    if ((style & WS_POPUP) && !(style & (WS_CAPTION|WS_THICKFRAME)) &&
+        (ex_style & WS_EX_TOOLWINDOW) && NtUserGetWindowRelative(hwnd, GW_OWNER))
+        return FALSE;
     /* activated windows are managed */
     if (!(swp_flags & (SWP_NOACTIVATE|SWP_HIDEWINDOW))) return TRUE;
     if (hwnd == get_active_window()) return TRUE;
@@ -404,7 +427,6 @@ static BOOL is_window_managed(HWND hwnd, UINT swp_flags, BOOL fullscreen)
         if (fullscreen) return TRUE;
     }
     /* application windows are managed */
-    ex_style = NtUserGetWindowLongW(hwnd, GWL_EXSTYLE);
     if (ex_style & WS_EX_APPWINDOW) return TRUE;
     /* windows that own popups are managed */
     if (has_owned_popups(hwnd)) return TRUE;
@@ -451,9 +473,13 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     struct wayland_surface *toplevel_surface;
     struct wayland_client_surface *client;
     struct wayland_win_data *data, *toplevel_data;
-    BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
+    BOOL border_effect, managed;
+    BOOL fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
 
-    TRACE("hwnd %p new_rects %s after %p flags %08x\n", hwnd, debugstr_window_rects(new_rects), insert_after, swp_flags);
+    TRACE("hwnd %p new_rects %s after %p flags %08x\n", hwnd,
+          debugstr_window_rects(new_rects), insert_after, swp_flags);
+
+    if ((border_effect = is_mso_border_effect_window(hwnd))) surface = NULL;
 
     /* Get the managed state with win_data unlocked, as is_window_managed
      * may need to query win_data information about other HWNDs and thus
@@ -463,16 +489,18 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     if (!(data = wayland_win_data_get(hwnd))) return;
     toplevel_data = toplevel && toplevel != hwnd ? wayland_win_data_get_nolock(toplevel) : NULL;
     toplevel_surface = toplevel_data ? toplevel_data->wayland_surface : NULL;
-
+    /* a moved child or popup may change the stacking of its toplevel */
+    if (toplevel_data) toplevel_data->restack_pending = TRUE;
     data->rects = *new_rects;
     data->is_fullscreen = fullscreen;
     data->managed = managed;
 
-    if (!surface)
+    if (!surface && (border_effect || !NtUserIsWindowVisible(hwnd) ||
+        (toplevel != hwnd && !data->client_surface)))
     {
         if ((client = data->client_surface))
         {
-            if (toplevel && NtUserIsWindowVisible(hwnd))
+            if (!border_effect && toplevel && NtUserIsWindowVisible(hwnd))
                 wayland_client_surface_attach(client, toplevel);
             else
                 wayland_client_surface_attach(client, NULL);
@@ -485,11 +513,11 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
         }
     }
     else if (wayland_win_data_create_wayland_surface(data, toplevel_surface))
-    {
         wayland_win_data_update_wayland_state(data);
-    }
 
     wayland_win_data_release(data);
+
+    if (toplevel) wayland_restack_client_surfaces(toplevel);
 }
 
 static void wayland_configure_window(HWND hwnd)
@@ -629,6 +657,9 @@ LRESULT WAYLAND_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_WAYLAND_SET_FOREGROUND:
         NtUserSetForegroundWindowInternal(hwnd);
+        return 0;
+    case WM_WAYLAND_ACTIVATE_FOREIGN:
+        wayland_surface_activate_from_token(hwnd);
         return 0;
     default:
         FIXME("got window msg %x hwnd %p wp %lx lp %lx\n", msg, hwnd, (long)wp, lp);
@@ -788,6 +819,8 @@ LRESULT WAYLAND_SysCommand(HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT 
 void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
 {
     HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
+    /* called on every present, query this before taking the win_data lock */
+    BOOL visible = toplevel && NtUserIsWindowVisible(hwnd);
     struct wayland_client_surface *old_client;
     struct wayland_win_data *data;
 
@@ -803,14 +836,24 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
 
         if ((data->client_surface = new_client))
         {
-            if (toplevel && NtUserIsWindowVisible(hwnd))
+            if (visible)
                 wayland_client_surface_attach(new_client, toplevel);
             else
                 wayland_client_surface_attach(new_client, NULL);
         }
     }
 
+    if (new_client && visible && !new_client->toplevel)
+    {
+        wayland_client_surface_attach(new_client, toplevel);
+        if (!new_client->toplevel && toplevel != hwnd &&
+            wayland_win_data_create_wayland_surface(data, NULL))
+            wayland_win_data_update_wayland_state(data);
+    }
+
     wayland_win_data_release(data);
+
+    if (toplevel) wayland_restack_client_surfaces(toplevel);
 }
 
 BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffer, HRGN damage_region)
@@ -833,6 +876,10 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
         {
             TRACE("Wayland surface not configured yet, not flushing\n");
         }
+    }
+    else if (is_mso_border_effect_window(hwnd))
+    {
+        committed = TRUE;
     }
 
     /* Update the latest window buffer for the wayland surface. Note that we
