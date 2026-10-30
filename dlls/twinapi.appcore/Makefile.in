@@ -10,4 +10,5 @@ SOURCES = \
 	client_device_information.c \
 	main.c \
 	retail_info.c \
+	shared_mode_settings.c \
 	winrt_factory.c

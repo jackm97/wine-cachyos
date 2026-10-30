@@ -70,6 +70,7 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         &advertising_manager_factory,
         &application_view_factory,
         &retail_info_factory,
+        &shared_mode_settings_factory,
     };
     const WCHAR *buffer = WindowsGetStringRawBuffer( classid, NULL );
     struct winrt_factory *impl;

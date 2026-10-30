@@ -38,6 +38,7 @@ namespace Windows.Security.ExchangeActiveSyncProvisioning {
 namespace Windows.System.Profile {
     runtimeclass AnalyticsInfo;
     runtimeclass RetailInfo;
+    runtimeclass SharedModeSettings;
 }
 namespace Windows.System.UserProfile {
     runtimeclass AdvertisingManager;
