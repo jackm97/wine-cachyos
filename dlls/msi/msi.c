@@ -1014,7 +1014,7 @@ UINT WINAPI MsiGetProductCodeW(LPCWSTR szComponent, LPWSTR szBuffer)
     if (MSIREG_OpenUserDataComponentKey(szComponent, NULL, &compkey, FALSE) != ERROR_SUCCESS &&
         MSIREG_OpenUserDataComponentKey(szComponent, L"S-1-5-18", &compkey, FALSE) != ERROR_SUCCESS)
     {
-        return ERROR_UNKNOWN_COMPONENT;
+        return msi_get_c2r_product_code( szComponent, szBuffer );
     }
 
     rc = RegEnumValueW( compkey, 0, squashed_prod, &sz, NULL, NULL, NULL, NULL );
@@ -3388,7 +3388,16 @@ static UINT MSI_ProvideQualifiedComponentEx(LPCWSTR szComponent,
     UINT ret;
     INSTALLSTATE state;
 
-    if (MSIREG_OpenUserComponentsKey( szComponent, &hkey, FALSE )) return ERROR_UNKNOWN_COMPONENT;
+    if (MSIREG_OpenUserComponentsKey( szComponent, &hkey, FALSE ))
+    {
+        WCHAR *path;
+
+        if (!msi_is_c2r_proofing_component( szComponent )) return ERROR_UNKNOWN_COMPONENT;
+        if ((ret = msi_get_c2r_proofing_path( szComponent, szQualifier, szProduct, &path ))) return ret;
+        ret = msi_strcpy_to_awstring( path, -1, lpPathBuf, pcchPathBuf );
+        free( path );
+        return ret;
+    }
 
     desc = reg_get_multisz( hkey, szQualifier );
     RegCloseKey(hkey);

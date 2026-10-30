@@ -259,6 +259,615 @@ LPWSTR msi_reg_get_val_str( HKEY hkey, LPCWSTR name )
     return val;
 }
 
+static const WCHAR c2r_proofing_component[] = L"{79624E18-367F-4DBB-9B08-BC174F537086}";
+static const WCHAR c2r_spelling_component[] = L"{6670CFCD-CACE-48F9-9C8F-C50B92826436}";
+static const WCHAR c2r_grammar_component[] = L"{69B971F3-E2B4-4674-9BDC-71A635AA5E33}";
+static const WCHAR c2r_spelling_engine_component[] = L"{4510D426-CB00-423B-AE0A-01B94BE773FD}";
+static const WCHAR c2r_grammar_data_component[] = L"{C9A7733D-5B0C-4B9F-B42E-8143FC77F881}";
+
+static WCHAR *get_c2r_value( const WCHAR *key_name, const WCHAR *name );
+static WCHAR *read_c2r_manifest( const WCHAR *path );
+static BOOL find_c2r_manifest_component( const WCHAR *installation, const WCHAR *component,
+                                         const WCHAR *qualifier, const WCHAR *product, DWORD index,
+                                         WCHAR **found_qualifier, WCHAR **key_path );
+
+static BOOL is_legacy_c2r_proofing_component( const WCHAR *component )
+{
+    return component && (!wcsicmp( component, c2r_proofing_component ) ||
+                         !wcsicmp( component, c2r_spelling_component ) ||
+                         !wcsicmp( component, c2r_grammar_component ) ||
+                         !wcsicmp( component, c2r_spelling_engine_component ));
+}
+
+BOOL msi_is_c2r_proofing_component( const WCHAR *component )
+{
+    static const WCHAR configuration_key[] = L"Software\\Microsoft\\Office\\ClickToRun\\Configuration";
+    WCHAR *installation;
+    BOOL found;
+
+    if (is_legacy_c2r_proofing_component( component )) return TRUE;
+    if (!component || !(installation = get_c2r_value( configuration_key, L"InstallationPath" )))
+        return FALSE;
+    found = find_c2r_manifest_component( installation, component, NULL, NULL, 0, NULL, NULL );
+    free( installation );
+    return found;
+}
+
+static WCHAR *get_c2r_value( const WCHAR *key_name, const WCHAR *name )
+{
+    HKEY key;
+    WCHAR *value = NULL;
+
+    if (!RegOpenKeyExW( HKEY_LOCAL_MACHINE, key_name, 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY, &key ))
+    {
+        value = msi_reg_get_val_str( key, name );
+        RegCloseKey( key );
+    }
+    return value;
+}
+
+static WCHAR *get_c2r_proofing_cultures( const WCHAR *installation )
+{
+    static const WCHAR prefix[] = L"C2RManifest.Proof.Culture.msi.16.";
+    static const WCHAR suffix[] = L".xml";
+    WIN32_FIND_DATAW data;
+    HANDLE find;
+    WCHAR *cultures = NULL, *pattern;
+    SIZE_T installation_len = wcslen( installation );
+    SIZE_T pattern_len = installation_len +
+                         wcslen( L"\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.*.xml" ) + 1;
+    SIZE_T cultures_len = 0;
+
+    if (!(pattern = malloc( pattern_len * sizeof(WCHAR) ))) return NULL;
+    swprintf( pattern, pattern_len, L"%s\\root\\Integration\\%s*%s", installation, prefix, suffix );
+    if ((find = FindFirstFileW( pattern, &data )) == INVALID_HANDLE_VALUE)
+    {
+        free( pattern );
+        return NULL;
+    }
+    do
+    {
+        WCHAR culture[LOCALE_NAME_MAX_LENGTH];
+        WCHAR *new_cultures;
+        SIZE_T name_len = wcslen( data.cFileName );
+        SIZE_T prefix_len = wcslen( prefix ), suffix_len = wcslen( suffix ), culture_len;
+
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY || name_len <= prefix_len + suffix_len ||
+            wcsnicmp( data.cFileName, prefix, prefix_len ) ||
+            wcsicmp( data.cFileName + name_len - suffix_len, suffix ))
+            continue;
+        culture_len = name_len - prefix_len - suffix_len;
+        if (culture_len >= ARRAY_SIZE( culture )) continue;
+        memcpy( culture, data.cFileName + prefix_len, culture_len * sizeof(WCHAR) );
+        culture[culture_len] = 0;
+        if (!LocaleNameToLCID( culture, 0 )) continue;
+        if (!(new_cultures = realloc( cultures,
+                                     (cultures_len + !!cultures_len + culture_len + 1) * sizeof(WCHAR) )))
+        {
+            free( cultures );
+            cultures = NULL;
+            break;
+        }
+        cultures = new_cultures;
+        if (cultures_len) cultures[cultures_len++] = ',';
+        memcpy( cultures + cultures_len, culture, (culture_len + 1) * sizeof(WCHAR) );
+        cultures_len += culture_len;
+    } while (FindNextFileW( find, &data ));
+    FindClose( find );
+    free( pattern );
+    return cultures;
+}
+
+static BOOL c2r_culture_is_installed( const WCHAR *cultures, const WCHAR *culture )
+{
+    const WCHAR *start = cultures, *end;
+    SIZE_T len = wcslen( culture );
+
+    while (*start)
+    {
+        while (*start == ' ' || *start == ',') start++;
+        end = wcschr( start, ',' );
+        if (!end) end = start + wcslen( start );
+        while (end > start && end[-1] == ' ') end--;
+        if (end - start == len && !wcsnicmp( start, culture, len )) return TRUE;
+        start = *end ? end + 1 : end;
+    }
+    return FALSE;
+}
+
+static DWORD c2r_culture_count( const WCHAR *cultures )
+{
+    const WCHAR *start, *end;
+    DWORD count = 0;
+
+    for (start = cultures; *start; start = *end ? end + 1 : end)
+    {
+        WCHAR culture[LOCALE_NAME_MAX_LENGTH];
+        SIZE_T len;
+
+        while (*start == ' ' || *start == ',') start++;
+        end = wcschr( start, ',' );
+        if (!end) end = start + wcslen( start );
+        while (end > start && end[-1] == ' ') end--;
+        if (!(len = end - start) || len >= ARRAY_SIZE( culture )) continue;
+        memcpy( culture, start, len * sizeof(WCHAR) );
+        culture[len] = 0;
+        if (LocaleNameToLCID( culture, 0 )) count++;
+    }
+    return count;
+}
+
+static LCID c2r_culture_lcid( const WCHAR *cultures, DWORD index )
+{
+    const WCHAR *start, *end;
+    DWORD current = 0;
+
+    for (start = cultures; *start; start = *end ? end + 1 : end)
+    {
+        WCHAR culture[LOCALE_NAME_MAX_LENGTH];
+        LCID lcid;
+        SIZE_T len;
+
+        while (*start == ' ' || *start == ',') start++;
+        end = wcschr( start, ',' );
+        if (!end) end = start + wcslen( start );
+        while (end > start && end[-1] == ' ') end--;
+        if (!(len = end - start) || len >= ARRAY_SIZE( culture )) continue;
+        memcpy( culture, start, len * sizeof(WCHAR) );
+        culture[len] = 0;
+        if (!(lcid = LocaleNameToLCID( culture, 0 ))) continue;
+        if (current++ == index) return lcid;
+    }
+    return 0;
+}
+
+UINT msi_enum_c2r_proofing_qualifier( const WCHAR *component, DWORD index, WCHAR **qualifier )
+{
+    static const WCHAR configuration_key[] = L"Software\\Microsoft\\Office\\ClickToRun\\Configuration";
+    WCHAR *installation, *cultures, buffer[32];
+    DWORD count;
+    LCID first, second;
+    UINT ret = ERROR_NO_MORE_ITEMS;
+
+    *qualifier = NULL;
+    if (!(installation = get_c2r_value( configuration_key, L"InstallationPath" )))
+        return ERROR_UNKNOWN_COMPONENT;
+    if (!is_legacy_c2r_proofing_component( component ))
+    {
+        if (find_c2r_manifest_component( installation, component, NULL, NULL, index, qualifier, NULL ))
+            ret = *qualifier ? ERROR_SUCCESS : ERROR_OUTOFMEMORY;
+        free( installation );
+        return ret;
+    }
+    cultures = get_c2r_proofing_cultures( installation );
+    free( installation );
+    if (!cultures) return ERROR_UNKNOWN_COMPONENT;
+    count = c2r_culture_count( cultures );
+    if (!wcsicmp( component, c2r_proofing_component ))
+    {
+        if ((first = c2r_culture_lcid( cultures, index )))
+            swprintf( buffer, ARRAY_SIZE( buffer ), L"%lu", first );
+        else
+            goto done;
+    }
+    else if (!wcsicmp( component, c2r_spelling_engine_component ))
+    {
+        if ((first = c2r_culture_lcid( cultures, index )))
+            swprintf( buffer, ARRAY_SIZE( buffer ), L"%lu\\Normal", first );
+        else
+            goto done;
+    }
+    else if (count && index / count < count &&
+             (first = c2r_culture_lcid( cultures, index / count )) &&
+             (second = c2r_culture_lcid( cultures, index % count )))
+        swprintf( buffer, ARRAY_SIZE( buffer ), L"%lu\\%lu", first, second );
+    else
+        goto done;
+
+    *qualifier = wcsdup( buffer );
+    ret = *qualifier ? ERROR_SUCCESS : ERROR_OUTOFMEMORY;
+
+done:
+    free( cultures );
+    return ret;
+}
+
+static WCHAR *read_c2r_manifest( const WCHAR *path )
+{
+    LARGE_INTEGER size;
+    DWORD read;
+    HANDLE file;
+    WCHAR *text;
+
+    file = CreateFileW( path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, 0, NULL );
+    if (file == INVALID_HANDLE_VALUE) return NULL;
+    if (!GetFileSizeEx( file, &size ) || size.QuadPart < sizeof(WCHAR) ||
+        size.QuadPart > 4 * 1024 * 1024 || size.QuadPart % sizeof(WCHAR))
+    {
+        CloseHandle( file );
+        return NULL;
+    }
+    if (!(text = malloc( size.QuadPart + sizeof(WCHAR) )))
+    {
+        CloseHandle( file );
+        return NULL;
+    }
+    if (!ReadFile( file, text, size.QuadPart, &read, NULL ) || read != size.QuadPart)
+    {
+        CloseHandle( file );
+        free( text );
+        return NULL;
+    }
+    CloseHandle( file );
+    text[size.QuadPart / sizeof(WCHAR)] = 0;
+    if (text[0] == 0xfeff) memmove( text, text + 1, size.QuadPart );
+    return text;
+}
+
+static WCHAR *c2r_xml_attribute( const WCHAR *text, const WCHAR *name )
+{
+    const WCHAR *start, *end;
+    WCHAR search[64], *value;
+    SIZE_T len;
+
+    if (swprintf( search, ARRAY_SIZE( search ), L"%s=\"", name ) < 0) return NULL;
+    if (!(start = StrStrIW( text, search ))) return NULL;
+    start += wcslen( search );
+    if (!(end = wcschr( start, '"' ))) return NULL;
+    len = end - start;
+    if (!(value = malloc( (len + 1) * sizeof(WCHAR) ))) return NULL;
+    memcpy( value, start, len * sizeof(WCHAR) );
+    value[len] = 0;
+    return value;
+}
+
+static WCHAR *c2r_xml_attribute_range( const WCHAR *start, const WCHAR *end, const WCHAR *name )
+{
+    WCHAR search[64], *value;
+    const WCHAR *pos;
+    SIZE_T search_len, len;
+
+    if (swprintf( search, ARRAY_SIZE( search ), L"%s=\"", name ) < 0) return NULL;
+    search_len = wcslen( search );
+    for (pos = start; pos + search_len <= end; pos++)
+    {
+        if ((pos != start && pos[-1] != ' ' && pos[-1] != '\t' && pos[-1] != '\r' && pos[-1] != '\n') ||
+            wcsnicmp( pos, search, search_len ))
+            continue;
+        start = pos + search_len;
+        if (!(pos = wcschr( start, '"' )) || pos > end) return NULL;
+        len = pos - start;
+        if (!(value = malloc( (len + 1) * sizeof(WCHAR) ))) return NULL;
+        memcpy( value, start, len * sizeof(WCHAR) );
+        value[len] = 0;
+        return value;
+    }
+    return NULL;
+}
+
+static BOOL c2r_manifest_has_component( const WCHAR *text, const WCHAR *component )
+{
+    const WCHAR *start = text, *end;
+    WCHAR *id;
+    BOOL found;
+
+    while ((start = StrStrIW( start, L"<PublishComponent " )))
+    {
+        if (!(end = wcschr( start, '>' ))) break;
+        id = c2r_xml_attribute_range( start, end, L"ComponentId" );
+        found = id && !wcsicmp( id, component );
+        free( id );
+        if (found) return TRUE;
+        start = end + 1;
+    }
+    return FALSE;
+}
+
+UINT msi_get_c2r_product_code( const WCHAR *component, WCHAR product[GUID_SIZE] )
+{
+    static const WCHAR configuration_key[] = L"Software\\Microsoft\\Office\\ClickToRun\\Configuration";
+    WIN32_FIND_DATAW data;
+    WCHAR squashed[SQUASHED_GUID_SIZE], *installation, *pattern, *manifest, *text, *manifest_product;
+    HANDLE find;
+    SIZE_T len;
+    UINT ret = ERROR_UNKNOWN_COMPONENT;
+
+    if (!(installation = get_c2r_value( configuration_key, L"InstallationPath" ))) return ret;
+    len = wcslen( installation ) + wcslen( L"\\root\\Integration\\C2RManifest.*.xml" ) + 1;
+    if (!(pattern = malloc( len * sizeof(WCHAR) )))
+    {
+        free( installation );
+        return ERROR_OUTOFMEMORY;
+    }
+    swprintf( pattern, len, L"%s\\root\\Integration\\C2RManifest.*.xml", installation );
+    if ((find = FindFirstFileW( pattern, &data )) == INVALID_HANDLE_VALUE) goto done;
+    do
+    {
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        len = wcslen( installation ) + wcslen( L"\\root\\Integration\\" ) +
+              wcslen( data.cFileName ) + 1;
+        if (!(manifest = malloc( len * sizeof(WCHAR) )))
+        {
+            ret = ERROR_OUTOFMEMORY;
+            break;
+        }
+        swprintf( manifest, len, L"%s\\root\\Integration\\%s", installation, data.cFileName );
+        text = read_c2r_manifest( manifest );
+        free( manifest );
+        if (!text) continue;
+        if (c2r_manifest_has_component( text, component ) &&
+            (manifest_product = c2r_xml_attribute( text, L"ProductCode" )))
+        {
+            if (lstrlenW( manifest_product ) == GUID_SIZE - 1 &&
+                squash_guid( manifest_product, squashed ))
+            {
+                lstrcpyW( product, manifest_product );
+                ret = ERROR_SUCCESS;
+            }
+            free( manifest_product );
+        }
+        free( text );
+        if (ret == ERROR_SUCCESS) break;
+    } while (FindNextFileW( find, &data ));
+    FindClose( find );
+
+done:
+    free( pattern );
+    free( installation );
+    return ret;
+}
+
+static BOOL find_c2r_component_in_manifest( const WCHAR *text, const WCHAR *component,
+                                            const WCHAR *qualifier, DWORD *current, DWORD index,
+                                            WCHAR **found_qualifier, WCHAR **key_path )
+{
+    const WCHAR *component_start = text, *component_tag_end, *component_end;
+    const WCHAR *publish, *publish_end;
+    WCHAR *id, *candidate_qualifier;
+
+    while ((component_start = StrStrIW( component_start, L"<Component " )))
+    {
+        if (!(component_tag_end = wcschr( component_start, '>' ))) break;
+        if (component_tag_end > component_start && component_tag_end[-1] == '/')
+        {
+            component_start = component_tag_end + 1;
+            continue;
+        }
+        if (!(component_end = StrStrIW( component_tag_end, L"</Component>" ))) break;
+        publish = component_tag_end + 1;
+        while ((publish = StrStrIW( publish, L"<PublishComponent " )) && publish < component_end)
+        {
+            if (!(publish_end = wcschr( publish, '>' )) || publish_end > component_end) break;
+            id = c2r_xml_attribute_range( publish, publish_end, L"PublishComponentId" );
+            candidate_qualifier = c2r_xml_attribute_range( publish, publish_end, L"Qualifier" );
+            if (id && candidate_qualifier && !wcsicmp( id, component ) &&
+                (!qualifier || !wcsicmp( candidate_qualifier, qualifier )))
+            {
+                if ((*current)++ == index)
+                {
+                    if (found_qualifier) *found_qualifier = wcsdup( candidate_qualifier );
+                    if (key_path)
+                        *key_path = c2r_xml_attribute_range( component_start, component_tag_end, L"KeyPath" );
+                    free( candidate_qualifier );
+                    free( id );
+                    return (!found_qualifier || *found_qualifier) && (!key_path || *key_path);
+                }
+            }
+            free( candidate_qualifier );
+            free( id );
+            publish = publish_end + 1;
+        }
+        component_start = component_end + wcslen( L"</Component>" );
+    }
+    return FALSE;
+}
+
+static BOOL find_c2r_manifest_component( const WCHAR *installation, const WCHAR *component,
+                                         const WCHAR *qualifier, const WCHAR *product, DWORD index,
+                                         WCHAR **found_qualifier, WCHAR **key_path )
+{
+    WIN32_FIND_DATAW data;
+    WCHAR *pattern, *manifest, *text, *manifest_product;
+    HANDLE find;
+    DWORD current = 0;
+    SIZE_T len;
+    BOOL found = FALSE;
+
+    if (found_qualifier) *found_qualifier = NULL;
+    if (key_path) *key_path = NULL;
+    len = wcslen( installation ) +
+          wcslen( L"\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.*.xml" ) + 1;
+    if (!(pattern = malloc( len * sizeof(WCHAR) ))) return FALSE;
+    swprintf( pattern, len, L"%s\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.*.xml",
+              installation );
+    if ((find = FindFirstFileW( pattern, &data )) == INVALID_HANDLE_VALUE)
+    {
+        free( pattern );
+        return FALSE;
+    }
+    do
+    {
+        len = wcslen( installation ) + wcslen( L"\\root\\Integration\\" ) +
+              wcslen( data.cFileName ) + 1;
+        if (!(manifest = malloc( len * sizeof(WCHAR) ))) break;
+        swprintf( manifest, len, L"%s\\root\\Integration\\%s", installation, data.cFileName );
+        text = read_c2r_manifest( manifest );
+        free( manifest );
+        if (!text) continue;
+        manifest_product = c2r_xml_attribute( text, L"ProductCode" );
+        if ((!product || (manifest_product && !wcsicmp( product, manifest_product ))) &&
+            find_c2r_component_in_manifest( text, component, qualifier, &current, index,
+                                            found_qualifier, key_path ))
+            found = TRUE;
+        free( manifest_product );
+        free( text );
+        if (found) break;
+    } while (FindNextFileW( find, &data ));
+    FindClose( find );
+    free( pattern );
+    return found;
+}
+
+static WCHAR *expand_c2r_key_path( const WCHAR *installation, const WCHAR *key_path )
+{
+    static const WCHAR office_x64[] = L"%SFT_PROGRAM_FILES_X64%\\Microsoft Office";
+    static const WCHAR office_x86[] = L"%SFT_PROGRAM_FILES_X86%\\Microsoft Office";
+    static const WCHAR common_x64[] = L"%SFT_PROGRAM_FILES_COMMON_X64%";
+    static const WCHAR common_x86[] = L"%SFT_PROGRAM_FILES_COMMON_X86%";
+    const WCHAR *suffix, *middle;
+    WCHAR *path;
+    SIZE_T len;
+
+    if (!wcsnicmp( key_path, office_x64, ARRAY_SIZE( office_x64 ) - 1 ))
+    {
+        middle = L"\\root";
+        suffix = key_path + ARRAY_SIZE( office_x64 ) - 1;
+    }
+    else if (!wcsnicmp( key_path, office_x86, ARRAY_SIZE( office_x86 ) - 1 ))
+    {
+        middle = L"\\root";
+        suffix = key_path + ARRAY_SIZE( office_x86 ) - 1;
+    }
+    else if (!wcsnicmp( key_path, common_x64, ARRAY_SIZE( common_x64 ) - 1 ))
+    {
+        middle = L"\\root\\vfs\\ProgramFilesCommonX64";
+        suffix = key_path + ARRAY_SIZE( common_x64 ) - 1;
+    }
+    else if (!wcsnicmp( key_path, common_x86, ARRAY_SIZE( common_x86 ) - 1 ))
+    {
+        middle = L"\\root\\vfs\\ProgramFilesCommonX86";
+        suffix = key_path + ARRAY_SIZE( common_x86 ) - 1;
+    }
+    else
+        return NULL;
+
+    len = wcslen( installation ) + wcslen( middle ) + wcslen( suffix ) + 1;
+    if ((path = malloc( len * sizeof(WCHAR) )))
+        swprintf( path, len, L"%s%s%s", installation, middle, suffix );
+    return path;
+}
+
+UINT msi_get_c2r_proofing_path( const WCHAR *component, const WCHAR *qualifier,
+                                const WCHAR *product, WCHAR **path )
+{
+    static const WCHAR configuration_key[] = L"Software\\Microsoft\\Office\\ClickToRun\\Configuration";
+    WCHAR culture[LOCALE_NAME_MAX_LENGTH], fallback_culture[LOCALE_NAME_MAX_LENGTH];
+    WCHAR *cultures = NULL, *installation = NULL, *manifest = NULL;
+    const WCHAR *relative_path;
+    WCHAR *text = NULL, *manifest_product = NULL;
+    WCHAR *end, *fallback_end;
+    ULONG lcid, fallback_lcid;
+    UINT ret = ERROR_FILE_NOT_FOUND;
+    SIZE_T len;
+    const WCHAR *manifest_component = component;
+
+    *path = NULL;
+    if (!qualifier || !qualifier[0]) return ERROR_INDEX_ABSENT;
+    if (component && !wcsicmp( component, c2r_proofing_component ))
+    {
+        lcid = wcstoul( qualifier, &end, 10 );
+        if (!lcid || *end || !LCIDToLocaleName( lcid, culture, ARRAY_SIZE( culture ), 0 ))
+            return ERROR_INDEX_ABSENT;
+        manifest_component = c2r_grammar_data_component;
+    }
+    if (!is_legacy_c2r_proofing_component( component ) || manifest_component != component)
+    {
+        WCHAR *key_path = NULL;
+
+        if (!(installation = get_c2r_value( configuration_key, L"InstallationPath" )))
+            return ERROR_UNKNOWN_COMPONENT;
+        if (!find_c2r_manifest_component( installation, manifest_component, qualifier, product,
+                                          0, NULL, &key_path ))
+            goto done;
+        *path = expand_c2r_key_path( installation, key_path );
+        free( key_path );
+        if (!*path) goto done;
+        if (GetFileAttributesW( *path ) == INVALID_FILE_ATTRIBUTES)
+        {
+            free( *path );
+            *path = NULL;
+            goto done;
+        }
+        ret = ERROR_SUCCESS;
+        free( installation );
+        return ret;
+    }
+    lcid = wcstoul( qualifier, &end, 10 );
+    if (!lcid || !LCIDToLocaleName( lcid, culture, ARRAY_SIZE( culture ), 0 ))
+        return ERROR_INDEX_ABSENT;
+
+    if (!wcsicmp( component, c2r_proofing_component ))
+    {
+        if (*end) return ERROR_INDEX_ABSENT;
+    }
+    else if (!wcsicmp( component, c2r_spelling_engine_component ))
+    {
+        if (wcsicmp( end, L"\\Normal" )) return ERROR_INDEX_ABSENT;
+    }
+    else
+    {
+        if (*end++ != '\\') return ERROR_INDEX_ABSENT;
+        fallback_lcid = wcstoul( end, &fallback_end, 10 );
+        if (*fallback_end || !fallback_lcid ||
+            !LCIDToLocaleName( fallback_lcid, fallback_culture, ARRAY_SIZE( fallback_culture ), 0 ))
+            return ERROR_INDEX_ABSENT;
+    }
+
+    if (!wcsicmp( component, c2r_proofing_component ))
+        relative_path = L"\\root\\Office16\\msproof7.dll";
+    else if (!wcsicmp( component, c2r_spelling_engine_component ))
+        relative_path = L"\\root\\Office16\\PROOF\\msspell7.dll";
+    else
+        relative_path = L"\\root\\Office16\\PROOF\\msgrammar8.dll";
+
+    if (!(installation = get_c2r_value( configuration_key, L"InstallationPath" )))
+        return ERROR_UNKNOWN_COMPONENT;
+    if (!(cultures = get_c2r_proofing_cultures( installation ))) goto done;
+    if (!c2r_culture_is_installed( cultures, culture )) goto done;
+    if (wcsicmp( component, c2r_proofing_component ) &&
+        wcsicmp( component, c2r_spelling_engine_component ) &&
+        !c2r_culture_is_installed( cultures, fallback_culture )) goto done;
+
+    len = wcslen( installation ) +
+          wcslen( L"\\root\\Integration\\C2RManifest.Proof.Culture.msi.16..xml" ) +
+          wcslen( culture ) + 1;
+    if (!(manifest = malloc( len * sizeof(WCHAR) )))
+    {
+        ret = ERROR_OUTOFMEMORY;
+        goto done;
+    }
+    if (swprintf( manifest, len, L"%s\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.%s.xml",
+                  installation, culture ) < 0)
+        goto done;
+    if (!(text = read_c2r_manifest( manifest ))) goto done;
+    if (!(manifest_product = c2r_xml_attribute( text, L"ProductCode" ))) goto done;
+    if (product && wcsicmp( product, manifest_product )) goto done;
+
+    len = wcslen( installation ) + wcslen( relative_path ) + 1;
+    if (!(*path = malloc( len * sizeof(WCHAR) )))
+    {
+        ret = ERROR_OUTOFMEMORY;
+        goto done;
+    }
+    swprintf( *path, len, L"%s%s", installation, relative_path );
+    if (GetFileAttributesW( *path ) == INVALID_FILE_ATTRIBUTES)
+    {
+        free( *path );
+        *path = NULL;
+        goto done;
+    }
+    ret = ERROR_SUCCESS;
+
+done:
+    free( manifest_product );
+    free( text );
+    free( manifest );
+    free( installation );
+    free( cultures );
+    return ret;
+}
+
 BOOL msi_reg_get_val_dword( HKEY hkey, LPCWSTR name, DWORD *val)
 {
     DWORD type, len = sizeof (DWORD);
@@ -1422,7 +2031,17 @@ static UINT MSI_EnumComponentQualifiers( const WCHAR *szComponent, DWORD iIndex,
 
     r = MSIREG_OpenUserComponentsKey( szComponent, &key, FALSE );
     if (r != ERROR_SUCCESS)
-        return ERROR_UNKNOWN_COMPONENT;
+    {
+        WCHAR *qualifier;
+
+        if (!msi_is_c2r_proofing_component( szComponent )) return ERROR_UNKNOWN_COMPONENT;
+        r = msi_enum_c2r_proofing_qualifier( szComponent, iIndex, &qualifier );
+        if (r != ERROR_SUCCESS) return r;
+        r = msi_strcpy_to_awstring( qualifier, -1, lpQualBuf, pcchQual );
+        free( qualifier );
+        r2 = msi_strcpy_to_awstring( L"", -1, lpAppBuf, pcchAppBuf );
+        return r2 == ERROR_SUCCESS ? r : r2;
+    }
 
     /* figure out how big the name is we want to return */
     name_max = 0x10;

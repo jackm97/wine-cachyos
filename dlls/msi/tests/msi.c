@@ -3540,6 +3540,300 @@ static void test_MsiProvideQualifiedComponentEx(void)
     RegCloseKey( hkey );
 }
 
+static BOOL write_wide_file(const WCHAR *path, const WCHAR *data)
+{
+    DWORD size = lstrlenW(data) * sizeof(WCHAR), written;
+    HANDLE file;
+    BOOL ret;
+
+    file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+    if (file == INVALID_HANDLE_VALUE) return FALSE;
+    ret = WriteFile(file, data, size, &written, NULL) && written == size;
+    CloseHandle(file);
+    return ret;
+}
+
+static void test_c2r_proofing_components(void)
+{
+    static const WCHAR click_to_run[] = L"Software\\Microsoft\\Office\\ClickToRun";
+    static const WCHAR inventory[] = L"Software\\Microsoft\\Office\\ClickToRun\\Inventory\\Office\\16.0";
+    static const WCHAR configuration[] = L"Software\\Microsoft\\Office\\ClickToRun\\Configuration";
+    static const WCHAR proofing_key[] =
+        L"Software\\Classes\\Installer\\Components\\81E42697F763BBD4B980CB71F4350768";
+    static const WCHAR proofing[] = L"{79624E18-367F-4DBB-9B08-BC174F537086}";
+    static const WCHAR spelling[] = L"{6670CFCD-CACE-48F9-9C8F-C50B92826436}";
+    static const WCHAR grammar[] = L"{69B971F3-E2B4-4674-9BDC-71A635AA5E33}";
+    static const WCHAR spelling_engine[] = L"{4510D426-CB00-423B-AE0A-01B94BE773FD}";
+    static const WCHAR spelling_data[] = L"{EF8E9806-D488-4BE1-8D06-01B401C9DE98}";
+    static const WCHAR grammar_data[] = L"{C9A7733D-5B0C-4B9F-B42E-8143FC77F881}";
+    static const WCHAR proof_data[] = L"{13462384-2D94-43AD-BA1E-687A27298820}";
+    static const WCHAR excel_component[] = L"{C4ACE6DB-AA99-401F-8BE6-8784BD09F003}";
+    static const WCHAR invalid_component[] = L"{D5BDF7EC-30C8-4CB8-943D-1B2A8811C151}";
+    static const WCHAR unknown_component[] = L"{2A3A2754-8C63-47A7-ADE9-2905E7627480}";
+    static const WCHAR excel_product[] = L"{90160000-000F-0000-1000-0000000FF1CE}";
+    static const WCHAR product_en[] = L"{90160000-001F-0409-1000-0000000FF1CE}";
+    static const WCHAR product_it[] = L"{90160000-001F-0410-1000-0000000FF1CE}";
+    static const WCHAR manifest_en[] =
+        L"\xfeff<Product ProductCode=\"{90160000-001F-0409-1000-0000000FF1CE}\">"
+        L"<Component KeyPath=\"%SFT_PROGRAM_FILES_X64%\\Microsoft Office\\Office16\\PROOF\\MSSP7EN.LEX\"/>"
+        L"<Component KeyPath=\"%SFT_PROGRAM_FILES_X64%\\Microsoft Office\\Office16\\PROOF\\MSGR8EN.LEX\">"
+        L"<PublishComponent PublishComponentId=\"{C9A7733D-5B0C-4B9F-B42E-8143FC77F881}\" "
+        L"Qualifier=\"1033\"/></Component>"
+        L"<Component KeyPath=\"%SFT_PROGRAM_FILES_X64%\\Microsoft Office\\Office16\\PROOF\\MSSP7EN.LEX\">"
+        L"<PublishComponent PublishComponentId=\"{EF8E9806-D488-4BE1-8D06-01B401C9DE98}\" "
+        L"Qualifier=\"1033\\Normal\"/></Component>"
+        L"<Component KeyPath=\"%SFT_PROGRAM_FILES_X64%\\Microsoft Office\\Office16\\CSS7DATA0009.DLL\">"
+        L"<PublishComponent PublishComponentId=\"{13462384-2D94-43AD-BA1E-687A27298820}\" "
+        L"Qualifier=\"ProofDataFile\\1033\"/></Component>"
+        L"</Product>";
+    static const WCHAR manifest_it[] =
+        L"\xfeff<Product ProductCode=\"{90160000-001F-0410-1000-0000000FF1CE}\">"
+        L"<Component KeyPath=\"%SFT_PROGRAM_FILES_X64%\\Microsoft Office\\Office16\\PROOF\\MSSP7IT.LEX\"/>"
+        L"<Component KeyPath=\"%SFT_PROGRAM_FILES_X64%\\Microsoft Office\\Office16\\PROOF\\MSGR8IT.LEX\">"
+        L"<PublishComponent PublishComponentId=\"{C9A7733D-5B0C-4B9F-B42E-8143FC77F881}\" "
+        L"Qualifier=\"1040\"/></Component>"
+        L"<Component KeyPath=\"%SFT_PROGRAM_FILES_X64%\\Microsoft Office\\Office16\\PROOF\\MSSP7IT.LEX\">"
+        L"<PublishComponent PublishComponentId=\"{EF8E9806-D488-4BE1-8D06-01B401C9DE98}\" "
+        L"Qualifier=\"1040\\Normal\"/></Component>"
+        L"<Component KeyPath=\"%SFT_PROGRAM_FILES_X64%\\Microsoft Office\\Office16\\CSS7DATA0010.DLL\">"
+        L"<PublishComponent PublishComponentId=\"{13462384-2D94-43AD-BA1E-687A27298820}\" "
+        L"Qualifier=\"ProofDataFile\\1040\"/></Component>"
+        L"</Product>";
+    static const WCHAR manifest_excel[] =
+        L"\xfeff<Package ProductCode=\"{90160000-000F-0000-1000-0000000FF1CE}\">"
+        L"<PublishComponentList><PublishComponent "
+        L"PublishComponentId=\"{5812C571-53F0-4467-BEFA-0A4F47A9437C}\" "
+        L"ComponentId=\"{C4ACE6DB-AA99-401F-8BE6-8784BD09F003}\" "
+        L"Qualifier=\"excel.exe\"/></PublishComponentList></Package>";
+    static const WCHAR manifest_invalid[] =
+        L"\xfeff<Package ProductCode=\"invalid\"><PublishComponentList>"
+        L"<PublishComponent ComponentId=\"{D5BDF7EC-30C8-4CB8-943D-1B2A8811C151}\"/>"
+        L"</PublishComponentList></Package>";
+    static const WCHAR cultures[] = L"it-it";
+    WCHAR root[MAX_PATH], path[MAX_PATH], expected[MAX_PATH], qualifier[32], appdata[32];
+    DWORD qualifier_size, appdata_size, size;
+    HKEY key, office_key;
+    LONG res;
+    UINT r;
+
+    if (strcmp(winetest_platform, "wine"))
+    {
+        win_skip("Click-to-Run fallback is Wine-specific\n");
+        return;
+    }
+    if (!is_process_elevated())
+    {
+        skip("process is limited\n");
+        return;
+    }
+    if (!RegOpenKeyExW(HKEY_LOCAL_MACHINE, click_to_run, 0, KEY_READ | KEY_WOW64_64KEY, &key))
+    {
+        RegCloseKey(key);
+        skip("Click-to-Run registry already exists\n");
+        return;
+    }
+    if (!RegOpenKeyExW(HKEY_LOCAL_MACHINE, proofing_key, 0, KEY_READ | KEY_WOW64_64KEY, &key))
+    {
+        RegCloseKey(key);
+        skip("proofing component is already registered\n");
+        return;
+    }
+
+    GetFullPathNameW(L"msitest\\c2r", ARRAY_SIZE(root), root, NULL);
+    CreateDirectoryW(L"msitest", NULL);
+    CreateDirectoryW(root, NULL);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root", root);
+    CreateDirectoryW(path, NULL);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration", root);
+    CreateDirectoryW(path, NULL);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16", root);
+    CreateDirectoryW(path, NULL);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF", root);
+    CreateDirectoryW(path, NULL);
+
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.en-us.xml", root);
+    ok(write_wide_file(path, manifest_en), "failed to create English manifest\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.it-it.xml", root);
+    ok(write_wide_file(path, manifest_it), "failed to create Italian manifest\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration\\C2RManifest.Excel.Excel.x-none.msi.16.x-none.xml", root);
+    ok(write_wide_file(path, manifest_excel), "failed to create Excel manifest\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration\\C2RManifest.Invalid.xml", root);
+    ok(write_wide_file(path, manifest_invalid), "failed to create invalid manifest\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\MSSP7EN.LEX", root);
+    ok(write_wide_file(path, L"spelling"), "failed to create English spelling file\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\MSGR8EN.LEX", root);
+    ok(write_wide_file(path, L"grammar"), "failed to create English grammar file\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\MSSP7IT.LEX", root);
+    ok(write_wide_file(path, L"spelling"), "failed to create Italian spelling file\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\MSGR8IT.LEX", root);
+    ok(write_wide_file(path, L"grammar"), "failed to create Italian grammar file\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\msproof7.dll", root);
+    ok(write_wide_file(path, L"proofing"), "failed to create proofing engine\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\msspell7.dll", root);
+    ok(write_wide_file(path, L"spelling"), "failed to create spelling engine\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\msgrammar8.dll", root);
+    ok(write_wide_file(path, L"grammar"), "failed to create grammar engine\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\CSS7DATA0009.DLL", root);
+    ok(write_wide_file(path, L"proof data"), "failed to create English proof data\n");
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\CSS7DATA0010.DLL", root);
+    ok(write_wide_file(path, L"proof data"), "failed to create Italian proof data\n");
+
+    res = RegCreateKeyExW(HKEY_LOCAL_MACHINE, inventory, 0, NULL, 0, KEY_ALL_ACCESS | KEY_WOW64_64KEY,
+                          NULL, &key, NULL);
+    ok(res == ERROR_SUCCESS, "got %ld\n", res);
+    res = RegSetValueExW(key, L"OfficeCulture", 0, REG_SZ, (const BYTE *)cultures, sizeof(cultures));
+    ok(res == ERROR_SUCCESS, "got %ld\n", res);
+    RegCloseKey(key);
+
+    res = RegCreateKeyExW(HKEY_LOCAL_MACHINE, configuration, 0, NULL, 0,
+                          KEY_ALL_ACCESS | KEY_WOW64_64KEY, NULL, &key, NULL);
+    ok(res == ERROR_SUCCESS, "got %ld\n", res);
+    res = RegSetValueExW(key, L"InstallationPath", 0, REG_SZ, (const BYTE *)root,
+                         (lstrlenW(root) + 1) * sizeof(WCHAR));
+    ok(res == ERROR_SUCCESS, "got %ld\n", res);
+    RegCloseKey(key);
+
+    lstrcpyW(path, L"unchanged");
+    r = MsiGetProductCodeW(excel_component, path);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    ok(!lstrcmpW(path, excel_product), "got %s\n", debugstr_w(path));
+    lstrcpyW(path, L"unchanged");
+    r = MsiGetProductCodeW(invalid_component, path);
+    ok(r == ERROR_UNKNOWN_COMPONENT, "got %u\n", r);
+    ok(!lstrcmpW(path, L"unchanged"), "got %s\n", debugstr_w(path));
+    r = MsiGetProductCodeW(unknown_component, path);
+    ok(r == ERROR_UNKNOWN_COMPONENT, "got %u\n", r);
+
+    qualifier_size = ARRAY_SIZE(qualifier);
+    appdata_size = ARRAY_SIZE(appdata);
+    r = MsiEnumComponentQualifiersW(proofing, 0, qualifier, &qualifier_size, appdata, &appdata_size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    ok(!lstrcmpW(qualifier, L"1033"), "got %s\n", debugstr_w(qualifier));
+    qualifier_size = ARRAY_SIZE(qualifier);
+    appdata_size = ARRAY_SIZE(appdata);
+    r = MsiEnumComponentQualifiersW(spelling, 2, qualifier, &qualifier_size, appdata, &appdata_size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    ok(!lstrcmpW(qualifier, L"1040\\1033"), "got %s\n", debugstr_w(qualifier));
+
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(proofing, L"1033", INSTALLMODE_NODETECTION,
+                                        product_en, 0, 0, path, &size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    swprintf(expected, ARRAY_SIZE(expected), L"%s\\root\\Office16\\PROOF\\MSGR8EN.LEX", root);
+    ok(!lstrcmpiW(path, expected), "got %s\n", debugstr_w(path));
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(grammar_data, L"1040", INSTALLMODE_NODETECTION,
+                                        product_it, 0, 0, path, &size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    swprintf(expected, ARRAY_SIZE(expected), L"%s\\root\\Office16\\PROOF\\MSGR8IT.LEX", root);
+    ok(!lstrcmpiW(path, expected), "got %s\n", debugstr_w(path));
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(spelling, L"1040\\1033", INSTALLMODE_NODETECTION,
+                                        product_it, 0, 0, path, &size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    swprintf(expected, ARRAY_SIZE(expected), L"%s\\root\\Office16\\PROOF\\msgrammar8.dll", root);
+    ok(!lstrcmpiW(path, expected), "got %s\n", debugstr_w(path));
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(grammar, L"1040\\1040", INSTALLMODE_NODETECTION,
+                                        product_it, 0, 0, path, &size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    swprintf(expected, ARRAY_SIZE(expected), L"%s\\root\\Office16\\PROOF\\msgrammar8.dll", root);
+    ok(!lstrcmpiW(path, expected), "got %s\n", debugstr_w(path));
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(spelling_data, L"1040\\Normal", INSTALLMODE_NODETECTION,
+                                        product_it, 0, 0, path, &size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    swprintf(expected, ARRAY_SIZE(expected), L"%s\\root\\Office16\\PROOF\\MSSP7IT.LEX", root);
+    ok(!lstrcmpiW(path, expected), "got %s\n", debugstr_w(path));
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(spelling_engine, L"1040\\Normal", INSTALLMODE_NODETECTION,
+                                        product_it, 0, 0, path, &size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    swprintf(expected, ARRAY_SIZE(expected), L"%s\\root\\Office16\\PROOF\\msspell7.dll", root);
+    ok(!lstrcmpiW(path, expected), "got %s\n", debugstr_w(path));
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(proof_data, L"ProofDataFile\\1040", INSTALLMODE_NODETECTION,
+                                        product_it, 0, 0, path, &size);
+    ok(r == ERROR_SUCCESS, "got %u\n", r);
+    swprintf(expected, ARRAY_SIZE(expected), L"%s\\root\\Office16\\CSS7DATA0010.DLL", root);
+    ok(!lstrcmpiW(path, expected), "got %s\n", debugstr_w(path));
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(proofing, L"1033", INSTALLMODE_NODETECTION,
+                                        product_it, 0, 0, path, &size);
+    ok(r == ERROR_FILE_NOT_FOUND, "got %u\n", r);
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(proofing, L"1036", INSTALLMODE_NODETECTION,
+                                        NULL, 0, 0, path, &size);
+    ok(r == ERROR_FILE_NOT_FOUND, "got %u\n", r);
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(proofing, L"1040\\1033", INSTALLMODE_NODETECTION,
+                                        NULL, 0, 0, path, &size);
+    ok(r == ERROR_INDEX_ABSENT, "got %u\n", r);
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(spelling, L"1040", INSTALLMODE_NODETECTION,
+                                        NULL, 0, 0, path, &size);
+    ok(r == ERROR_INDEX_ABSENT, "got %u\n", r);
+    size = ARRAY_SIZE(path);
+    r = MsiProvideQualifiedComponentExW(grammar, L"1040\\1036", INSTALLMODE_NODETECTION,
+                                        NULL, 0, 0, path, &size);
+    ok(r == ERROR_FILE_NOT_FOUND, "got %u\n", r);
+
+    res = RegCreateKeyExW(HKEY_LOCAL_MACHINE, proofing_key, 0, NULL, 0,
+                          KEY_ALL_ACCESS | KEY_WOW64_64KEY, NULL, &key, NULL);
+    ok(res == ERROR_SUCCESS, "got %ld\n", res);
+    RegCloseKey(key);
+    qualifier_size = ARRAY_SIZE(qualifier);
+    appdata_size = ARRAY_SIZE(appdata);
+    r = MsiEnumComponentQualifiersW(proofing, 0, qualifier, &qualifier_size, appdata, &appdata_size);
+    ok(r == ERROR_NO_MORE_ITEMS, "got %u\n", r);
+
+    RegDeleteKeyExW(HKEY_LOCAL_MACHINE, proofing_key, KEY_WOW64_64KEY, 0);
+    res = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Office", 0,
+                        KEY_ALL_ACCESS | KEY_WOW64_64KEY, &office_key);
+    ok(res == ERROR_SUCCESS, "got %ld\n", res);
+    if (!res)
+    {
+        res = RegDeleteTreeW(office_key, L"ClickToRun");
+        ok(res == ERROR_SUCCESS, "got %ld\n", res);
+        RegCloseKey(office_key);
+    }
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\MSSP7EN.LEX", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\MSGR8EN.LEX", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\MSSP7IT.LEX", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\MSGR8IT.LEX", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\msproof7.dll", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\msspell7.dll", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF\\msgrammar8.dll", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\CSS7DATA0009.DLL", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\CSS7DATA0010.DLL", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.en-us.xml", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration\\C2RManifest.Proof.Culture.msi.16.it-it.xml", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration\\C2RManifest.Excel.Excel.x-none.msi.16.x-none.xml", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration\\C2RManifest.Invalid.xml", root);
+    DeleteFileW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16\\PROOF", root);
+    RemoveDirectoryW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Office16", root);
+    RemoveDirectoryW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root\\Integration", root);
+    RemoveDirectoryW(path);
+    swprintf(path, ARRAY_SIZE(path), L"%s\\root", root);
+    RemoveDirectoryW(path);
+    RemoveDirectoryW(root);
+}
+
 static void test_MsiGetProductCode(void)
 {
     HKEY compkey, prodkey;
@@ -13626,6 +13920,7 @@ START_TEST(msi)
     test_concurrentinstall();
     test_command_line_parsing();
     test_MsiProvideQualifiedComponentEx();
+    test_c2r_proofing_components();
 
     SetCurrentDirectoryA(prev_path);
 }
