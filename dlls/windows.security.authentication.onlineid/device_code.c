@@ -973,7 +973,7 @@ done:
 }
 
 HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, HSTRING authority, HSTRING login_hint,
-                                   HANDLE cancel, struct identity_reply *reply )
+                                   BOOL force, HANDLE cancel, struct identity_reply *reply )
 {
     char client_id[37], *scopes = NULL, *encoded_scopes = NULL, *body = NULL, *response = NULL;
     char *device_code = NULL, *encoded_code = NULL, *user_code = NULL, *verification_uri = NULL;
@@ -981,7 +981,7 @@ HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, 
     UINT32 expires = 900, interval = 5, elapsed = 0;
     DWORD status;
     SIZE_T size;
-    HRESULT hr;
+    HRESULT hr = E_FAIL;
     ULONG trace_id = InterlockedIncrement( &trace_counter );
     WCHAR device_path[80], token_path[80];
 
@@ -992,9 +992,12 @@ HRESULT identity_device_authorize( const GUID *application_id, HSTRING service, 
         return E_POINTER;
     }
     memset( reply, 0, sizeof(*reply) );
-    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_CACHE, E_PENDING, __builtin_return_address(0) );
-    hr = identity_device_get_token( application_id, service, authority, NULL, login_hint, cancel, reply );
-    eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_CACHE, hr, __builtin_return_address(0) );
+    if (!force)
+    {
+        eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_CACHE, E_PENDING, __builtin_return_address(0) );
+        hr = identity_device_get_token( application_id, service, authority, NULL, login_hint, cancel, reply );
+        eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_CACHE, hr, __builtin_return_address(0) );
+    }
     if (SUCCEEDED(hr))
     {
         eagle_trace_native_identity( trace_id, 2, EAGLE_IDENTITY_COMPLETE, S_OK, __builtin_return_address(0) );
