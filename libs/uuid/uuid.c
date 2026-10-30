@@ -68,6 +68,7 @@ DEFINE_GUID(GUID_NULL,0,0,0,0,0,0,0,0,0,0,0);
 #include "objsel.h"
 #include "hlink.h"
 #include "inkpresenterdesktop.h"
+#include "windows.ui.input.inking.h"
 #include "optary.h"
 #include "indexsrv.h"
 #include "htiface.h"

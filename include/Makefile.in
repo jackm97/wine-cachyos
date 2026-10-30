@@ -1095,6 +1095,7 @@ SOURCES = \
 	windows.ui.core.idl \
 	windows.ui.idl \
 	windows.ui.input.idl \
+	windows.ui.input.inking.idl \
 	windows.ui.notifications.idl \
 	windows.ui.viewmanagement.core.idl \
 	windows.ui.viewmanagement.idl \
