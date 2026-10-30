@@ -79,6 +79,8 @@ requirements:
     - sdl2
     - libunwind
     - zlib
+    # dlls/wineopenxr links its Unix side against libopenxr_loader (UNIX_LIBS = -lopenxr_loader).
+    - openxr-sdk
   # They are declared as build-dependencies in pixi.toml so the recipe can name them.
   run:
     - dxvk
