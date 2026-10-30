@@ -1,0 +1,70 @@
+/*
+ * Copyright 2026 Mirko Brombin
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
+import "unknwn.idl";
+
+[
+    object,
+    uuid(fabea3fc-b108-45b6-a9fc-8d08fa9f85cf)
+]
+interface IInkCommitRequestHandler : IUnknown
+{
+    HRESULT OnCommitRequested();
+}
+
+[
+    object,
+    uuid(73f3c0d9-2e8b-48f3-895e-20cbd27b723b)
+]
+interface IInkPresenterDesktop : IUnknown
+{
+    HRESULT SetRootVisual([in] IUnknown *visual, [in, unique] IUnknown *device);
+    HRESULT SetCommitRequestHandler([in] IInkCommitRequestHandler *handler);
+    HRESULT GetSize([out] float *width, [out] float *height);
+    HRESULT SetSize([in] float width, [in] float height);
+    HRESULT OnHighContrastChanged();
+}
+
+[
+    object,
+    uuid(ccda0a9a-1b78-4632-bb96-97800662e26c)
+]
+interface IInkHostWorkItem : IUnknown
+{
+    HRESULT Invoke();
+}
+
+[
+    object,
+    uuid(4ce7d875-a981-4140-a1ff-ad93258e8d59)
+]
+interface IInkDesktopHost : IUnknown
+{
+    HRESULT QueueWorkItem([in] IInkHostWorkItem *item);
+    HRESULT CreateInkPresenter([in] REFIID iid, [out, iid_is(iid)] void **object);
+    HRESULT CreateAndInitializeInkPresenter([in] IUnknown *visual, [in] float width,
+            [in] float height, [in] REFIID iid, [out, iid_is(iid)] void **object);
+}
+
+[
+    uuid(062584a6-f830-4bdc-a4d2-0a10ab062b1d)
+]
+coclass InkDesktopHost
+{
+    interface IInkDesktopHost;
+}
