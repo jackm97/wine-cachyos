@@ -40,9 +40,7 @@ DWORD WINAPI GetStorageDependencyInformation(HANDLE obj, GET_STORAGE_DEPENDENCY_
     if (size < temp_size)
         return ERROR_INSUFFICIENT_BUFFER;
 
-    info->NumberEntries = 0;
-
-    return ERROR_SUCCESS;
+    return ERROR_VIRTDISK_NOT_VIRTUAL_DISK;
 }
 
 DWORD WINAPI OpenVirtualDisk(VIRTUAL_STORAGE_TYPE *type, const WCHAR *path, VIRTUAL_DISK_ACCESS_MASK mask, OPEN_VIRTUAL_DISK_FLAG flags,

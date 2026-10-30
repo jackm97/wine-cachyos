@@ -27,7 +27,7 @@ static DWORD (WINAPI *pOpenVirtualDisk)(PVIRTUAL_STORAGE_TYPE,PCWSTR,VIRTUAL_DIS
 
 static void test_GetStorageDependencyInformation(void)
 {
-    DWORD ret;
+    DWORD ret, used;
     HANDLE handle;
     STORAGE_DEPENDENCY_INFO *info;
     ULONG size;
@@ -43,6 +43,15 @@ static void test_GetStorageDependencyInformation(void)
 
     ret = pGetStorageDependencyInformation(handle, GET_STORAGE_DEPENDENCY_FLAG_DISK_HANDLE, size, NULL, 0);
     ok(ret == ERROR_INVALID_PARAMETER, "Expected ERROR_INVALID_PARAMETER, got %ld\n", ret);
+
+    memset(info, 0, size);
+    info->Version = STORAGE_DEPENDENCY_INFO_VERSION_2;
+    used = 0xdeadbeef;
+    ret = pGetStorageDependencyInformation(handle, GET_STORAGE_DEPENDENCY_FLAG_DISK_HANDLE,
+                                            size, info, &used);
+    ok(ret == ERROR_VIRTDISK_NOT_VIRTUAL_DISK,
+       "Expected ERROR_VIRTDISK_NOT_VIRTUAL_DISK, got %ld\n", ret);
+    ok(used == sizeof(*info), "Expected size %Iu, got %lu\n", sizeof(*info), used);
 
     free(info);
     CloseHandle(handle);
