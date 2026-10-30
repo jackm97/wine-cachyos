@@ -27,6 +27,18 @@ import "sdkddkver.h";
 namespace Windows.UI.Composition {
     interface ICompositorInterop;
     interface ICompositionDrawingSurfaceInterop;
+    interface ICompositionGraphicsDeviceInterop;
+
+    [
+        object,
+        uuid(a116ff71-f8bf-4c8a-9c98-70779a32a9c8),
+        pointer_default(unique)
+    ]
+    interface ICompositionGraphicsDeviceInterop : IUnknown
+    {
+        HRESULT GetRenderingDevice([out] IUnknown **value);
+        HRESULT SetRenderingDevice([in] IUnknown *value);
+    };
 
     [
         object,
