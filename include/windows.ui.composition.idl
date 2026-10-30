@@ -26,7 +26,7 @@ import "eventtoken.idl";
 import "windowscontracts.idl";
 import "windows.foundation.idl";
 import "windows.foundation.numerics.idl";
-/* import "windows.graphics.idl"; */
+import "windows.graphics.idl";
 import "windows.graphics.directx.idl";
 import "windows.graphics.effects.idl";
 import "windows.system.idl";
@@ -85,6 +85,7 @@ namespace Windows.UI.Composition {
     interface ICompositionSurfaceBrush;
     interface ICompositionSurfaceBrush2;
     interface ICompositionSurfaceBrush3;
+    interface ICompositionVirtualDrawingSurface;
     interface ICompositionTarget;
     interface ICompositionTargetFactory;
     interface ICompositor;
@@ -132,6 +133,7 @@ namespace Windows.UI.Composition {
     runtimeclass CompositionEffectBrush;
     runtimeclass CompositionEffectFactory;
     runtimeclass CompositionGraphicsDevice;
+    runtimeclass CompositionVirtualDrawingSurface;
     runtimeclass CompositionObject;
     runtimeclass CompositionPropertySet;
     runtimeclass CompositionScopedBatch;
@@ -509,6 +511,34 @@ namespace Windows.UI.Composition {
             [out, retval] EventRegistrationToken *token
         );
         [eventremove] HRESULT RenderingDeviceReplaced([in] EventRegistrationToken token);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 4.0),
+        exclusiveto(Windows.UI.Composition.CompositionGraphicsDevice),
+        uuid(0fb8bdf6-c0f0-4bcc-9fb8-084982490d7d)
+    ]
+    interface ICompositionGraphicsDevice2 : IInspectable
+    {
+        HRESULT CreateDrawingSurface2(
+            [in] Windows.Graphics.SizeInt32 pixels, [in] Windows.Graphics.DirectX.DirectXPixelFormat format,
+            [in] Windows.Graphics.DirectX.DirectXAlphaMode mode, [out, retval] Windows.UI.Composition.CompositionDrawingSurface **result
+        );
+        HRESULT CreateVirtualDrawingSurface(
+            [in] Windows.Graphics.SizeInt32 pixels, [in] Windows.Graphics.DirectX.DirectXPixelFormat format,
+            [in] Windows.Graphics.DirectX.DirectXAlphaMode mode,
+            [out, retval] Windows.UI.Composition.CompositionVirtualDrawingSurface **result
+        );
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 4.0),
+        exclusiveto(Windows.UI.Composition.CompositionVirtualDrawingSurface),
+        uuid(a9c384db-8740-4f94-8b9d-b68521e7863d)
+    ]
+    interface ICompositionVirtualDrawingSurface : IInspectable
+    {
+        HRESULT Trim([in] UINT32 count, [in, size_is(count)] Windows.Graphics.RectInt32 *rects);
     }
 
     [
@@ -1056,9 +1086,19 @@ namespace Windows.UI.Composition {
     runtimeclass CompositionGraphicsDevice : Windows.UI.Composition.CompositionObject
     {
         [default] interface Windows.UI.Composition.ICompositionGraphicsDevice;
-        /* [contract(Windows.Foundation.UniversalApiContract, 4.0)] interface Windows.UI.Composition.ICompositionGraphicsDevice2; */
+        [contract(Windows.Foundation.UniversalApiContract, 4.0)] interface Windows.UI.Composition.ICompositionGraphicsDevice2;
         /* [contract(Windows.Foundation.UniversalApiContract, 8.0)] interface Windows.UI.Composition.ICompositionGraphicsDevice3; */
         /* [contract(Windows.Foundation.UniversalApiContract, 12.0)] interface Windows.UI.Composition.ICompositionGraphicsDevice4; */
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 4.0),
+        marshaling_behavior(agile),
+        threading(both)
+    ]
+    runtimeclass CompositionVirtualDrawingSurface : Windows.UI.Composition.CompositionDrawingSurface
+    {
+        [default] interface Windows.UI.Composition.ICompositionVirtualDrawingSurface;
     }
 
     [

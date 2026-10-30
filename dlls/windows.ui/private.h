@@ -34,6 +34,8 @@
 #include "windows.foundation.h"
 #define WIDL_using_Windows_Foundation_Numerics
 #include "windows.foundation.numerics.h"
+#define WIDL_using_Windows_Graphics
+#include "windows.graphics.h"
 #define WIDL_using_Windows_Graphics_Effects
 #include "windows.graphics.effects.h"
 #define WIDL_using_Windows_UI
