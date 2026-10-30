@@ -21,8 +21,10 @@ requirements:
     - ${{ compiler('c') }}
     - ${{ compiler('cxx') }}
     - ${{ stdlib('c') }}
+    # PE toolchain: clang compiles; lld-link links; llvm-tools gives winebuild llvm-dlltool/ar/ranlib/windres.
     - clang
     - lld
+    - llvm-tools
     - autoconf
     - perl
     - python
