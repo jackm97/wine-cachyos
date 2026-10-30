@@ -12,8 +12,11 @@ let build = ($env.SRC_DIR | path dirname | path join build)
 mkdir $build
 cd $build
 
-# 3. Configure.
+# 3. Configure. The PE side is cross-compiled by clang, which does not see CFLAGS,
+#    so x86-64-v3 is passed through configure.ac's ${wine_arch}_CFLAGS. i386 keeps
+#    its default, because x86-64-v3 is invalid for i386.
 run-external ($env.SRC_DIR | path join configure) ...[
+    'x86_64_CFLAGS=-g -O2 -march=x86-64-v3'
     '--enable-archs=i386,x86_64'
     '--disable-tests'
     '--with-x'
