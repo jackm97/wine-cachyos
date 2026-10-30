@@ -45,7 +45,7 @@ enum glyph_type
 };
 
 #define GLYPH_CACHE_PAGE_SIZE  0x100
-#define GLYPH_CACHE_PAGES      (0x10000 / GLYPH_CACHE_PAGE_SIZE)
+#define GLYPH_CACHE_PAGES      (0x110000 / GLYPH_CACHE_PAGE_SIZE)
 
 struct cached_font
 {
@@ -629,6 +629,11 @@ static struct cached_glyph *add_cached_glyph( struct cached_font *font, UINT ind
     UINT page = index / GLYPH_CACHE_PAGE_SIZE;
     UINT entry = index % GLYPH_CACHE_PAGE_SIZE;
 
+    if (page >= GLYPH_CACHE_PAGES)
+    {
+        free( glyph );
+        return NULL;
+    }
     if (!font->glyphs[type][page])
     {
         struct cached_glyph **ptr;
@@ -653,6 +658,7 @@ static struct cached_glyph *get_cached_glyph( struct cached_font *font, UINT ind
     enum glyph_type type = (flags & ETO_GLYPH_INDEX) ? GLYPH_INDEX : GLYPH_WCHAR;
     UINT page = index / GLYPH_CACHE_PAGE_SIZE;
 
+    if (page >= GLYPH_CACHE_PAGES) return NULL;
     if (!font->glyphs[type][page]) return NULL;
     return font->glyphs[type][page][index % GLYPH_CACHE_PAGE_SIZE];
 }
@@ -832,8 +838,11 @@ static void render_string( DC *dc, dib_info *dib, struct cached_font *font, INT 
 
     for (i = 0; i < count; i++)
     {
-        if (!(glyph = get_cached_glyph( font, str[i], flags )) &&
-            !(glyph = cache_glyph_bitmap( dc, font, str[i], flags ))) continue;
+        UINT first = i;
+        UINT codepoint = decode_utf16_codepoint( str, count, &i );
+
+        if (!(glyph = get_cached_glyph( font, codepoint, flags )) &&
+            !(glyph = cache_glyph_bitmap( dc, font, codepoint, flags ))) continue;
 
         glyph_dib.width       = glyph->metrics.gmBlackBoxX;
         glyph_dib.height      = glyph->metrics.gmBlackBoxY;
@@ -848,11 +857,16 @@ static void render_string( DC *dc, dib_info *dib, struct cached_font *font, INT 
         {
             if (flags & ETO_PDY)
             {
-                x += dx[ i * 2 ];
-                y += dx[ i * 2 + 1];
+                for (; first <= i; first++)
+                {
+                    x += dx[ first * 2 ];
+                    y += dx[ first * 2 + 1];
+                }
             }
             else
-                x += dx[ i ];
+            {
+                for (; first <= i; first++) x += dx[first];
+            }
         }
         else
         {

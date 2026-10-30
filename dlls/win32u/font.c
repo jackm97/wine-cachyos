@@ -462,7 +462,7 @@ static const struct nls_update_font_list
     }
 };
 
-static pthread_mutex_t font_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t font_lock;
 
 #ifdef WORDS_BIGENDIAN
 #define GET_BE_WORD(x) (x)
@@ -1336,6 +1336,7 @@ static void load_face_from_cache( HKEY hkey_family, struct gdi_font_family *fami
 static void load_font_list_from_cache(void)
 {
     WCHAR buffer[4096];
+    WCHAR family_name[LF_FACESIZE];
     KEY_VALUE_PARTIAL_INFORMATION *info = (void *)buffer;
     KEY_NODE_INFORMATION *enum_info = (KEY_NODE_INFORMATION *)buffer;
     DWORD family_index = 0, total_size;
@@ -1346,14 +1347,18 @@ static void load_font_list_from_cache(void)
     while (!NtEnumerateKey( wine_fonts_cache_key, family_index++, KeyNodeInformation, enum_info,
                             sizeof(buffer), &total_size ))
     {
-        if (!(hkey_family = reg_open_key( wine_fonts_cache_key, enum_info->Name,
-                                          enum_info->NameLength )))
+        UINT length = min( enum_info->NameLength / sizeof(WCHAR), ARRAY_SIZE(family_name) - 1 );
+
+        memcpy( family_name, enum_info->Name, length * sizeof(WCHAR) );
+        family_name[length] = 0;
+        if (!(hkey_family = reg_open_key( wine_fonts_cache_key, family_name,
+                                          length * sizeof(WCHAR) )))
             continue;
-        TRACE( "opened family key %s\n", debugstr_wn(enum_info->Name, enum_info->NameLength / sizeof(WCHAR)) );
+        TRACE( "opened family key %s\n", debugstr_w(family_name) );
         if (!query_reg_value( hkey_family, NULL, info, sizeof(buffer) ))
             second_name[0] = 0;
 
-        family = create_family( buffer, second_name );
+        family = create_family( family_name, second_name );
 
         load_face_from_cache( hkey_family, family, buffer, sizeof(buffer), TRUE );
 
@@ -4271,9 +4276,14 @@ static BOOL font_GetTextExtentExPoint( PHYSDEV dev, const WCHAR *str, INT count,
     pthread_mutex_lock( &font_lock );
     for (i = pos = 0; i < count; i++)
     {
-        get_glyph_outline( physdev->font, str[i], GGO_METRICS, NULL, &abc, 0, NULL, NULL, physdev->aa_flags );
+        UINT index = i;
+        UINT codepoint = decode_utf16_codepoint( str, count, &index );
+
+        get_glyph_outline( physdev->font, codepoint, GGO_METRICS, NULL, &abc, 0, NULL, NULL,
+                           physdev->aa_flags );
         pos += abc.abcA + abc.abcB + abc.abcC;
         dxs[i] = pos;
+        if (index != i) dxs[i = index] = pos;
     }
     pthread_mutex_unlock( &font_lock );
     return TRUE;
@@ -5549,9 +5559,11 @@ static RECT get_total_extents( HDC hdc, INT x, INT y, UINT flags, UINT aa_flags,
     reset_bounds( &bounds );
     for (i = 0; i < count; i++)
     {
+        UINT first = i;
+        UINT codepoint = decode_utf16_codepoint( str, count, &i );
         GLYPHMETRICS metrics;
 
-        if (get_glyph_bitmap( hdc, str[i], flags, aa_flags, &metrics, NULL )) continue;
+        if (get_glyph_bitmap( hdc, codepoint, flags, aa_flags, &metrics, NULL )) continue;
 
         rect.left   = x + metrics.gmptGlyphOrigin.x;
         rect.top    = y - metrics.gmptGlyphOrigin.y;
@@ -5563,10 +5575,16 @@ static RECT get_total_extents( HDC hdc, INT x, INT y, UINT flags, UINT aa_flags,
         {
             if (flags & ETO_PDY)
             {
-                x += dx[ i * 2 ];
-                y += dx[ i * 2 + 1];
+                for (; first <= i; first++)
+                {
+                    x += dx[ first * 2 ];
+                    y += dx[ first * 2 + 1];
+                }
             }
-            else x += dx[ i ];
+            else
+            {
+                for (; first <= i; first++) x += dx[first];
+            }
         }
         else
         {
@@ -5740,10 +5758,12 @@ BOOL nulldrv_ExtTextOut( PHYSDEV dev, INT x, INT y, UINT flags, const RECT *rect
 
     for (i = 0; i < count; i++)
     {
+        UINT first = i;
+        UINT codepoint = decode_utf16_codepoint( str, count, &i );
         GLYPHMETRICS metrics;
         struct gdi_image_bits image;
 
-        err = get_glyph_bitmap( dev->hdc, str[i], flags, GGO_BITMAP, &metrics, &image );
+        err = get_glyph_bitmap( dev->hdc, codepoint, flags, GGO_BITMAP, &metrics, &image );
         if (err) continue;
 
         if (image.ptr) draw_glyph( dc, x, y, &metrics, &image, (flags & ETO_CLIPPED) ? rect : NULL );
@@ -5753,10 +5773,16 @@ BOOL nulldrv_ExtTextOut( PHYSDEV dev, INT x, INT y, UINT flags, const RECT *rect
         {
             if (flags & ETO_PDY)
             {
-                x += dx[ i * 2 ];
-                y += dx[ i * 2 + 1];
+                for (; first <= i; first++)
+                {
+                    x += dx[ first * 2 ];
+                    y += dx[ first * 2 + 1];
+                }
             }
-            else x += dx[ i ];
+            else
+            {
+                for (; first <= i; first++) x += dx[first];
+            }
         }
         else
         {
@@ -6284,7 +6310,7 @@ DWORD WINAPI NtGdiGetGlyphOutline( HDC hdc, UINT ch, UINT format, GLYPHMETRICS *
     if(!dc) return GDI_ERROR;
 
     dev = GET_DC_PHYSDEV( dc, pGetGlyphOutline );
-    ret = dev->funcs->pGetGlyphOutline( dev, ch & 0xffff, format, metrics, size, buffer, mat2 );
+    ret = dev->funcs->pGetGlyphOutline( dev, ch, format, metrics, size, buffer, mat2 );
     release_dc_ptr( dc );
     return ret;
 }
@@ -6774,6 +6800,7 @@ UINT font_init(void)
     HANDLE mutex;
     DWORD disposition;
     UINT dpi = 0;
+    pthread_mutexattr_t mutex_attr;
 
     static WCHAR wine_font_mutexW[] =
         {'\\','B','a','s','e','N','a','m','e','d','O','b','j','e','c','t','s',
@@ -6781,6 +6808,11 @@ UINT font_init(void)
     static const WCHAR wine_fonts_keyW[] =
         {'S','o','f','t','w','a','r','e','\\','W','i','n','e','\\','F','o','n','t','s'};
     static const WCHAR cacheW[] = {'C','a','c','h','e'};
+
+    pthread_mutexattr_init( &mutex_attr );
+    pthread_mutexattr_settype( &mutex_attr, PTHREAD_MUTEX_RECURSIVE );
+    pthread_mutex_init( &font_lock, &mutex_attr );
+    pthread_mutexattr_destroy( &mutex_attr );
 
     if (!(hkcu_key = open_hkcu())) return 0;
     wine_fonts_key = reg_create_key( hkcu_key, wine_fonts_keyW, sizeof(wine_fonts_keyW), 0, NULL );

@@ -553,6 +553,19 @@ static inline void order_rect( RECT *rect )
     }
 }
 
+static inline UINT decode_utf16_codepoint( const WCHAR *str, UINT count, UINT *index )
+{
+    UINT high = str[*index];
+
+    if (*index + 1 < count && high >= 0xd800 && high <= 0xdbff &&
+        str[*index + 1] >= 0xdc00 && str[*index + 1] <= 0xdfff)
+    {
+        UINT low = str[++*index];
+        return 0x10000 + ((high - 0xd800) << 10) + (low - 0xdc00);
+    }
+    return high;
+}
+
 static inline void get_bounding_rect( RECT *rect, int x, int y, int width, int height )
 {
     rect->left   = x;
