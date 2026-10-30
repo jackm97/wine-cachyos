@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/prefix-dev/recipe-format/main/schema.json
+
+context:
+  version: "20260125"
+
+package:
+  name: winetricks
+  version: ${{ version }}
+
+source:
+  url: https://github.com/Winetricks/winetricks/archive/refs/tags/${{ version }}.tar.gz
+  sha256: 2890bd9fbbade4638e58b4999a237273192df03b58516ae7b8771e09c22d2f56
+
+build:
+  number: 0
+  noarch: generic
+  script:
+    interpreter: nu
+    content: |
+      # Install the script with mode 755 (nushell has no chmod, so use the build env's).
+      let bin = ($env.PREFIX | path join bin)
+      mkdir $bin
+      cp ($env.SRC_DIR | path join src winetricks) ($bin | path join winetricks)
+      ^chmod 755 ($bin | path join winetricks)
+
+requirements:
+  build:
+    - nushell
+    - coreutils
+  run:
+    - cabextract
+    - p7zip
+    - unzip
+    - curl
+
+about:
+  homepage: https://github.com/Winetricks/winetricks
+  license: LGPL-2.1-or-later
+  summary: Winetricks, a helper script to install Windows runtime libraries into Wine prefixes

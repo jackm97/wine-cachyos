@@ -1,0 +1,9 @@
+[package]
+name = "dxvk"
+version = "3.1.1"
+publish = true
+
+[package.build.backend]
+name = "pixi-build-rattler-build"
+version = "*"
+channels = ["https://prefix.dev/pixi-build-backends"]
