@@ -1,4 +1,4 @@
-#! /usr/bin/perl -w
+#!/usr/bin/env -S perl -w
 #
 # Copyright 2000 Patrik Stridvall
 #
