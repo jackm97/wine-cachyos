@@ -21,6 +21,9 @@
 #define COBJMACROS
 #include "initguid.h"
 #include "dxcore.h"
+#include "dxgi1_4.h"
+#include "d3d11.h"
+#include "d3d12.h"
 #include "wine/wined3d.h"
 
 #include "wine/debug.h"
@@ -83,6 +86,159 @@ static ULONG STDMETHODCALLTYPE dxcore_adapter_Release(IDXCoreAdapter *iface)
     return refcount;
 }
 
+enum dxcore_attribute
+{
+    DXCORE_ATTRIBUTE_D3D12_GRAPHICS,
+    DXCORE_ATTRIBUTE_D3D12_CORE_COMPUTE,
+    DXCORE_ATTRIBUTE_D3D11_GRAPHICS,
+};
+
+/* Adapter objects are recreated on every CreateAdapterList(), so probe results
+ * are cached process-wide, keyed by adapter LUID and attribute. */
+#define DXCORE_ATTRIBUTE_CACHE_SIZE 64
+
+static struct dxcore_attribute_cache_entry
+{
+    LUID luid;
+    enum dxcore_attribute attribute;
+    BOOL supported;
+} dxcore_attribute_cache[DXCORE_ATTRIBUTE_CACHE_SIZE];
+static unsigned int dxcore_attribute_cache_count;
+static SRWLOCK dxcore_attribute_cache_lock = SRWLOCK_INIT;
+
+static BOOL dxcore_attribute_cache_lookup(const LUID *luid, enum dxcore_attribute attribute, BOOL *supported)
+{
+    BOOL found = FALSE;
+    unsigned int i;
+
+    AcquireSRWLockShared(&dxcore_attribute_cache_lock);
+    for (i = 0; i < dxcore_attribute_cache_count; ++i)
+    {
+        const struct dxcore_attribute_cache_entry *entry = &dxcore_attribute_cache[i];
+
+        if (entry->attribute == attribute && !memcmp(&entry->luid, luid, sizeof(*luid)))
+        {
+            *supported = entry->supported;
+            found = TRUE;
+            break;
+        }
+    }
+    ReleaseSRWLockShared(&dxcore_attribute_cache_lock);
+
+    return found;
+}
+
+static void dxcore_attribute_cache_store(const LUID *luid, enum dxcore_attribute attribute, BOOL supported)
+{
+    unsigned int i;
+
+    AcquireSRWLockExclusive(&dxcore_attribute_cache_lock);
+    for (i = 0; i < dxcore_attribute_cache_count; ++i)
+    {
+        const struct dxcore_attribute_cache_entry *entry = &dxcore_attribute_cache[i];
+
+        /* Another thread may have stored the result while we were probing. */
+        if (entry->attribute == attribute && !memcmp(&entry->luid, luid, sizeof(*luid)))
+            goto done;
+    }
+
+    if (dxcore_attribute_cache_count < ARRAY_SIZE(dxcore_attribute_cache))
+    {
+        struct dxcore_attribute_cache_entry *entry = &dxcore_attribute_cache[dxcore_attribute_cache_count++];
+
+        entry->luid = *luid;
+        entry->attribute = attribute;
+        entry->supported = supported;
+    }
+    else
+    {
+        WARN("Attribute cache is full, not caching attribute %u.\n", attribute);
+    }
+
+done:
+    ReleaseSRWLockExclusive(&dxcore_attribute_cache_lock);
+}
+
+/* The d3d12, d3d11 and dxgi DLLs are loaded by name at first use, rather than
+ * imported, so that whichever DLL the prefix overrides (vkd3d-proton, DXVK) is
+ * the one used. They are never freed. */
+static HRESULT dxcore_probe_d3d12(IDXCoreAdapter *iface, D3D_FEATURE_LEVEL feature_level)
+{
+    PFN_D3D12_CREATE_DEVICE d3d12_create_device;
+    HMODULE d3d12;
+
+    if (!(d3d12 = LoadLibraryW(L"d3d12.dll")))
+    {
+        WARN("Failed to load d3d12.dll, error %lu.\n", GetLastError());
+        return E_FAIL;
+    }
+
+    if (!(d3d12_create_device = (void *)GetProcAddress(d3d12, "D3D12CreateDevice")))
+    {
+        WARN("Failed to get D3D12CreateDevice, error %lu.\n", GetLastError());
+        return E_FAIL;
+    }
+
+    /* Passing a NULL device only checks whether the device could be created. */
+    return d3d12_create_device((IUnknown *)iface, feature_level, &IID_ID3D12Device, NULL);
+}
+
+typedef HRESULT (WINAPI *dxcore_create_dxgi_factory1)(REFIID riid, void **factory);
+
+static HRESULT dxcore_probe_d3d11(const LUID *luid)
+{
+    PFN_D3D11_CREATE_DEVICE d3d11_create_device;
+    dxcore_create_dxgi_factory1 create_dxgi_factory1;
+    IDXGIAdapter *dxgi_adapter;
+    IDXGIFactory4 *factory;
+    HMODULE d3d11, dxgi;
+    HRESULT hr;
+
+    if (!(dxgi = LoadLibraryW(L"dxgi.dll")))
+    {
+        WARN("Failed to load dxgi.dll, error %lu.\n", GetLastError());
+        return E_FAIL;
+    }
+
+    if (!(d3d11 = LoadLibraryW(L"d3d11.dll")))
+    {
+        WARN("Failed to load d3d11.dll, error %lu.\n", GetLastError());
+        return E_FAIL;
+    }
+
+    if (!(create_dxgi_factory1 = (void *)GetProcAddress(dxgi, "CreateDXGIFactory1")))
+    {
+        WARN("Failed to get CreateDXGIFactory1, error %lu.\n", GetLastError());
+        return E_FAIL;
+    }
+
+    if (!(d3d11_create_device = (void *)GetProcAddress(d3d11, "D3D11CreateDevice")))
+    {
+        WARN("Failed to get D3D11CreateDevice, error %lu.\n", GetLastError());
+        return E_FAIL;
+    }
+
+    if (FAILED(hr = create_dxgi_factory1(&IID_IDXGIFactory4, (void **)&factory)))
+    {
+        WARN("Failed to create DXGI factory, hr %#lx.\n", hr);
+        return hr;
+    }
+
+    hr = IDXGIFactory4_EnumAdapterByLuid(factory, *luid, &IID_IDXGIAdapter, (void **)&dxgi_adapter);
+    IDXGIFactory4_Release(factory);
+    if (FAILED(hr))
+    {
+        WARN("Failed to get DXGI adapter for LUID %08lx:%08lx, hr %#lx.\n", luid->HighPart, luid->LowPart, hr);
+        return hr;
+    }
+
+    /* All output parameters are NULL, so no device is created. */
+    hr = d3d11_create_device(dxgi_adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0, NULL, 0,
+            D3D11_SDK_VERSION, NULL, NULL, NULL);
+    IDXGIAdapter_Release(dxgi_adapter);
+    return hr;
+}
+
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsValid(IDXCoreAdapter *iface)
 {
     WARN("iface %p, adapter removal is not modelled, returning TRUE.\n", iface);
@@ -91,8 +247,57 @@ static BOOL STDMETHODCALLTYPE dxcore_adapter_IsValid(IDXCoreAdapter *iface)
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsAttributeSupported(IDXCoreAdapter *iface, REFGUID attribute)
 {
-    FIXME("iface %p, attribute %s stub!\n", iface, debugstr_guid(attribute));
-    return FALSE;
+    struct dxcore_adapter *adapter = impl_from_IDXCoreAdapter(iface);
+    const LUID *luid = &adapter->identifier.adapter_luid;
+    enum dxcore_attribute id;
+    BOOL supported;
+    HRESULT hr;
+
+    TRACE("iface %p, attribute %s.\n", iface, debugstr_guid(attribute));
+
+    if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS))
+        id = DXCORE_ATTRIBUTE_D3D12_GRAPHICS;
+    else if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE))
+        id = DXCORE_ATTRIBUTE_D3D12_CORE_COMPUTE;
+    else if (IsEqualGUID(attribute, &DXCORE_ADAPTER_ATTRIBUTE_D3D11_GRAPHICS))
+        id = DXCORE_ATTRIBUTE_D3D11_GRAPHICS;
+    else
+    {
+        FIXME("Unhandled attribute %s.\n", debugstr_guid(attribute));
+        return FALSE;
+    }
+
+    if (dxcore_attribute_cache_lookup(luid, id, &supported))
+    {
+        TRACE("attribute %s, LUID %08lx:%08lx, cached result %d.\n", debugstr_guid(attribute),
+                luid->HighPart, luid->LowPart, supported);
+        return supported;
+    }
+
+    /* Probe without holding the cache lock; the probes call into other DLLs. */
+    switch (id)
+    {
+        case DXCORE_ATTRIBUTE_D3D12_GRAPHICS:
+            hr = dxcore_probe_d3d12(iface, D3D_FEATURE_LEVEL_11_0);
+            supported = hr == S_OK || hr == S_FALSE;
+            break;
+
+        case DXCORE_ATTRIBUTE_D3D12_CORE_COMPUTE:
+            hr = dxcore_probe_d3d12(iface, D3D_FEATURE_LEVEL_1_0_CORE);
+            supported = hr == S_OK || hr == S_FALSE;
+            break;
+
+        case DXCORE_ATTRIBUTE_D3D11_GRAPHICS:
+            hr = dxcore_probe_d3d11(luid);
+            supported = SUCCEEDED(hr);
+            break;
+    }
+
+    TRACE("attribute %s, LUID %08lx:%08lx, hr %#lx, supported %d.\n", debugstr_guid(attribute),
+            luid->HighPart, luid->LowPart, hr, supported);
+
+    dxcore_attribute_cache_store(luid, id, supported);
+    return supported;
 }
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsPropertySupported(IDXCoreAdapter *iface, DXCoreAdapterProperty property)
