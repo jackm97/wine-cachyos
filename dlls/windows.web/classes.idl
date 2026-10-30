@@ -22,8 +22,31 @@
 #pragma winrt ns_prefix
 
 import "windows.data.json.idl";
+import "windows.security.authorization.appcapabilityaccess.idl";
+import "windows.web.http.idl";
 
 namespace Windows.Data.Json {
+    runtimeclass JsonArray;
     runtimeclass JsonObject;
     runtimeclass JsonValue;
+}
+
+namespace Windows.Security.Authorization.AppCapabilityAccess {
+    runtimeclass AppCapability;
+}
+
+namespace Windows.Web.Http {
+    runtimeclass HttpClient;
+    runtimeclass HttpContent;
+    runtimeclass HttpCookie;
+    runtimeclass HttpCookieCollection;
+    runtimeclass HttpCookieManager;
+    runtimeclass HttpMethod;
+    runtimeclass HttpRequestMessage;
+    runtimeclass HttpResponseMessage;
+}
+
+namespace Windows.Web.Http.Filters {
+    runtimeclass HttpBaseProtocolFilter;
+    runtimeclass HttpCacheControl;
 }
