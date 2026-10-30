@@ -18,6 +18,9 @@ static XrVersion api_version = XR_CURRENT_API_VERSION;
 #define SESSION_TYPE_D3D11 3
 #define SESSION_TYPE_D3D12 4
 
+static int get_extensions(char **ret_instance_extensions, char **ret_device_extensions,
+                          uint32_t *ret_physdev_vid, uint32_t *ret_physdev_pid);
+
 UINT64 g_vk_create_instance_callback;
 UINT64 g_vk_create_device_callback;
 
@@ -217,6 +220,8 @@ static BOOL wine_openxr_unix_init_once(void) {
 }
 
 static XrResult wine_openxr_init_once(void) {
+  char runtime[5] = {0};
+  DWORD size;
   if (g_instance_extensions || g_device_extensions) {
     /* already done */
     return XR_SUCCESS;
@@ -226,7 +231,13 @@ static XrResult wine_openxr_init_once(void) {
     return XR_ERROR_INITIALIZATION_FAILED;
   }
 
-  if (!get_vulkan_extensions()) {
+  size = GetEnvironmentVariableA("SODA_OPENXR_RUNTIME", runtime, ARRAY_SIZE(runtime));
+  if (size && size < ARRAY_SIZE(runtime) && !strcmp(runtime, "host")) {
+    XrResult result = get_extensions(&g_instance_extensions, &g_device_extensions,
+                                     &g_physdev_vid, &g_physdev_pid);
+    if (result != XR_SUCCESS)
+      return result;
+  } else if (!get_vulkan_extensions()) {
     return XR_ERROR_INITIALIZATION_FAILED;
   }
 
