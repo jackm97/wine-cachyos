@@ -394,7 +394,8 @@ static void client_surface_update_geometry( HWND hwnd, struct x11drv_client_surf
     TRACE( "client window %p/%lx, requesting position %d,%d size %d,%d mask %#x\n", hwnd,
            surface->window, changes.x, changes.y, changes.width, changes.height, mask );
     XConfigureWindow( gdi_display, surface->window, mask, &changes );
-    XFlush( gdi_display );
+    if (mask & (CWWidth | CWHeight)) XSync( gdi_display, False );
+    else XFlush( gdi_display );
 }
 
 static void client_surface_update_offscreen( HWND hwnd, struct x11drv_client_surface *surface )
