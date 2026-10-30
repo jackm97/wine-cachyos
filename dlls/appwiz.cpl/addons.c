@@ -308,8 +308,6 @@ static enum install_res install_from_default_dir(void)
     }
 
     if (ret == INSTALL_NEXT)
-        ret = install_from_file(L"\\\\?\\unix" INSTALL_DATADIR "/wine/", addon->subdir_name, addon->file_name);
-    if (ret == INSTALL_NEXT && strcmp("" INSTALL_DATADIR, "/usr/share") != 0)
         ret = install_from_file(L"\\\\?\\unix/usr/share/wine/", addon->subdir_name, addon->file_name);
     if (ret == INSTALL_NEXT)
         ret = install_from_file(L"\\\\?\\unix/opt/wine/", addon->subdir_name, addon->file_name);
@@ -763,7 +761,6 @@ BOOL install_addon(addon_t addon_type)
      * Try to find addon .msi file in following order:
      * - directory stored in $dir_config_key value of HKCU/Software/Wine/$config_key key
      * - $datadir/$addon_subdir/
-     * - $INSTALL_DATADIR/wine/$addon_subdir/
      * - /usr/share/wine/$addon_subdir/
      * - /opt/wine/$addon_subdir/
      * - download from URL stored in $url_config_key value of HKCU/Software/Wine/$config_key key

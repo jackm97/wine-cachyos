@@ -8,4 +8,3 @@ SOURCES = \
 	appwiz.rc \
 	appwiz.svg
 
-addons_EXTRADEFS = -DINSTALL_DATADIR="\"${datadir}\""
