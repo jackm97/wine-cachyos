@@ -32,6 +32,9 @@
 #include "winbase.h"
 #include "winternl.h"
 #include "kernel_private.h"
+
+extern void WINAPI __wine_eagle_loader_result(const char *operation, const void *name, BOOL wide, BOOL basename,
+        HMODULE module, const void *address, DWORD flags, BOOL success, const void *caller);
 #include "psapi.h"
 
 #include "wine/list.h"
@@ -275,7 +278,7 @@ BOOL WINAPI GetBinaryTypeA( LPCSTR lpApplicationName, LPDWORD lpBinaryType )
  *  Success: A pointer to the symbol in the process address space.
  *  Failure: NULL. Use GetLastError() to determine the cause.
  */
-FARPROC get_proc_address( HMODULE hModule, LPCSTR function )
+static FARPROC get_proc_address_impl( HMODULE hModule, LPCSTR function )
 {
     FARPROC     fp;
 
@@ -293,6 +296,12 @@ FARPROC get_proc_address( HMODULE hModule, LPCSTR function )
             return NULL;
 
     return fp;
+}
+FARPROC get_proc_address( HMODULE hModule, LPCSTR function )
+{
+    FARPROC result = get_proc_address_impl( hModule, function );
+    __wine_eagle_loader_result("loader.GetProcAddress", function, FALSE, FALSE, hModule, (const void *)result, 0, !!result, __builtin_return_address(0));
+    return result;
 }
 
 /*

@@ -1830,3 +1830,5 @@
 @ stdcall lstrlenW(wstr) KERNELBASE_lstrlenW
 # @ stub time
 # @ stub wprintf
+
+@ stdcall -norelay __wine_eagle_loader_result(ptr ptr long long ptr ptr long long ptr)
