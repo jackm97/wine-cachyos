@@ -3333,7 +3333,28 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
 
     if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1CommandList, (void **)&command_list)))
     {
-        HRESULT hr = d2d_command_list_replay(command_list, (ID2D1DeviceContext *)iface);
+        D2D1_MATRIX_3X2_F previous_transform = context->drawing_state.transform;
+        D2D1_MATRIX_3X2_F transform = identity;
+        HRESULT hr;
+
+        if (target_offset)
+        {
+            transform._31 = target_offset->x;
+            transform._32 = target_offset->y;
+        }
+        if (image_rect)
+        {
+            transform._31 -= image_rect->left;
+            transform._32 -= image_rect->top;
+        }
+        d2d_matrix_multiply(&transform, &previous_transform);
+        ID2D1DeviceContext6_SetTransform(iface, &transform);
+        if (image_rect)
+            ID2D1DeviceContext6_PushAxisAlignedClip(iface, image_rect, D2D1_ANTIALIAS_MODE_ALIASED);
+        hr = d2d_command_list_replay(command_list, (ID2D1DeviceContext *)iface);
+        if (image_rect)
+            ID2D1DeviceContext6_PopAxisAlignedClip(iface);
+        ID2D1DeviceContext6_SetTransform(iface, &previous_transform);
         ID2D1CommandList_Release(command_list);
         if (FAILED(hr)) d2d_device_context_set_error(context, hr);
         return;

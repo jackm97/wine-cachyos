@@ -502,9 +502,21 @@ static HRESULT STDMETHODCALLTYPE d2d_command_list_Stream(ID2D1CommandList *iface
 HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *context)
 {
     struct d2d_command_list *command_list = impl_from_ID2D1CommandList(iface);
+    ID2D1DrawingStateBlock *state;
+    D2D1_MATRIX_3X2_F base_transform;
+    ID2D1Factory *factory;
     const void *data, *end;
+    unsigned int clip_count = 0;
+    HRESULT hr;
 
     if (command_list->state != D2D_COMMAND_LIST_STATE_CLOSED) return D2DERR_WRONG_STATE;
+
+    ID2D1DeviceContext_GetFactory(context, &factory);
+    hr = ID2D1Factory_CreateDrawingStateBlock(factory, NULL, NULL, &state);
+    ID2D1Factory_Release(factory);
+    if (FAILED(hr)) return hr;
+    ID2D1DeviceContext_SaveDrawingState(context, state);
+    ID2D1DeviceContext_GetTransform(context, &base_transform);
 
     data = command_list->data;
     end = (char *)command_list->data + command_list->size;
@@ -527,9 +539,12 @@ HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *con
                         ((const struct d2d_command_set_text_rendering_params *)data)->params);
                 break;
             case D2D_COMMAND_SET_TRANSFORM:
-                ID2D1DeviceContext_SetTransform(context,
-                        &((const struct d2d_command_set_transform *)data)->transform);
+            {
+                D2D1_MATRIX_3X2_F transform = ((const struct d2d_command_set_transform *)data)->transform;
+                d2d_matrix_multiply(&transform, &base_transform);
+                ID2D1DeviceContext_SetTransform(context, &transform);
                 break;
+            }
             case D2D_COMMAND_SET_PRIMITIVE_BLEND:
                 ID2D1DeviceContext_SetPrimitiveBlend(context,
                         ((const struct d2d_command_set_primitive_blend *)data)->primitive_blend);
@@ -602,18 +617,35 @@ HRESULT d2d_command_list_replay(ID2D1CommandList *iface, ID2D1DeviceContext *con
             {
                 const struct d2d_command_push_clip *c = data;
                 ID2D1DeviceContext_PushAxisAlignedClip(context, &c->rect, c->mode);
+                ++clip_count;
                 break;
             }
             case D2D_COMMAND_POP_CLIP:
+                if (!clip_count)
+                {
+                    hr = D2DERR_PUSH_POP_UNBALANCED;
+                    goto done;
+                }
                 ID2D1DeviceContext_PopAxisAlignedClip(context);
+                --clip_count;
                 break;
             default:
                 FIXME("Unhandled command %u.\n", command->op);
-                return E_NOTIMPL;
+                hr = E_NOTIMPL;
+                goto done;
         }
         data = (char *)data + command->size;
     }
-    return S_OK;
+    hr = clip_count ? D2DERR_PUSH_POP_UNBALANCED : S_OK;
+done:
+    while (clip_count)
+    {
+        ID2D1DeviceContext_PopAxisAlignedClip(context);
+        --clip_count;
+    }
+    ID2D1DeviceContext_RestoreDrawingState(context, state);
+    ID2D1DrawingStateBlock_Release(state);
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_command_list_Close(ID2D1CommandList *iface)

@@ -10512,6 +10512,75 @@ static ID2D1DeviceContext *create_device_context(ID2D1Factory1 *factory, IDXGIDe
     return device_context;
 }
 
+static void test_command_list_draw_image(BOOL d3d11)
+{
+    static const D2D1_MATRIX_3X2_F record_transform = {{{1.0f, 0.0f, 0.0f, 1.0f, 10.0f, 20.0f}}};
+    static const D2D1_MATRIX_3X2_F draw_transform = {{{1.0f, 0.0f, 0.0f, 1.0f, 100.0f, 50.0f}}};
+    static const D2D1_COLOR_F white = {1.0f, 1.0f, 1.0f, 1.0f};
+    static const D2D1_COLOR_F black = {0.0f, 0.0f, 0.0f, 1.0f};
+    static const D2D1_RECT_F rect = {0.0f, 0.0f, 20.0f, 10.0f};
+    static const D2D1_POINT_2F offset = {30.0f, 40.0f};
+    struct d2d1_test_context ctx;
+    ID2D1SolidColorBrush *brush;
+    ID2D1CommandList *commands;
+    struct resource_readback rb;
+    D2D1_MATRIX_3X2_F transform;
+    D2D1_TAG tag1, tag2;
+    ID2D1Image *target;
+    unsigned int i;
+    HRESULT hr;
+    DWORD colour;
+
+    if (!init_test_context(&ctx, d3d11))
+        return;
+    if (!ctx.factory1)
+    {
+        release_test_context(&ctx);
+        return;
+    }
+    hr = ID2D1RenderTarget_CreateSolidColorBrush(ctx.rt, &black, NULL, &brush);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = ID2D1DeviceContext_CreateCommandList(ctx.context, &commands);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ID2D1DeviceContext_GetTarget(ctx.context, &target);
+    ID2D1DeviceContext_SetTarget(ctx.context, (ID2D1Image *)commands);
+    ID2D1DeviceContext_BeginDraw(ctx.context);
+    ID2D1DeviceContext_SetTransform(ctx.context, &record_transform);
+    ID2D1DeviceContext_SetTags(ctx.context, 7, 8);
+    ID2D1DeviceContext_FillRectangle(ctx.context, &rect, (ID2D1Brush *)brush);
+    hr = ID2D1DeviceContext_EndDraw(ctx.context, NULL, NULL);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = ID2D1CommandList_Close(commands);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ID2D1DeviceContext_SetTarget(ctx.context, target);
+    ID2D1Image_Release(target);
+
+    for (i = 0; i < 2; ++i)
+    {
+        ID2D1DeviceContext_BeginDraw(ctx.context);
+        ID2D1DeviceContext_Clear(ctx.context, &white);
+        ID2D1DeviceContext_SetTransform(ctx.context, &draw_transform);
+        ID2D1DeviceContext_SetTags(ctx.context, 123, 456);
+        ID2D1DeviceContext_DrawImage(ctx.context, (ID2D1Image *)commands, i ? &offset : NULL, NULL,
+                D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
+        ID2D1DeviceContext_GetTransform(ctx.context, &transform);
+        ok(!memcmp(&transform, &draw_transform, sizeof(transform)), "Transform changed.\n");
+        ID2D1DeviceContext_GetTags(ctx.context, &tag1, &tag2);
+        ok(tag1 == 123 && tag2 == 456, "Tags changed.\n");
+        hr = ID2D1DeviceContext_EndDraw(ctx.context, NULL, NULL);
+        ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+        get_surface_readback(&ctx, &rb);
+        colour = get_readback_colour(&rb, i ? 150 : 120, i ? 115 : 75);
+        ok(colour == 0xff000000, "Got unexpected colour %#lx.\n", colour);
+        colour = get_readback_colour(&rb, 20, 25);
+        ok(colour == 0xffffffff, "Got unexpected colour %#lx.\n", colour);
+        release_resource_readback(&rb);
+    }
+    ID2D1CommandList_Release(commands);
+    ID2D1SolidColorBrush_Release(brush);
+    release_test_context(&ctx);
+}
+
 static void test_command_list(BOOL d3d11)
 {
     static const DWORD bitmap_data[] =
@@ -17784,6 +17853,7 @@ START_TEST(d2d1)
     queue_d3d10_test(test_invert_matrix);
     queue_d3d10_test(test_skew_matrix);
     queue_test(test_command_list);
+    queue_test(test_command_list_draw_image);
     queue_d3d10_test(test_max_bitmap_size);
     queue_test(test_dpi);
     queue_test(test_unit_mode);
