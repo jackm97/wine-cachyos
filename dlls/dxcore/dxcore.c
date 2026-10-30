@@ -85,8 +85,8 @@ static ULONG STDMETHODCALLTYPE dxcore_adapter_Release(IDXCoreAdapter *iface)
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsValid(IDXCoreAdapter *iface)
 {
-    FIXME("iface %p stub!\n", iface);
-    return FALSE;
+    WARN("iface %p, adapter removal is not modelled, returning TRUE.\n", iface);
+    return TRUE;
 }
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsAttributeSupported(IDXCoreAdapter *iface, REFGUID attribute)
@@ -97,8 +97,24 @@ static BOOL STDMETHODCALLTYPE dxcore_adapter_IsAttributeSupported(IDXCoreAdapter
 
 static BOOL STDMETHODCALLTYPE dxcore_adapter_IsPropertySupported(IDXCoreAdapter *iface, DXCoreAdapterProperty property)
 {
-    FIXME("iface %p, property %u stub!\n", iface, property);
-    return FALSE;
+    TRACE("iface %p, property %u.\n", iface, property);
+
+    /* Keep in sync with dxcore_adapter_get_property_size(). */
+    switch (property)
+    {
+        case InstanceLuid:
+        case DriverVersion:
+        case DriverDescription:
+        case HardwareID:
+        case DedicatedAdapterMemory:
+        case DedicatedSystemMemory:
+        case SharedSystemMemory:
+        case IsHardware:
+            return TRUE;
+
+        default:
+            return FALSE;
+    }
 }
 
 static HRESULT dxcore_adapter_get_property_size(struct dxcore_adapter *adapter,
