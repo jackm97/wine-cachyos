@@ -825,7 +825,6 @@ Formattable::setDecimalNumber(StringPiece numberString, UErrorCode &status) {
 using namespace std;
 
 #include "unicode/datefmt.h"
-#include "unistrm.h"
 
 class FormattableStreamer /* not : public UObject because all methods are static */ {
 public:

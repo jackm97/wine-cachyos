@@ -39,10 +39,6 @@
 #include "ucnv_bld.h"
 #include "ucnv_cnv.h"
 
-#ifdef EBCDIC_RTL
-    #include "ascii_a.h"
-#endif
-
 /*
   LMBCS
 
