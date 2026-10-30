@@ -68,6 +68,8 @@ namespace Windows.UI.Composition {
     interface ICompositionEasingFunctionStatics;
     interface ICompositionEffectBrush;
     interface ICompositionEffectFactory;
+    interface ICompositionEffectSourceParameter;
+    interface ICompositionEffectSourceParameterFactory;
     interface ICompositionGraphicsDevice;
     interface ICompositionGraphicsDevice2;
     interface ICompositionGraphicsDevice3;
@@ -132,6 +134,7 @@ namespace Windows.UI.Composition {
     runtimeclass CompositionEasingFunction;
     runtimeclass CompositionEffectBrush;
     runtimeclass CompositionEffectFactory;
+    runtimeclass CompositionEffectSourceParameter;
     runtimeclass CompositionGraphicsDevice;
     runtimeclass CompositionVirtualDrawingSurface;
     runtimeclass CompositionObject;
@@ -493,6 +496,27 @@ namespace Windows.UI.Composition {
         HRESULT CreateBrush([out, retval] Windows.UI.Composition.CompositionEffectBrush **result);
         [propget] HRESULT ExtendedError([out, retval] HRESULT *value);
         [propget] HRESULT LoadStatus([out, retval] Windows.UI.Composition.CompositionEffectFactoryLoadStatus *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.UI.Composition.CompositionEffectSourceParameter),
+        uuid(858ab13a-3292-4e4e-b3bb-2b6c6544a6ee)
+    ]
+    interface ICompositionEffectSourceParameter : IInspectable
+        requires Windows.Graphics.Effects.IGraphicsEffectSource
+    {
+        [propget] HRESULT Name([out, retval] HSTRING *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        exclusiveto(Windows.UI.Composition.CompositionEffectSourceParameter),
+        uuid(b3d9f276-aba3-4724-acf3-d0397464db1c)
+    ]
+    interface ICompositionEffectSourceParameterFactory : IInspectable
+    {
+        HRESULT Create([in] HSTRING name, [out, retval] Windows.UI.Composition.CompositionEffectSourceParameter **value);
     }
 
     [
@@ -1076,6 +1100,18 @@ namespace Windows.UI.Composition {
     runtimeclass CompositionEffectFactory : Windows.UI.Composition.CompositionObject
     {
         [default] interface Windows.UI.Composition.ICompositionEffectFactory;
+    }
+
+    [
+        activatable(Windows.UI.Composition.ICompositionEffectSourceParameterFactory, Windows.Foundation.UniversalApiContract, 2.0),
+        contract(Windows.Foundation.UniversalApiContract, 2.0),
+        marshaling_behavior(agile),
+        threading(both)
+    ]
+    runtimeclass CompositionEffectSourceParameter
+    {
+        [default] interface Windows.UI.Composition.ICompositionEffectSourceParameter;
+        interface Windows.Graphics.Effects.IGraphicsEffectSource;
     }
 
     [

@@ -47,6 +47,7 @@ namespace Windows.UI.ViewManagement {
 
 namespace Windows.UI.Composition {
     runtimeclass Compositor;
+    runtimeclass CompositionEffectSourceParameter;
 }
 
 namespace Windows.UI.Composition.Core {

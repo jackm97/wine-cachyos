@@ -5,6 +5,7 @@ SOURCES = \
 	accessibilitysettings.c \
 	classes.idl \
 	composition.c \
+	effect.c \
 	inputpane.c \
 	interactions.c \
 	main.c \

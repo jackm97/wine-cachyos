@@ -28,6 +28,8 @@
 #define WIDL_using_Windows_Foundation
 #define WIDL_using_Windows_Foundation_Collections
 #include "windows.foundation.h"
+#define WIDL_using_Windows_Graphics_Effects
+#include "windows.graphics.effects.h"
 #define WIDL_using_Windows_Foundation_Numerics
 #include "windows.foundation.numerics.h"
 #define WIDL_using_Windows_Graphics
@@ -618,6 +620,90 @@ done:
     ICompositor_Release( compositor );
 }
 
+static void test_effect_source_parameter(void)
+{
+    ICompositionEffectSourceParameterFactory *constructor = NULL;
+    ICompositionEffectSourceParameter *parameter = NULL;
+    IGraphicsEffectSource *source = NULL;
+    IActivationFactory *factory = NULL;
+    IUnknown *identity = NULL, *other = NULL;
+    HSTRING class_name, name, value;
+    HSTRING_HEADER header;
+    WCHAR buffer[] = L"Backdrop";
+    IID *iids;
+    ULONG count;
+    HRESULT hr;
+
+    WindowsCreateString( RuntimeClass_Windows_UI_Composition_CompositionEffectSourceParameter,
+                        wcslen(RuntimeClass_Windows_UI_Composition_CompositionEffectSourceParameter), &class_name );
+    hr = RoGetActivationFactory( class_name, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( class_name );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (FAILED(hr)) return;
+    hr = IActivationFactory_QueryInterface( factory, &IID_ICompositionEffectSourceParameterFactory,
+                                           (void **)&constructor );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (FAILED(hr)) goto done;
+
+    hr = ICompositionEffectSourceParameterFactory_Create( constructor, NULL, NULL );
+    ok( hr == E_POINTER, "Got hr %#lx.\n", hr );
+    WindowsCreateStringReference( buffer, wcslen(buffer), &header, &name );
+    hr = ICompositionEffectSourceParameterFactory_Create( constructor, name, &parameter );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (FAILED(hr)) goto done;
+    buffer[0] = L'X';
+    hr = ICompositionEffectSourceParameter_get_Name( parameter, &value );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    ok( !wcscmp( WindowsGetStringRawBuffer( value, NULL ), L"Backdrop" ), "Name was not copied.\n" );
+    WindowsDeleteString( value );
+    hr = ICompositionEffectSourceParameter_get_Name( parameter, NULL );
+    ok( hr == E_POINTER, "Got hr %#lx.\n", hr );
+    hr = ICompositionEffectSourceParameter_GetRuntimeClassName( parameter, &value );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    ok( !wcscmp( WindowsGetStringRawBuffer( value, NULL ),
+                 RuntimeClass_Windows_UI_Composition_CompositionEffectSourceParameter ), "Wrong class name.\n" );
+    WindowsDeleteString( value );
+    hr = ICompositionEffectSourceParameter_GetIids( parameter, &count, &iids );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    ok( count == 2, "Got count %lu.\n", count );
+    CoTaskMemFree( iids );
+    hr = ICompositionEffectSourceParameter_QueryInterface( parameter, &IID_IGraphicsEffectSource, (void **)&source );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (source)
+    {
+        ICompositionEffectSourceParameter_QueryInterface( parameter, &IID_IUnknown, (void **)&identity );
+        IGraphicsEffectSource_QueryInterface( source, &IID_IUnknown, (void **)&other );
+        ok( identity == other, "COM identity differs.\n" );
+        IUnknown_Release( identity );
+        IUnknown_Release( other );
+        IGraphicsEffectSource_Release( source );
+    }
+    hr = ICompositionEffectSourceParameter_QueryInterface( parameter, &IID_IAgileObject, (void **)&other );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (SUCCEEDED(hr)) IUnknown_Release( other );
+    other = (IUnknown *)0xdeadbeef;
+    hr = ICompositionEffectSourceParameter_QueryInterface( parameter, &IID_IGraphicsEffect, (void **)&other );
+    ok( hr == E_NOINTERFACE, "Got hr %#lx.\n", hr );
+    ok( !other, "Unsupported interface was not cleared.\n" );
+    ICompositionEffectSourceParameter_Release( parameter );
+    parameter = NULL;
+
+    hr = ICompositionEffectSourceParameterFactory_Create( constructor, NULL, &parameter );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    if (parameter)
+    {
+        hr = ICompositionEffectSourceParameter_get_Name( parameter, &value );
+        ok( hr == S_OK, "Got hr %#lx.\n", hr );
+        ok( !WindowsGetStringLen( value ), "Expected an empty name.\n" );
+        WindowsDeleteString( value );
+        ICompositionEffectSourceParameter_Release( parameter );
+    }
+
+done:
+    if (constructor) ICompositionEffectSourceParameterFactory_Release( constructor );
+    IActivationFactory_Release( factory );
+}
+
 START_TEST(composition)
 {
     HRESULT hr;
@@ -631,6 +717,7 @@ START_TEST(composition)
     test_compositor_animation();
     test_visual_collection_iterable();
     test_interaction_tracker_bindings();
+    test_effect_source_parameter();
 
     RoUninitialize();
 }
