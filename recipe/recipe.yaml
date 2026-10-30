@@ -22,7 +22,7 @@ requirements:
     - ${{ compiler('cxx') }}
     - ${{ stdlib('c') }}
     # Sets -march=x86-64-v3 in the conda gcc CFLAGS/CXXFLAGS (Unix side).
-    - x86_64-microarch-level 3
+    - x86_64-microarch-level ==3
     # PE toolchain: clang compiles; lld-link links; llvm-tools gives winebuild llvm-dlltool/ar/ranlib/windres.
     - clang
     - lld
