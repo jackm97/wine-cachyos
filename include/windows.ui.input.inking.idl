@@ -25,6 +25,8 @@ import "windowscontracts.idl";
 import "windows.foundation.idl";
 import "windows.foundation.numerics.idl";
 import "windows.ui.idl";
+import "windows.ui.core.idl";
+import "windows.storage.streams.idl";
 
 namespace Windows.UI.Input.Inking {
     typedef enum PenTipShape PenTipShape;
@@ -130,4 +132,296 @@ namespace Windows.UI.Input.Inking {
         interface Windows.UI.Input.Inking.IInkDrawingAttributes2;
         [contract(Windows.Foundation.UniversalApiContract, 4.0)] interface Windows.UI.Input.Inking.IInkDrawingAttributes4;
     }
+}
+
+namespace Windows.UI.Input.Inking {
+    interface IInkPresenter;
+    interface IInkInputProcessingConfiguration;
+    interface IInkSynchronizer;
+    interface IInkStrokeInput;
+    interface IInkUnprocessedInput;
+    interface IInkStroke;
+    interface IInkStrokeContainer;
+    interface IInkStrokeRenderingSegment;
+    interface IInkRecognitionResult;
+    interface IInkStrokesCollectedEventArgs;
+    interface IInkStrokesErasedEventArgs;
+    runtimeclass InkPresenter;
+    runtimeclass InkInputProcessingConfiguration;
+    runtimeclass InkSynchronizer;
+    runtimeclass InkStrokeInput;
+    runtimeclass InkUnprocessedInput;
+    runtimeclass InkStroke;
+    runtimeclass InkStrokeContainer;
+    runtimeclass InkStrokeRenderingSegment;
+    runtimeclass InkRecognitionResult;
+    runtimeclass InkStrokesCollectedEventArgs;
+    runtimeclass InkStrokesErasedEventArgs;
+    typedef enum InkInputProcessingMode InkInputProcessingMode;
+    typedef enum InkInputRightDragAction InkInputRightDragAction;
+    typedef enum InkPresenterPredefinedConfiguration InkPresenterPredefinedConfiguration;
+
+    declare {
+        interface Windows.Foundation.AsyncActionProgressHandler<UINT64>;
+        interface Windows.Foundation.AsyncActionWithProgressCompletedHandler<UINT64>;
+        interface Windows.Foundation.AsyncOperationProgressHandler<UINT32, UINT32>;
+        interface Windows.Foundation.AsyncOperationWithProgressCompletedHandler<UINT32, UINT32>;
+        interface Windows.Foundation.Collections.IIterable<HSTRING>;
+        interface Windows.Foundation.Collections.IIterable<Windows.Foundation.Point>;
+        interface Windows.Foundation.Collections.IIterable<Windows.UI.Input.Inking.InkRecognitionResult *>;
+        interface Windows.Foundation.Collections.IIterable<Windows.UI.Input.Inking.InkStroke *>;
+        interface Windows.Foundation.Collections.IIterable<Windows.UI.Input.Inking.InkStrokeRenderingSegment *>;
+        interface Windows.Foundation.Collections.IIterator<HSTRING>;
+        interface Windows.Foundation.Collections.IIterator<Windows.Foundation.Point>;
+        interface Windows.Foundation.Collections.IIterator<Windows.UI.Input.Inking.InkRecognitionResult *>;
+        interface Windows.Foundation.Collections.IIterator<Windows.UI.Input.Inking.InkStroke *>;
+        interface Windows.Foundation.Collections.IIterator<Windows.UI.Input.Inking.InkStrokeRenderingSegment *>;
+        interface Windows.Foundation.Collections.IVectorView<HSTRING>;
+        interface Windows.Foundation.Collections.IVectorView<Windows.Foundation.Point>;
+        interface Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkRecognitionResult *>;
+        interface Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkStroke *>;
+        interface Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkStrokeRenderingSegment *>;
+        interface Windows.Foundation.IAsyncActionWithProgress<UINT64>;
+        interface Windows.Foundation.IAsyncOperationWithProgress<UINT32, UINT32>;
+        interface Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkPresenter *, Windows.UI.Input.Inking.InkStrokesCollectedEventArgs *>;
+        interface Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkPresenter *, Windows.UI.Input.Inking.InkStrokesErasedEventArgs *>;
+        interface Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkStrokeInput *, Windows.UI.Core.PointerEventArgs *>;
+        interface Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkUnprocessedInput *, Windows.UI.Core.PointerEventArgs *>;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0)]
+    enum InkInputProcessingMode
+    {
+        None = 0,
+        Inking = 1,
+        Erasing = 2
+    };
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0)]
+    enum InkInputRightDragAction
+    {
+        LeaveUnprocessed = 0,
+        AllowProcessing = 1
+    };
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0)]
+    enum InkPresenterPredefinedConfiguration
+    {
+        SimpleSinglePointer = 0,
+        SimpleMultiplePointer = 1
+    };
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(a69b70e2-887b-458f-b173-4fe4438930a3)]
+    interface IInkPresenter : IInspectable
+    {
+        [propget] HRESULT IsInputEnabled([out, retval] boolean *value);
+        [propput] HRESULT IsInputEnabled([in] boolean value);
+        [propget] HRESULT InputDeviceTypes([out, retval] Windows.UI.Core.CoreInputDeviceTypes *value);
+        [propput] HRESULT InputDeviceTypes([in] Windows.UI.Core.CoreInputDeviceTypes value);
+        [propget] HRESULT UnprocessedInput([out, retval] Windows.UI.Input.Inking.InkUnprocessedInput **value);
+        [propget] HRESULT StrokeInput([out, retval] Windows.UI.Input.Inking.InkStrokeInput **value);
+        [propget] HRESULT InputProcessingConfiguration([out, retval] Windows.UI.Input.Inking.InkInputProcessingConfiguration **value);
+        [propget] HRESULT StrokeContainer([out, retval] Windows.UI.Input.Inking.InkStrokeContainer **value);
+        [propput] HRESULT StrokeContainer([in] Windows.UI.Input.Inking.InkStrokeContainer *value);
+        HRESULT CopyDefaultDrawingAttributes([out, retval] Windows.UI.Input.Inking.IInkDrawingAttributes **value);
+        HRESULT UpdateDefaultDrawingAttributes([in] Windows.UI.Input.Inking.IInkDrawingAttributes *value);
+        HRESULT ActivateCustomDrying([out, retval] Windows.UI.Input.Inking.InkSynchronizer **inkSynchronizer);
+        HRESULT SetPredefinedConfiguration([in] Windows.UI.Input.Inking.InkPresenterPredefinedConfiguration value);
+        [eventadd] HRESULT StrokesCollected([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkPresenter *, Windows.UI.Input.Inking.InkStrokesCollectedEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT StrokesCollected([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT StrokesErased([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkPresenter *, Windows.UI.Input.Inking.InkStrokesErasedEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT StrokesErased([in] EventRegistrationToken cookie);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(2778d85e-33ca-4b06-a6d3-ac3945116d37)]
+    interface IInkInputProcessingConfiguration : IInspectable
+    {
+        [propget] HRESULT Mode([out, retval] Windows.UI.Input.Inking.InkInputProcessingMode *value);
+        [propput] HRESULT Mode([in] Windows.UI.Input.Inking.InkInputProcessingMode value);
+        [propget] HRESULT RightDragAction([out, retval] Windows.UI.Input.Inking.InkInputRightDragAction *value);
+        [propput] HRESULT RightDragAction([in] Windows.UI.Input.Inking.InkInputRightDragAction value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(9b9ea160-ae9b-45f9-8407-4b493b163661)]
+    interface IInkSynchronizer : IInspectable
+    {
+        HRESULT BeginDry([out, retval] Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkStroke *> **inkStrokes);
+        HRESULT EndDry();
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(cf2ffe7b-5e10-43c6-a080-88f26e1dc67d)]
+    interface IInkStrokeInput : IInspectable
+    {
+        [eventadd] HRESULT StrokeStarted([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkStrokeInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT StrokeStarted([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT StrokeContinued([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkStrokeInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT StrokeContinued([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT StrokeEnded([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkStrokeInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT StrokeEnded([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT StrokeCanceled([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkStrokeInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT StrokeCanceled([in] EventRegistrationToken cookie);
+        [propget] HRESULT InkPresenter([out, retval] Windows.UI.Input.Inking.InkPresenter **value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(db4445e0-8398-4921-ac3b-ab978c5ba256)]
+    interface IInkUnprocessedInput : IInspectable
+    {
+        [eventadd] HRESULT PointerEntered([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkUnprocessedInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT PointerEntered([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT PointerHovered([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkUnprocessedInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT PointerHovered([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT PointerExited([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkUnprocessedInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT PointerExited([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT PointerPressed([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkUnprocessedInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT PointerPressed([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT PointerMoved([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkUnprocessedInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT PointerMoved([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT PointerReleased([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkUnprocessedInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT PointerReleased([in] EventRegistrationToken cookie);
+        [eventadd] HRESULT PointerLost([in] Windows.Foundation.TypedEventHandler<Windows.UI.Input.Inking.InkUnprocessedInput *, Windows.UI.Core.PointerEventArgs *> *handler, [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT PointerLost([in] EventRegistrationToken cookie);
+        [propget] HRESULT InkPresenter([out, retval] Windows.UI.Input.Inking.InkPresenter **value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(15144d60-cce3-4fcf-9d52-11518ab6afd4)]
+    interface IInkStroke : IInspectable
+    {
+        [propget] HRESULT DrawingAttributes([out, retval] Windows.UI.Input.Inking.IInkDrawingAttributes **value);
+        [propput] HRESULT DrawingAttributes([in] Windows.UI.Input.Inking.IInkDrawingAttributes *value);
+        [propget] HRESULT BoundingRect([out, retval] Windows.Foundation.Rect *value);
+        [propget] HRESULT Selected([out, retval] boolean *value);
+        [propput] HRESULT Selected([in] boolean value);
+        [propget] HRESULT Recognized([out, retval] boolean *value);
+        HRESULT GetRenderingSegments([out, retval] Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkStrokeRenderingSegment *> **renderingSegments);
+        HRESULT Clone([out, retval] Windows.UI.Input.Inking.InkStroke **clonedStroke);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(22accbc6-faa9-4f14-b68c-f6cee670ae16)]
+    interface IInkStrokeContainer : IInspectable
+    {
+        [propget] HRESULT BoundingRect([out, retval] Windows.Foundation.Rect *value);
+        HRESULT AddStroke([in] Windows.UI.Input.Inking.InkStroke *stroke);
+        HRESULT DeleteSelected([out, retval] Windows.Foundation.Rect *invalidatedRect);
+        HRESULT MoveSelected([in] Windows.Foundation.Point translation, [out, retval] Windows.Foundation.Rect *invalidatedRectangle);
+        HRESULT SelectWithPolyLine([in] Windows.Foundation.Collections.IIterable<Windows.Foundation.Point> *polyline, [out, retval] Windows.Foundation.Rect *invalidatedRectangle);
+        HRESULT SelectWithLine([in] Windows.Foundation.Point from, [in] Windows.Foundation.Point to, [out, retval] Windows.Foundation.Rect *invalidatedRectangle);
+        HRESULT CopySelectedToClipboard();
+        HRESULT PasteFromClipboard([in] Windows.Foundation.Point position, [out, retval] Windows.Foundation.Rect *invalidatedRectangle);
+        HRESULT CanPasteFromClipboard([out, retval] boolean *canPaste);
+        HRESULT LoadAsync([in] Windows.Storage.Streams.IInputStream *inputStream, [out, retval] Windows.Foundation.IAsyncActionWithProgress<UINT64> **loadAction);
+        HRESULT SaveAsync([in] Windows.Storage.Streams.IOutputStream *outputStream, [out, retval] Windows.Foundation.IAsyncOperationWithProgress<UINT32, UINT32> **outputStreamOperation);
+        HRESULT UpdateRecognitionResults([in] Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkRecognitionResult *> *recognitionResults);
+        HRESULT GetStrokes([out, retval] Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkStroke *> **strokeView);
+        HRESULT GetRecognitionResults([out, retval] Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkRecognitionResult *> **recognitionResults);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(68510f1f-88e3-477a-a2fa-569f5f1f9bd5)]
+    interface IInkStrokeRenderingSegment : IInspectable
+    {
+        [propget] HRESULT Position([out, retval] Windows.Foundation.Point *value);
+        [propget] HRESULT BezierControlPoint1([out, retval] Windows.Foundation.Point *value);
+        [propget] HRESULT BezierControlPoint2([out, retval] Windows.Foundation.Point *value);
+        [propget] HRESULT Pressure([out, retval] FLOAT *value);
+        [propget] HRESULT TiltX([out, retval] FLOAT *value);
+        [propget] HRESULT TiltY([out, retval] FLOAT *value);
+        [propget] HRESULT Twist([out, retval] FLOAT *value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(36461a94-5068-40ef-8a05-2c2fb60908a2)]
+    interface IInkRecognitionResult : IInspectable
+    {
+        [propget] HRESULT BoundingRect([out, retval] Windows.Foundation.Rect *boundingRect);
+        HRESULT GetTextCandidates([out, retval] Windows.Foundation.Collections.IVectorView<HSTRING> **textCandidates);
+        HRESULT GetStrokes([out, retval] Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkStroke *> **strokes);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(c4f3f229-1938-495c-b4d9-6de4b08d4811)]
+    interface IInkStrokesCollectedEventArgs : IInspectable
+    {
+        [propget] HRESULT Strokes([out, retval] Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkStroke *> **value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0),
+     uuid(a4216a22-1503-4ebf-8ff5-2de84584a8aa)]
+    interface IInkStrokesErasedEventArgs : IInspectable
+    {
+        [propget] HRESULT Strokes([out, retval] Windows.Foundation.Collections.IVectorView<Windows.UI.Input.Inking.InkStroke *> **value);
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkPresenter
+    {
+        [default] interface Windows.UI.Input.Inking.IInkPresenter;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkInputProcessingConfiguration
+    {
+        [default] interface Windows.UI.Input.Inking.IInkInputProcessingConfiguration;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkSynchronizer
+    {
+        [default] interface Windows.UI.Input.Inking.IInkSynchronizer;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkStrokeInput
+    {
+        [default] interface Windows.UI.Input.Inking.IInkStrokeInput;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkUnprocessedInput
+    {
+        [default] interface Windows.UI.Input.Inking.IInkUnprocessedInput;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkStroke
+    {
+        [default] interface Windows.UI.Input.Inking.IInkStroke;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkStrokeContainer
+    {
+        [default] interface Windows.UI.Input.Inking.IInkStrokeContainer;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkStrokeRenderingSegment
+    {
+        [default] interface Windows.UI.Input.Inking.IInkStrokeRenderingSegment;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkRecognitionResult
+    {
+        [default] interface Windows.UI.Input.Inking.IInkRecognitionResult;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkStrokesCollectedEventArgs
+    {
+        [default] interface Windows.UI.Input.Inking.IInkStrokesCollectedEventArgs;
+    }
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), marshaling_behavior(agile)]
+    runtimeclass InkStrokesErasedEventArgs
+    {
+        [default] interface Windows.UI.Input.Inking.IInkStrokesErasedEventArgs;
+    }
+
 }

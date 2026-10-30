@@ -43,6 +43,17 @@ namespace Windows.UI.Input {
 }
 
 namespace Windows.UI.Core {
+    typedef enum CoreInputDeviceTypes CoreInputDeviceTypes;
+
+    [contract(Windows.Foundation.UniversalApiContract, 1.0), flags]
+    enum CoreInputDeviceTypes
+    {
+        None = 0,
+        Touch = 1,
+        Pen = 2,
+        Mouse = 4
+    };
+
     typedef enum CoreAcceleratorKeyEventType CoreAcceleratorKeyEventType;
     typedef enum CoreCursorType CoreCursorType;
     typedef enum CoreDispatcherPriority CoreDispatcherPriority;

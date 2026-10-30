@@ -229,3 +229,82 @@ HRESULT ink_drawing_attributes_create(IInkDrawingAttributes **out)
     else *out = &impl->IInkDrawingAttributes_iface;
     return hr;
 }
+
+HRESULT ink_drawing_attributes_clone(IInkDrawingAttributes *source, IInkDrawingAttributes **out)
+{
+    IInkDrawingAttributes2 *source2 = NULL, *copy2 = NULL;
+    IInkDrawingAttributes4 *source4 = NULL, *copy4 = NULL;
+    struct drawing_attributes *input, *copy;
+    struct Matrix3x2 transform;
+    struct Color color;
+    struct Size size;
+    enum PenTipShape tip;
+    boolean value;
+    HRESULT hr, query;
+
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (!source) return E_POINTER;
+    if (FAILED(hr = ink_drawing_attributes_create(out))) return hr;
+    if (source->lpVtbl == &drawing_vtbl)
+    {
+        input = impl_from_IInkDrawingAttributes(source);
+        copy = impl_from_IInkDrawingAttributes(*out);
+        EnterCriticalSection(&input->lock);
+        copy->color = input->color;
+        copy->size = input->size;
+        copy->pen_tip = input->pen_tip;
+        copy->transform = input->transform;
+        copy->ignore_pressure = input->ignore_pressure;
+        copy->fit_to_curve = input->fit_to_curve;
+        copy->highlighter = input->highlighter;
+        copy->ignore_tilt = input->ignore_tilt;
+        LeaveCriticalSection(&input->lock);
+        return S_OK;
+    }
+
+    hr = IInkDrawingAttributes_get_Color(source, &color);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_put_Color(*out, color);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_get_PenTip(source, &tip);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_put_PenTip(*out, tip);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_get_Size(source, &size);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_put_Size(*out, size);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_get_IgnorePressure(source, &value);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_put_IgnorePressure(*out, value);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_get_FitToCurve(source, &value);
+    if (SUCCEEDED(hr)) hr = IInkDrawingAttributes_put_FitToCurve(*out, value);
+    if (SUCCEEDED(hr))
+    {
+        query = IInkDrawingAttributes_QueryInterface(source, &IID_IInkDrawingAttributes2, (void **)&source2);
+        if (SUCCEEDED(query))
+        {
+            hr = IInkDrawingAttributes_QueryInterface(*out, &IID_IInkDrawingAttributes2, (void **)&copy2);
+            if (SUCCEEDED(hr)) hr = IInkDrawingAttributes2_get_PenTipTransform(source2, &transform);
+            if (SUCCEEDED(hr)) hr = IInkDrawingAttributes2_put_PenTipTransform(copy2, transform);
+            if (SUCCEEDED(hr)) hr = IInkDrawingAttributes2_get_DrawAsHighlighter(source2, &value);
+            if (SUCCEEDED(hr)) hr = IInkDrawingAttributes2_put_DrawAsHighlighter(copy2, value);
+        }
+        else if (query != E_NOINTERFACE) hr = query;
+    }
+    if (SUCCEEDED(hr))
+    {
+        query = IInkDrawingAttributes_QueryInterface(source, &IID_IInkDrawingAttributes4, (void **)&source4);
+        if (SUCCEEDED(query))
+        {
+            hr = IInkDrawingAttributes_QueryInterface(*out, &IID_IInkDrawingAttributes4, (void **)&copy4);
+            if (SUCCEEDED(hr)) hr = IInkDrawingAttributes4_get_IgnoreTilt(source4, &value);
+            if (SUCCEEDED(hr)) hr = IInkDrawingAttributes4_put_IgnoreTilt(copy4, value);
+        }
+        else if (query != E_NOINTERFACE) hr = query;
+    }
+    if (source2) IInkDrawingAttributes2_Release(source2);
+    if (copy2) IInkDrawingAttributes2_Release(copy2);
+    if (source4) IInkDrawingAttributes4_Release(source4);
+    if (copy4) IInkDrawingAttributes4_Release(copy4);
+    if (FAILED(hr))
+    {
+        IInkDrawingAttributes_Release(*out);
+        *out = NULL;
+    }
+    return hr;
+}

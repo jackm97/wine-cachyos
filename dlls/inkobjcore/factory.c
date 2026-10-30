@@ -17,8 +17,6 @@
  */
 
 #include "private.h"
-#include "initguid.h"
-#include "activation.h"
 
 struct ink_factory
 {
@@ -26,7 +24,7 @@ struct ink_factory
     IInkPointFactory IInkPointFactory_iface;
     IInkPointFactory2 IInkPointFactory2_iface;
     LONG ref;
-    BOOL point;
+    enum { FACTORY_DRAWING, FACTORY_POINT, FACTORY_HOST } kind;
 };
 
 static struct ink_factory *impl_from_IActivationFactory(IActivationFactory *iface)
@@ -43,9 +41,9 @@ static HRESULT WINAPI factory_QueryInterface(IActivationFactory *iface, REFIID i
     if (IsEqualGUID(iid, &IID_IUnknown) || IsEqualGUID(iid, &IID_IInspectable)
             || IsEqualGUID(iid, &IID_IAgileObject) || IsEqualGUID(iid, &IID_IActivationFactory))
         *out = &impl->IActivationFactory_iface;
-    else if (impl->point && IsEqualGUID(iid, &IID_IInkPointFactory))
+    else if (impl->kind == FACTORY_POINT && IsEqualGUID(iid, &IID_IInkPointFactory))
         *out = &impl->IInkPointFactory_iface;
-    else if (impl->point && IsEqualGUID(iid, &IID_IInkPointFactory2))
+    else if (impl->kind == FACTORY_POINT && IsEqualGUID(iid, &IID_IInkPointFactory2))
         *out = &impl->IInkPointFactory2_iface;
     else return E_NOINTERFACE;
     IActivationFactory_AddRef(iface);
@@ -68,14 +66,14 @@ static ULONG WINAPI factory_Release(IActivationFactory *iface)
 static HRESULT WINAPI factory_GetIids(IActivationFactory *iface, ULONG *count, IID **iids)
 {
     struct ink_factory *impl = impl_from_IActivationFactory(iface);
-    ULONG size = impl->point ? 3 : 1;
+    ULONG size = impl->kind == FACTORY_POINT ? 3 : 1;
 
     if (!count || !iids) return E_POINTER;
     *count = 0;
     *iids = NULL;
     if (!(*iids = CoTaskMemAlloc(size * sizeof(**iids)))) return E_OUTOFMEMORY;
     (*iids)[0] = IID_IActivationFactory;
-    if (impl->point)
+    if (impl->kind == FACTORY_POINT)
     {
         (*iids)[1] = IID_IInkPointFactory;
         (*iids)[2] = IID_IInkPointFactory2;
@@ -87,9 +85,10 @@ static HRESULT WINAPI factory_GetIids(IActivationFactory *iface, ULONG *count, I
 static HRESULT WINAPI factory_GetRuntimeClassName(IActivationFactory *iface, HSTRING *name)
 {
     struct ink_factory *impl = impl_from_IActivationFactory(iface);
-    const WCHAR *class = impl->point ? RuntimeClass_Windows_UI_Input_Inking_InkPoint
+    const WCHAR *class = impl->kind == FACTORY_POINT ? RuntimeClass_Windows_UI_Input_Inking_InkPoint
             : RuntimeClass_Windows_UI_Input_Inking_InkDrawingAttributes;
 
+    if (impl->kind == FACTORY_HOST) class = RuntimeClass_Windows_UI_Input_Inking_Core_CoreInkPresenterHost;
     if (!name) return E_POINTER;
     return WindowsCreateString(class, wcslen(class), name);
 }
@@ -105,7 +104,8 @@ static HRESULT WINAPI factory_ActivateInstance(IActivationFactory *iface, IInspe
 {
     if (!out) return E_POINTER;
     *out = NULL;
-    if (impl_from_IActivationFactory(iface)->point) return E_NOTIMPL;
+    if (impl_from_IActivationFactory(iface)->kind == FACTORY_POINT) return E_NOTIMPL;
+    if (impl_from_IActivationFactory(iface)->kind == FACTORY_HOST) return ink_core_host_create(out);
     return ink_drawing_attributes_create((IInkDrawingAttributes **)out);
 }
 
@@ -147,9 +147,10 @@ static const IInkPointFactory2Vtbl point_factory2_vtbl =
 
 static struct ink_factory point_factory =
 {
-    {&factory_vtbl}, {&point_factory_vtbl}, {&point_factory2_vtbl}, 0, TRUE,
+    {&factory_vtbl}, {&point_factory_vtbl}, {&point_factory2_vtbl}, 0, FACTORY_POINT,
 };
 static struct ink_factory drawing_factory = {{&factory_vtbl}};
+static struct ink_factory host_factory = {{&factory_vtbl}, {0}, {0}, 0, FACTORY_HOST};
 
 HRESULT WINAPI DllGetActivationFactory(HSTRING name, IActivationFactory **out)
 {
@@ -163,5 +164,12 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING name, IActivationFactory **out)
     if (!wcscmp(class, RuntimeClass_Windows_UI_Input_Inking_InkDrawingAttributes))
         return IActivationFactory_QueryInterface(&drawing_factory.IActivationFactory_iface,
                 &IID_IActivationFactory, (void **)out);
+    if (!wcscmp(class, RuntimeClass_Windows_UI_Input_Inking_Core_CoreInkPresenterHost))
+        return IActivationFactory_QueryInterface(&host_factory.IActivationFactory_iface,
+                &IID_IActivationFactory, (void **)out);
+    if (!wcscmp(class, RuntimeClass_Windows_UI_Input_Inking_Core_CoreWetStrokeUpdateSource))
+        return ink_source_get_factory(TRUE, out);
+    if (!wcscmp(class, RuntimeClass_Windows_UI_Input_Inking_Core_CoreInkIndependentInputSource))
+        return ink_source_get_factory(FALSE, out);
     return CLASS_E_CLASSNOTAVAILABLE;
 }

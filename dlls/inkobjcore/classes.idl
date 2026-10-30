@@ -19,9 +19,15 @@
 #pragma makedep register
 #pragma winrt ns_prefix
 
-import "windows.ui.input.inking.idl";
+import "windows.ui.input.inking.core.idl";
 
 namespace Windows.UI.Input.Inking {
     runtimeclass InkPoint;
     runtimeclass InkDrawingAttributes;
+}
+
+namespace Windows.UI.Input.Inking.Core {
+    runtimeclass CoreInkPresenterHost;
+    runtimeclass CoreWetStrokeUpdateSource;
+    runtimeclass CoreInkIndependentInputSource;
 }
