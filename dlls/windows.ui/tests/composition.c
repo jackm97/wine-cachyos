@@ -450,6 +450,63 @@ static void test_compositor_animation(void)
     ICompositor_Release( compositor );
 }
 
+static void test_vector3_animation(void)
+{
+    IVector3KeyFrameAnimation *vector = NULL;
+    IScalarKeyFrameAnimation *scalar = (void *)0xdeadbeef;
+    ICompositionAnimation *animation = NULL;
+    ICompositionObject *object = NULL;
+    ISpriteVisual *sprite = NULL;
+    IVisual *visual = NULL;
+    ICompositor *compositor;
+    struct Vector3 first = {0.0f, 0.0f, 0.0f}, final = {30.0f, 40.0f, 5.0f}, value;
+    HSTRING property = NULL;
+    HRESULT hr;
+
+    if (!(compositor = create_compositor())) return;
+    hr = ICompositor_CreateVector3KeyFrameAnimation( compositor, NULL );
+    ok( hr == E_POINTER, "Got hr %#lx.\n", hr );
+    hr = ICompositor_CreateVector3KeyFrameAnimation( compositor, &vector );
+    ok( hr == S_OK && vector, "Got hr %#lx, vector %p.\n", hr, vector );
+    if (FAILED(hr) || !vector) goto done;
+    hr = IVector3KeyFrameAnimation_QueryInterface( vector, &IID_IScalarKeyFrameAnimation,
+                                                   (void **)&scalar );
+    ok( hr == E_NOINTERFACE && !scalar, "Got hr %#lx, scalar %p.\n", hr, scalar );
+    hr = IVector3KeyFrameAnimation_InsertKeyFrame( vector, -0.1f, first );
+    ok( hr == E_INVALIDARG, "Got hr %#lx.\n", hr );
+    hr = IVector3KeyFrameAnimation_InsertKeyFrame( vector, 1.1f, first );
+    ok( hr == E_INVALIDARG, "Got hr %#lx.\n", hr );
+    hr = IVector3KeyFrameAnimation_InsertKeyFrameWithEasingFunction( vector, 1.0f, final, NULL );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    hr = IVector3KeyFrameAnimation_InsertKeyFrame( vector, 0.0f, first );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    hr = IVector3KeyFrameAnimation_QueryInterface( vector, &IID_ICompositionAnimation,
+                                                   (void **)&animation );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    hr = ICompositor_CreateSpriteVisual( compositor, &sprite );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    hr = ISpriteVisual_QueryInterface( sprite, &IID_IVisual, (void **)&visual );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    hr = ISpriteVisual_QueryInterface( sprite, &IID_ICompositionObject, (void **)&object );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    hr = WindowsCreateString( L"Offset", 6, &property );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    hr = ICompositionObject_StartAnimation( object, property, animation );
+    ok( hr == S_OK, "Got hr %#lx.\n", hr );
+    hr = IVisual_get_Offset( visual, &value );
+    ok( hr == S_OK && value.X == final.X && value.Y == final.Y && value.Z == final.Z,
+        "Got hr %#lx, offset {%f, %f, %f}.\n", hr, value.X, value.Y, value.Z );
+
+done:
+    WindowsDeleteString( property );
+    if (object) ICompositionObject_Release( object );
+    if (visual) IVisual_Release( visual );
+    if (sprite) ISpriteVisual_Release( sprite );
+    if (animation) ICompositionAnimation_Release( animation );
+    if (vector) IVector3KeyFrameAnimation_Release( vector );
+    ICompositor_Release( compositor );
+}
+
 static void test_visual_collection_iterable(void)
 {
     IVisual *child1 = NULL, *child2 = NULL, *current = NULL, *items[2] = {0};
@@ -715,6 +772,7 @@ START_TEST(composition)
     test_composition_graphics_device2();
     test_compositor_controller_async();
     test_compositor_animation();
+    test_vector3_animation();
     test_visual_collection_iterable();
     test_interaction_tracker_bindings();
     test_effect_source_parameter();
