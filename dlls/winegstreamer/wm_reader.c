@@ -1925,6 +1925,9 @@ static HRESULT wm_reader_read_stream_sample(struct wm_reader *reader, struct wg_
         /* The GStreamer pin has been flushed. */
         INSSBuffer_Release(*sample);
         *sample = NULL;
+        stream->current_buffer.size = 0;
+        stream->current_buffer_offset = 0;
+        wg_parser_stream_release_buffer(stream->wg_stream);
         return S_FALSE;
     }
 
