@@ -1,6 +1,6 @@
 [package]
 name = "windows-winmd"
-version = "74"
+version = "0.62.0"
 publish = true
 
 [package.build.backend]
