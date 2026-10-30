@@ -211,6 +211,17 @@ HRESULT WINAPI MAPIAdminProfiles(ULONG ulFlags,  LPPROFADMIN *lppProfAdmin)
     return E_FAIL;
 }
 
+HRESULT WINAPI LaunchWizard(HWND parent, ULONG flags, LPCSTR *service_names,
+        ULONG buffer_size, LPSTR profile_name)
+{
+    TRACE("(%p, %#lx, %p, %lu, %p)\n", parent, flags, service_names, buffer_size, profile_name);
+
+    if (mapiFunctions.LaunchWizard)
+        return mapiFunctions.LaunchWizard(parent, flags, service_names, buffer_size, profile_name);
+
+    return E_FAIL;
+}
+
 ULONG WINAPI MAPIAddress(LHANDLE session, ULONG_PTR uiparam, LPSTR caption,
     ULONG editfields, LPSTR labels, ULONG nRecips, lpMapiRecipDesc lpRecips,
     FLAGS flags, ULONG reserved, LPULONG newRecips, lpMapiRecipDesc * lppNewRecips)
